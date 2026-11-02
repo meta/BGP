@@ -20,7 +20,8 @@
       Exportfb303CounterSessionUpAndDownTest);                               \
   FRIEND_TEST(PeerManagerTestFixture, StopPeerToSessionMgrTest);             \
   FRIEND_TEST(PeerManagerTestFixture, GetBgpSessionAdjRibMessageCountsTest); \
-  FRIEND_TEST(PeerManagerTestFixture, GetBgpSessionEoRStatusTest);
+  FRIEND_TEST(PeerManagerTestFixture, GetBgpSessionEoRStatusTest);           \
+  FRIEND_TEST(PeerManagerTestFixture, RswSlbInRejectionCounterTest);
 
 #define AdjRib_TEST_FRIENDS                                                  \
   friend class PeerManagerFixtureCanaryKnobTestSuite;                        \
@@ -28,7 +29,8 @@
       PeerManagerFixtureCanaryKnobTestSuite,                                 \
       Exportfb303CounterSessionUpAndDownTest);                               \
   FRIEND_TEST(PeerManagerTestFixture, GetBgpSessionAdjRibMessageCountsTest); \
-  FRIEND_TEST(PeerManagerTestFixture, GetBgpSessionEoRStatusTest);
+  FRIEND_TEST(PeerManagerTestFixture, GetBgpSessionEoRStatusTest);           \
+  FRIEND_TEST(PeerManagerTestFixture, RswSlbInRejectionCounterTest);
 
 #define AdjRibStats_TEST_FRIENDS                      \
   friend class PeerManagerFixtureCanaryKnobTestSuite; \
@@ -48,6 +50,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "fb303/ServiceData.h"
 #include "neteng/fboss/bgp/cpp/tests/PeerManagerTestUtils.h"
 
 using ::testing::_;
@@ -123,6 +126,118 @@ TEST_F(PeerManagerTestFixture, GetBgpSessionEoRStatusTest) {
   sessionMgr->stop();
   peerMgrThread.join();
   sessionMgrThread.join();
+}
+
+TEST_F(PeerManagerTestFixture, RswSlbInRejectionCounterTest) {
+  auto peerMgr = setupMockPeerManager(true, false);
+  auto counters = fb303::ThreadCachedServiceData::getShared();
+  PeerStats::setNumRswSlbInRejections(99);
+  folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+  EXPECT_EQ(0, counters->getCounter("num_rsw_slb_in_rejections"));
+
+  auto makeAdjRib = [&](const folly::IPAddress& peerAddr,
+                        const std::string& policyName,
+                        bool addPath) {
+    const BgpPeerId peerId{peerAddr, 0};
+    auto adjRib = setupMockAdjRib(
+        peerMgr->getEventBase(), peerId, AsNum(kAsn1), sessionTerminateBaton_);
+    adjRib->ingressPolicyName_ = policyName;
+    adjRib->recAddPath_ = addPath;
+    peerMgr->adjRibs_[peerId] = adjRib;
+    return adjRib;
+  };
+  auto slb = makeAdjRib(kPeerAddr1, "PROPAGATE_RSW_SLB_IN", false);
+  auto addPathSlb = makeAdjRib(kPeerAddr2, "PROPAGATE_RSW_SLB_IN", true);
+  auto otherPeer = makeAdjRib(kPeerAddr3, "rsw_slb_in_other", false);
+  auto attrs = std::make_shared<BgpPath>();
+  attrs->setNexthop(kV4Nexthop1);
+  attrs->publish();
+
+  auto addEntry = [&](const std::shared_ptr<AdjRib>& adjRib,
+                      const folly::CIDRNetwork& prefix,
+                      uint32_t pathId,
+                      const std::string& policyResult) {
+    auto* entry = adjRib->addRibEntry(true, prefix, pathId);
+    entry->setPreIn(attrs);
+    entry->setPostInPolicy(policyResult);
+    return entry;
+  };
+  auto* deniedV4 = addEntry(
+      slb,
+      kV4Prefix1,
+      kDefaultPathID,
+      "Denied by PROPAGATE_RSW_SLB_IN term deny");
+  auto* deniedV6 = addEntry(
+      slb,
+      kV6Prefix1,
+      kDefaultPathID,
+      "Did not match any policy term in PROPAGATE_RSW_SLB_IN. Default denied");
+  addEntry(slb, kV4Prefix2, kDefaultPathID, "Denied by Route Filter Policy");
+  auto* unrelatedRejection = addEntry(
+      slb,
+      kV4Prefix3,
+      kDefaultPathID,
+      "Denied by PROPAGATE_RSW_SLB_IN_OTHER term deny");
+  addEntry(
+      slb,
+      kV6Prefix2,
+      kDefaultPathID,
+      "Accepted/Modified by PROPAGATE_RSW_SLB_IN term allow");
+  addEntry(
+      otherPeer,
+      kV4Prefix1,
+      kDefaultPathID,
+      "Denied by PROPAGATE_RSW_SLB_IN term deny");
+  addEntry(
+      addPathSlb, kV4Prefix1, 1, "Denied by PROPAGATE_RSW_SLB_IN term deny");
+  auto* stalePath = addEntry(
+      addPathSlb, kV4Prefix1, 2, "Denied by PROPAGATE_RSW_SLB_IN term deny");
+
+  folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+  EXPECT_EQ(4, counters->getCounter("num_rsw_slb_in_rejections"));
+  folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+  EXPECT_EQ(4, counters->getCounter("num_rsw_slb_in_rejections"));
+
+  for (const auto& policyName :
+       {"rsw_slb_in",
+        "RSW_SLB_IN",
+        "propagate_rsw_slb_in",
+        "PROPAGATE_RSW_SLB_IN_OTHER"}) {
+    otherPeer->ingressPolicyName_ = policyName;
+    folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+    EXPECT_EQ(4, counters->getCounter("num_rsw_slb_in_rejections"));
+  }
+  for (
+      const auto& policyResult :
+      {"Denied by propagate_rsw_slb_in term deny",
+       "Denied by rsw_slb_in term deny",
+       "Did not match any policy term in propagate_rsw_slb_in. Default denied"}) {
+    unrelatedRejection->setPostInPolicy(policyResult);
+    folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+    EXPECT_EQ(4, counters->getCounter("num_rsw_slb_in_rejections"));
+  }
+
+  deniedV4->setPostAttr(attrs);
+  deniedV6->setPreIn(nullptr);
+  folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+  EXPECT_EQ(2, counters->getCounter("num_rsw_slb_in_rejections"));
+
+  ON_CALL(*addPathSlb, isPeerGracefulRestarting())
+      .WillByDefault(testing::Return(true));
+  folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+  EXPECT_EQ(0, counters->getCounter("num_rsw_slb_in_rejections"));
+  stalePath->setStale(true);
+  ON_CALL(*addPathSlb, isPeerGracefulRestarting())
+      .WillByDefault(testing::Return(false));
+  folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+  EXPECT_EQ(1, counters->getCounter("num_rsw_slb_in_rejections"));
+  stalePath->setStale(false);
+  folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+  EXPECT_EQ(2, counters->getCounter("num_rsw_slb_in_rejections"));
+
+  peerMgr->adjRibs_.erase(BgpPeerId{kPeerAddr2, 0});
+  folly::coro::blockingWait(peerMgr->co_updateRswSlbInRejectionCounter());
+  EXPECT_EQ(0, counters->getCounter("num_rsw_slb_in_rejections"));
 }
 
 TEST_F(PeerManagerTestFixture, StartSessionTest) {

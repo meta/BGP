@@ -61,6 +61,25 @@ const std::string& kMaterializedPolicyFileName =
 
 class PolicyTest : public ::testing::Test {};
 
+TEST_F(PolicyTest, PolicyNameLookupIsCaseSensitive) {
+  bgp_policy::BgpPolicies policies;
+  bgp_policy::BgpPolicyStatement statement;
+  statement.name() = "PROPAGATE_RSW_SLB_IN";
+  policies.bgp_policy_statements()->push_back(statement);
+  PolicyManager manager{policies};
+
+  EXPECT_TRUE(manager.isPolicyPresent("PROPAGATE_RSW_SLB_IN"));
+  EXPECT_NE(nullptr, manager.getPolicyFromName("PROPAGATE_RSW_SLB_IN"));
+  for (const auto& name :
+       {"propagate_rsw_slb_in",
+        "rsw_slb_in",
+        "RSW_SLB_IN",
+        "PROPAGATE_RSW_SLB_IN_OTHER"}) {
+    EXPECT_FALSE(manager.isPolicyPresent(name));
+    EXPECT_EQ(nullptr, manager.getPolicyFromName(name));
+  }
+}
+
 TEST_F(PolicyTest, BgpPolicyActionDataHashTest) {
   // LbwActionData
   LbwActionData data1{

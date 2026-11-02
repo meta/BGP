@@ -500,6 +500,7 @@ TEST(StatsTest, PeerStatsInitCounterTest) {
     auto counters = fb303::ThreadCachedServiceData::getShared();
     EXPECT_FALSE(counters->hasCounter(PeerStats::kTotalRcvdPrefixes));
     EXPECT_FALSE(counters->hasCounter(PeerStats::kTotalAcceptedPrefixes));
+    EXPECT_FALSE(counters->hasCounter(PeerStats::kNumRswSlbInRejections));
     EXPECT_FALSE(counters->hasCounter(PeerStats::kTotalSentPrefixes));
     EXPECT_FALSE(counters->hasCounter(PeerStats::kTotalPaths));
     EXPECT_FALSE(counters->hasCounter(PeerStats::kTotalUniquePrefixes));
@@ -557,6 +558,7 @@ TEST(StatsTest, PeerStatsInitCounterTest) {
     auto counters = fb303::ThreadCachedServiceData::getShared();
     EXPECT_EQ(-1, counters->getCounter(PeerStats::kTotalRcvdPrefixes));
     EXPECT_EQ(-1, counters->getCounter(PeerStats::kTotalAcceptedPrefixes));
+    EXPECT_EQ(0, counters->getCounter(PeerStats::kNumRswSlbInRejections));
     /*
      * droppedPrefixes is initialized to 0 (always populated), not -1. See
      * S676351.

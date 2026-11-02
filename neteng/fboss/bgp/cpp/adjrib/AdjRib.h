@@ -260,6 +260,8 @@ struct RejectedNetworksQuery {
    * policy denied. Rejections past it are still counted, not listed.
    */
   size_t maxEntries{std::numeric_limits<size_t>::max()};
+  /* Exclude optimized-GR entries awaiting a fresh announcement. */
+  bool excludeStale{false};
 };
 
 /*

@@ -1092,6 +1092,7 @@ namespace PeerStats {
 void initCounters() {
   fb303::ThreadCachedServiceData::get()->setCounter(kTotalRcvdPrefixes, -1);
   fb303::ThreadCachedServiceData::get()->setCounter(kTotalAcceptedPrefixes, -1);
+  setNumRswSlbInRejections(0);
   /*
    * Initialize to 0 (not -1 like the sibling "not yet reported" counters) so
    * droppedPrefixes always shows a real number. Every capacity/overload drop
@@ -1315,6 +1316,10 @@ void setTotalRcvdPrefixes(uint32_t val) {
 void setTotalAcceptedPrefixes(uint32_t val) {
   fb303::ThreadCachedServiceData::get()->setCounter(
       kTotalAcceptedPrefixes, val);
+}
+void setNumRswSlbInRejections(int64_t val) {
+  fb303::ThreadCachedServiceData::get()->setCounter(
+      kNumRswSlbInRejections, val);
 }
 void incrementTotalPrefixesDroppedByLimit(uint32_t val) {
   /*

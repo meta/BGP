@@ -824,6 +824,7 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   friend class SubscriberStreamTeardown;
 
   folly::coro::Task<void> updatePeerCounters();
+  folly::coro::Task<void> co_updateRswSlbInRejectionCounter();
 
   std::shared_ptr<folly::coro::Baton> testOnlyPolicyUpdateProcessingEntered_;
   std::shared_ptr<folly::coro::Baton> testOnlyPolicyUpdateProcessingRelease_;

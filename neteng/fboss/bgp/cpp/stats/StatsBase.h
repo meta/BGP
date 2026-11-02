@@ -823,6 +823,8 @@ constexpr auto kTotalPeerWithNoRouteExchange =
     "peer.totalPeerWithNoRouteExchange"_fs;
 constexpr auto kTotalRcvdPrefixes = "peer.totalRcvdPrefixes"_fs;
 constexpr auto kTotalAcceptedPrefixes = "peer.totalAcceptedPrefixes"_fs;
+/* Current IPv4 + IPv6 rejected peer-prefix paths, not rejection events. */
+constexpr auto kNumRswSlbInRejections = "num_rsw_slb_in_rejections"_fs;
 constexpr auto kTotalSentPrefixes = "peer.totalSentPrefixes"_fs;
 /*
  * Despite the "Prefixes" name, this counts dropped routes (each route is a
@@ -907,6 +909,7 @@ void clearPeerEgressMessageCounters(const std::string& peerId);
 void clearPeerIngressMessageCounters(const std::string& peerId);
 void setTotalRcvdPrefixes(uint32_t val);
 void setTotalAcceptedPrefixes(uint32_t val);
+void setNumRswSlbInRejections(int64_t val);
 void incrementTotalPrefixesDroppedByLimit(uint32_t val);
 void setTotalPaths(uint32_t val);
 void setTotalSentPrefixes(uint32_t val);

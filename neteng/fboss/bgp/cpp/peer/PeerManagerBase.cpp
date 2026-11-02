@@ -4285,11 +4285,57 @@ folly::coro::Task<void> PeerManagerBase::co_clearCounters(
       }());
 }
 
+folly::coro::Task<void> PeerManagerBase::co_updateRswSlbInRejectionCounter() {
+  constexpr auto kRswSlbInPolicyName = "PROPAGATE_RSW_SLB_IN";
+  static const re2::RE2 policyFilter{fmt::format(
+      "^(Denied by {} term |"
+      "Did not match any policy term in {}[.] Default denied$)",
+      kRswSlbInPolicyName,
+      kRswSlbInPolicyName)};
+  RejectedNetworksQuery query;
+  query.direction = TDirectionFilter::INGRESS;
+  query.policyNameFilter = &policyFilter;
+  query.maxEntries = 0;
+  query.excludeStale = true;
+
+  std::vector<BgpPeerId> peerIds;
+  for (const auto& [peerId, adjRib] : adjRibs_) {
+    if (adjRib->getIngressPolicyName() == kRswSlbInPolicyName) {
+      peerIds.push_back(peerId);
+    }
+  }
+
+  int64_t rejections = 0;
+  for (const auto& peerId : peerIds) {
+    co_await folly::coro::co_safe_point;
+    co_await folly::coro::co_reschedule_on_current_executor;
+    if (daemonShutdown_) {
+      co_return;
+    }
+    /*
+     * Re-resolve after yielding: the peer may have gone away or changed policy.
+     */
+    const auto it = adjRibs_.find(peerId);
+    if (it == adjRibs_.end() ||
+        it->second->getIngressPolicyName() != kRswSlbInPolicyName ||
+        it->second->isPeerGracefulRestarting()) {
+      continue;
+    }
+    RejectedNetworks rejected;
+    it->second->getRejectedNetworks(rejected, query);
+    for (const auto& [policyName, count] : rejected.pathCountByPolicy) {
+      rejections += count;
+    }
+  }
+  PeerStats::setNumRswSlbInRejections(rejections);
+}
+
 folly::coro::Task<void> PeerManagerBase::updatePeerCounters() {
   if (daemonShutdown_) {
     co_return;
   }
   auto sessions = co_await sessionMgr_->co_getAllEstablishedPeerDisplayInfo();
+  co_await co_updateRswSlbInRejectionCounter();
   uint32_t establishedNoRoutePeers = 0;
 
   for (const auto& sessionInfo : sessions) {

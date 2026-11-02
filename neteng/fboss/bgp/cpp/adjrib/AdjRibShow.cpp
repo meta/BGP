@@ -264,7 +264,8 @@ void AdjRib::maybeAddRejectedNetwork(
     const folly::CIDRNetwork& prefix,
     const AdjRibEntry& adjRibEntry,
     const RejectedNetworksQuery& query) noexcept {
-  if (!isRejectedEntry(adjRibEntry)) {
+  if (!isRejectedEntry(adjRibEntry) ||
+      (query.excludeStale && adjRibEntry.isStale())) {
     return;
   }
 

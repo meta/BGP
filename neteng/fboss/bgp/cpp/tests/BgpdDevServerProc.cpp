@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <fmt/format.h>
 #include <folly/synchronization/Baton.h>
 #include <folly/system/Shell.h>
 #include <thrift/lib/cpp/util/EnumUtils.h>
@@ -211,7 +212,7 @@ bool BgpdDevServerProc::run() {
     return false;
   }
 
-  XLOGF(INFO, "BGP Dev Server has started: {}", isStarted_);
+  XLOGF(INFO, "BGP Dev Server has started: {}", isStarted_.load());
 
   folly::EventBase socketEvb;
   auto thriftClient = getThriftClient(
@@ -225,7 +226,7 @@ bool BgpdDevServerProc::run() {
 
   matchPolicyConfig(policy_, configStr);
   if (policyMatched_) {
-    XLOGF(INFO, "getPolicyConfig() matched : {}", policyMatched_);
+    XLOGF(INFO, "getPolicyConfig() matched : {}", policyMatched_.load());
   }
 
   /*
@@ -249,7 +250,7 @@ bool BgpdDevServerProc::run() {
     thriftClient->sync_validateConfig(result, config_);
   }
   validateAPIPassed_ = *result.success();
-  XLOGF(INFO, "validateConfigAndPolicy passed : {}", validateAPIPassed_);
+  XLOGF(INFO, "validateConfigAndPolicy passed : {}", validateAPIPassed_.load());
 
   return (
       isStarted_ && policySymlinkMatched && policyMatched_ &&

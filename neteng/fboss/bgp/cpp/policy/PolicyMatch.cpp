@@ -349,7 +349,7 @@ bool AsPathLenWithConfedMatch::Match(
  * @return TRUE always
  */
 bool AlwaysMatch::Match(
-    const std::shared_ptr<const BgpPath>& attrs, /* unused */
+    const std::shared_ptr<const BgpPath>& /* attrs */, /* unused */
     const std::optional<BgpPolicyMatchData>&) const noexcept {
   return true;
 }

@@ -1319,6 +1319,8 @@ TEST(StatsTest, PeerMessagesSentAllTypesCountersTest) {
       kEbbPlatform,
       kBgpcppTag,
       peerId);
+  auto sbKey = fmt::format(
+      PeerStats::kPeerSocketEgressBuffered, kEbbPlatform, kBgpcppTag, peerId);
 
   EXPECT_EQ(0, tcData->getCounter(openKey));
   EXPECT_EQ(0, tcData->getCounter(notifKey));
@@ -1326,6 +1328,7 @@ TEST(StatsTest, PeerMessagesSentAllTypesCountersTest) {
   EXPECT_EQ(0, tcData->getCounter(eorKey));
   EXPECT_EQ(0, tcData->getCounter(rrKey));
   EXPECT_EQ(0, tcData->getCounter(sfKey));
+  EXPECT_EQ(0, tcData->getCounter(sbKey));
 
   PeerStats::incrOpenMessagesSent(peerId);
   PeerStats::incrNotificationMessagesSent(peerId);
@@ -1336,6 +1339,8 @@ TEST(StatsTest, PeerMessagesSentAllTypesCountersTest) {
   PeerStats::incrEndOfRibMessagesSent(peerId);
   PeerStats::incrRouteRefreshMessagesSent(peerId);
   PeerStats::incrMessagesSentSocketFailures(peerId);
+  PeerStats::incrSocketEgressBuffered(peerId);
+  PeerStats::incrSocketEgressBuffered(peerId);
   tcData->publishStats();
 
   EXPECT_EQ(1, tcData->getCounter(openKey));
@@ -1344,6 +1349,7 @@ TEST(StatsTest, PeerMessagesSentAllTypesCountersTest) {
   EXPECT_EQ(1, tcData->getCounter(eorKey));
   EXPECT_EQ(1, tcData->getCounter(rrKey));
   EXPECT_EQ(1, tcData->getCounter(sfKey));
+  EXPECT_EQ(2, tcData->getCounter(sbKey));
 }
 
 TEST(StatsTest, PeerMessagesRecvCountersTest) {

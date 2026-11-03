@@ -877,6 +877,11 @@ constexpr auto kPeerMessagesSentRouteRefresh =
     "{}.{}.peer_{}.messagesSent.routeRefresh";
 constexpr auto kPeerMessagesSentSocketFailure =
     "{}.{}.peer_{}.messagesSent.socketFailure";
+/*
+ * Number of times the peer's AsyncSocket buffered egress data because the
+ * socket could not accept all of a write.
+ */
+constexpr auto kPeerSocketEgressBuffered = "{}.{}.peer_{}.socketEgressBuffered";
 constexpr auto kPeerMessagesRecvUpdate = "{}.{}.peer_{}.messagesRecv.update";
 constexpr auto kPeerMessagesRecvAnnouncedIpv4 =
     "{}.{}.peer_{}.messagesRecv.update.announced_ipv4";
@@ -965,6 +970,7 @@ inline constexpr auto kMessagesSentRouteRefresh = "routeRefresh"_fs;
 void incrRouteRefreshMessagesSent(const std::string& peerIdOdsStr = "");
 inline constexpr auto kMessagesSentSocketFailure = "socketFailure"_fs;
 void incrMessagesSentSocketFailures(const std::string& peerIdOdsStr = "");
+void incrSocketEgressBuffered(std::string_view peerIdOdsStr);
 
 inline constexpr auto kMessageSentAnnouncedIpv4 = "update.announced_ipv4"_fs;
 inline constexpr auto kMessageSentAnnouncedIpv6 = "update.announced_ipv6"_fs;

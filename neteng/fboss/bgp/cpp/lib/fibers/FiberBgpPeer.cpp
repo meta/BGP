@@ -588,7 +588,7 @@ void FiberBgpPeer::closeSocket() noexcept {
 }
 
 void FiberBgpPeer::sendSocketLoop() noexcept {
-  sock_.setBufferCallback();
+  sock_.setBufferCallback(peerIdOdsStr_);
   /*
    * Get and serialize BGP messages
    */

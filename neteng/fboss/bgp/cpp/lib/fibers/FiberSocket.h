@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <string_view>
+
 #include <folly/Expected.h>
 #include <folly/SocketAddress.h>
 #include <folly/String.h>
@@ -88,9 +90,16 @@ class FiberSocketBufferCallback : public folly::AsyncTransport::BufferCallback {
   uint32_t getTotalBufferedEvents() const;
   uint64_t getLastBufferedTimeMs() const;
 
+  void setPeerIdOdsStr(std::string_view peerIdOdsStr);
+
  private:
   uint32_t totalBufferedEvents_{0};
   uint64_t lastBufferedTimeMs_{0};
+  /*
+   * Per-peer ODS counter key component; empty means no per-peer counter.
+   * Non-owning: the referenced string must outlive the socket.
+   */
+  std::string_view peerIdOdsStr_;
 };
 
 /*
@@ -209,7 +218,7 @@ class FiberSocket {
   folly::SocketAddress getLocalAddress() const noexcept;
   folly::SocketAddress getPeerAddress() const noexcept;
 
-  void setBufferCallback() noexcept;
+  void setBufferCallback(std::string_view peerIdOdsStr = {}) noexcept;
 
   // get buffer statistics
   uint32_t getTotalAsyncSocketBufferedEvents() const noexcept;

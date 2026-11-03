@@ -28,6 +28,7 @@
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberServerSocket.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberSocket.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/Utils.h"
+#include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
 
 using namespace facebook::nettools::bgplib;
 using namespace folly::fibers;
@@ -217,7 +218,8 @@ TEST_F(FiberSocketFixture, BufferCallbackTracksEvents) {
     auto fs0 = std::make_shared<FiberSocket>(as0, &evb);
     auto fs1 = std::make_shared<FiberSocket>(as1, &evb);
 
-    fs0->setBufferCallback();
+    const std::string peerIdOdsStr = "fiber-socket-test-peer";
+    fs0->setBufferCallback(peerIdOdsStr);
 
     /* Start writer fiber that will block on FiberSocket::write().
      * With a 64-byte buffer and 1MB write, this will cause partial writes
@@ -251,6 +253,17 @@ TEST_F(FiberSocketFixture, BufferCallbackTracksEvents) {
     auto bufferedEvents = fs0->getTotalAsyncSocketBufferedEvents();
     ASSERT_GT(bufferedEvents, 0u);
 
+    /* Verify the per-peer ODS counter matches the socket's own count */
+    facebook::fb303::ThreadCachedServiceData::get()->publishStats();
+    EXPECT_EQ(
+        static_cast<int64_t>(bufferedEvents),
+        facebook::fb303::ThreadCachedServiceData::get()->getCounter(
+            fmt::format(
+                facebook::bgp::PeerStats::kPeerSocketEgressBuffered,
+                facebook::bgp::kEbbPlatform,
+                facebook::bgp::kBgpcppTag,
+                peerIdOdsStr)));
+
     /* Verify timestamp is reasonable */
     auto lastBufferedTime = fs0->getLastSocketBufferedTimeMs();
     EXPECT_GT(lastBufferedTime, 0u);
@@ -269,6 +282,78 @@ TEST_F(FiberSocketFixture, BufferCallbackTracksEvents) {
 
     fs0->close();
     fs1->close();
+  });
+
+  evb.loop();
+}
+
+/*
+ * The buffer callback holds a non-owning view of the peer ID. Destroying the
+ * FiberSocket must detach the callback, so freeing the peer ID afterwards is
+ * safe even though the underlying AsyncSocket keeps buffering writes. Under
+ * ASAN, a dangling callback or peer ID view is reported as heap-use-after-free.
+ */
+TEST_F(FiberSocketFixture, BufferCallbackSafeAfterSocketAndPeerIdFreed) {
+  manager->addTask([this]() mutable {
+    folly::SocketPair sp;
+    auto fd0 = sp.extractFD0();
+    auto fd1 = sp.extractFD1();
+
+    auto as0 = folly::to_shared_ptr(
+        folly::AsyncSocket::newSocket(&evb, folly::NetworkSocket::fromFd(fd0)));
+    auto as1 = folly::to_shared_ptr(
+        folly::AsyncSocket::newSocket(&evb, folly::NetworkSocket::fromFd(fd1)));
+
+    int bufSize = 64;
+    as0->setSockOpt(SOL_SOCKET, SO_SNDBUF, &bufSize);
+    as1->setSockOpt(SOL_SOCKET, SO_RCVBUF, &bufSize);
+
+    /* Longer than the small-string buffer so the peer ID is heap allocated */
+    const std::string peerIdCopy = "fiber-socket-freed-peer-id-heap-allocated";
+    auto peerIdOdsStr = std::make_unique<std::string>(peerIdCopy);
+
+    auto fs0 = std::make_unique<FiberSocket>(as0, &evb);
+    fs0->setBufferCallback(*peerIdOdsStr);
+    fs0.reset();
+    peerIdOdsStr.reset();
+
+    /* Drive partial writes on the same AsyncSocket after both are freed */
+    auto writer = std::make_shared<FiberSocket>(as0, &evb);
+    auto reader = std::make_shared<FiberSocket>(as1, &evb);
+
+    auto writeFuture = manager->addTaskFuture([writer]() mutable {
+      auto result = writer->write(
+          folly::IOBuf::copyBuffer(std::string(kLargeBlockSize, 'x')));
+      return result.hasValue() ? result.value() : 0;
+    });
+
+    auto readFuture = manager->addTaskFuture([reader]() mutable {
+      size_t totalRead = 0;
+      while (totalRead < kLargeBlockSize) {
+        auto result = reader->read(kBlockSize);
+        if (result.hasError()) {
+          break;
+        }
+        totalRead += result.value()->length();
+      }
+      return totalRead;
+    });
+
+    EXPECT_EQ(kLargeBlockSize, std::move(writeFuture).get());
+    EXPECT_EQ(kLargeBlockSize, std::move(readFuture).get());
+
+    /* The detached callback never counted the writes for the freed peer */
+    facebook::fb303::ThreadCachedServiceData::get()->publishStats();
+    EXPECT_FALSE(
+        facebook::fb303::ThreadCachedServiceData::get()->hasCounter(
+            fmt::format(
+                facebook::bgp::PeerStats::kPeerSocketEgressBuffered,
+                facebook::bgp::kEbbPlatform,
+                facebook::bgp::kBgpcppTag,
+                peerIdCopy)));
+
+    writer->close();
+    reader->close();
   });
 
   evb.loop();

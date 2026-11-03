@@ -1200,6 +1200,8 @@ void forEachPeerCounterKey(const std::string& peerIdOdsStr, Fn&& fn) {
   fn(fmt::format(
       kPeerMessagesSentSocketFailure, kEbbPlatform, kBgpcppTag, peerIdOdsStr));
   fn(fmt::format(
+      kPeerSocketEgressBuffered, kEbbPlatform, kBgpcppTag, peerIdOdsStr));
+  fn(fmt::format(
       kPeerMessagesRecvUpdate, kEbbPlatform, kBgpcppTag, peerIdOdsStr));
   fn(fmt::format(
       kPeerMessagesRecvAnnouncedIpv4, kEbbPlatform, kBgpcppTag, peerIdOdsStr));
@@ -1244,6 +1246,8 @@ void forEachPeerEgressMessageKey(const std::string& peerIdOdsStr, Fn&& fn) {
       kPeerMessagesSentRouteRefresh, kEbbPlatform, kBgpcppTag, peerIdOdsStr));
   fn(fmt::format(
       kPeerMessagesSentSocketFailure, kEbbPlatform, kBgpcppTag, peerIdOdsStr));
+  fn(fmt::format(
+      kPeerSocketEgressBuffered, kEbbPlatform, kBgpcppTag, peerIdOdsStr));
 }
 
 /*
@@ -1542,6 +1546,11 @@ void incrMessagesSentSocketFailures(const std::string& peerIdOdsStr) {
           kEbbPlatform,
           kBgpcppTag,
           peerIdOdsStr));
+}
+void incrSocketEgressBuffered(std::string_view peerIdOdsStr) {
+  fb303::ThreadCachedServiceData::get()->incrementCounter(
+      fmt::format(
+          kPeerSocketEgressBuffered, kEbbPlatform, kBgpcppTag, peerIdOdsStr));
 }
 void incrMessageSentAnnouncedIpv4(const std::string& peerIdOdsStr) {
   STATS_messagesSent.add(1, kMessageSentAnnouncedIpv4);

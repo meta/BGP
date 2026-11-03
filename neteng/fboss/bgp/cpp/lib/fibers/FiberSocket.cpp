@@ -21,6 +21,7 @@
 #include <folly/logging/xlog.h>
 
 #include "neteng/fboss/bgp/cpp/lib/fibers/Utils.h"
+#include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
 
 using folly::fibers::await;
 using folly::fibers::Promise;
@@ -217,6 +218,13 @@ namespace bgplib {
 void FiberSocketBufferCallback::onEgressBuffered() {
   totalBufferedEvents_++;
   lastBufferedTimeMs_ = getCurrentTimeMs();
+  if (!peerIdOdsStr_.empty()) {
+    facebook::bgp::PeerStats::incrSocketEgressBuffered(peerIdOdsStr_);
+  }
+}
+
+void FiberSocketBufferCallback::setPeerIdOdsStr(std::string_view peerIdOdsStr) {
+  peerIdOdsStr_ = peerIdOdsStr;
 }
 
 void FiberSocketBufferCallback::onEgressBufferCleared() {}
@@ -494,7 +502,8 @@ folly::SocketAddress FiberSocket::getPeerAddress() const noexcept {
   return peerAddress_;
 }
 
-void FiberSocket::setBufferCallback() noexcept {
+void FiberSocket::setBufferCallback(std::string_view peerIdOdsStr) noexcept {
+  bufferCallback_.setPeerIdOdsStr(peerIdOdsStr);
   if (socket_) {
     socket_->setBufferCallback(&bufferCallback_);
   }

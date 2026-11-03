@@ -89,6 +89,12 @@ struct UpdateGroupConfig {
   bool enableSerializeGroupPdu{false};
   bool allowSlowPeerDetach{false};
   std::chrono::milliseconds slowPeerTimeThreshold{50000};
+  /*
+   * C++-only (not in the thrift UpdateGroupConfig): gates block-count
+   * (frequency) slow peer detection. When false, the two slowPeerBlockCount
+   * fields are ignored and only duration-based detection runs.
+   */
+  bool enableSlowPeerBlockCountDetection{false};
   uint32_t slowPeerBlockCountThreshold{10};
   std::chrono::milliseconds slowPeerBlockCountWindow{1000};
 };

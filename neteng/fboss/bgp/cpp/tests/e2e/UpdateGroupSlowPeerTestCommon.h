@@ -138,6 +138,7 @@ class SlowPeerTestBase : public UpdateGroupDistributionTestBase {
     auto group = getUpdateGroupForPeer(peerAddr);
     ASSERT_NE(group, nullptr) << "Peer has no update group";
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = true;
     cfg.slowPeerTimeThreshold = timeThreshold;
     cfg.slowPeerBlockCountThreshold = countThreshold;

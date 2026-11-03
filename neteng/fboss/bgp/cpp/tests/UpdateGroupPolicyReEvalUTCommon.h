@@ -537,6 +537,7 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
 
       auto group = adjRib->getUpdateGroup();
       UpdateGroupConfig cfg;
+      cfg.enableSlowPeerBlockCountDetection = true;
       cfg.allowSlowPeerDetach = true;
       cfg.slowPeerTimeThreshold = kSlowPeerTimeNever;
       cfg.slowPeerBlockCountThreshold = kSlowPeerBlockCountNever;
@@ -586,6 +587,7 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
       }
 
       UpdateGroupConfig cfg;
+      cfg.enableSlowPeerBlockCountDetection = true;
       cfg.allowSlowPeerDetach = true;
       if (useBlockFrequency) {
         cfg.slowPeerTimeThreshold = kSlowPeerTimeLenient;
@@ -661,6 +663,7 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
     evb.runInEventBaseThreadAndWait([&]() {
       auto group = ctx.adjRibs.at(targetPeerId)->getUpdateGroup();
       UpdateGroupConfig cfg;
+      cfg.enableSlowPeerBlockCountDetection = true;
       cfg.allowSlowPeerDetach = true;
       cfg.slowPeerTimeThreshold = kSlowPeerTimeNever;
       cfg.slowPeerBlockCountThreshold = kSlowPeerBlockCountImmediate;
@@ -773,6 +776,7 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
     evb.runInEventBaseThreadAndWait([&]() {
       auto group = ctx.adjRibs.at(targetPeerId)->getUpdateGroup();
       UpdateGroupConfig cfg;
+      cfg.enableSlowPeerBlockCountDetection = true;
       cfg.allowSlowPeerDetach = true;
       cfg.slowPeerTimeThreshold = kSlowPeerTimeNever;
       cfg.slowPeerBlockCountThreshold = kSlowPeerBlockCountImmediate;

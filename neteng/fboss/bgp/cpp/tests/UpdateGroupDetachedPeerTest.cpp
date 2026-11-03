@@ -308,6 +308,7 @@ class UpdateGroupDetachedPeerTest : public ::testing::Test {
     BgpStats::initCounters();
     evb_ = std::make_unique<folly::EventBase>();
     UpdateGroupConfig ugConfig;
+    ugConfig.enableSlowPeerBlockCountDetection = true;
     ugConfig.allowSlowPeerDetach = true;
     group_ = std::make_shared<AdjRibOutGroup>(
         *evb_,
@@ -3348,6 +3349,7 @@ class UpdateGroupDetachLifecycleTest : public ::testing::Test {
     folly::SingletonVault::singleton()->registrationComplete();
     evb_ = std::make_unique<folly::EventBase>();
     UpdateGroupConfig ugConfig;
+    ugConfig.enableSlowPeerBlockCountDetection = true;
     ugConfig.allowSlowPeerDetach = true;
     UpdateGroupKey ugKey;
     ugKey.afiIpv4Negotiated = true;
@@ -5192,6 +5194,7 @@ TEST_F(UpdateGroupDetachedPeerTest, RibWalkDetachCopiesEgressEoRsPending) {
   UpdateGroupKey groupKey;
   groupKey.afiIpv4Negotiated = true;
   UpdateGroupConfig ugConfig;
+  ugConfig.enableSlowPeerBlockCountDetection = true;
   ugConfig.allowSlowPeerDetach = true;
   group_ = std::make_shared<AdjRibOutGroup>(
       *evb_,
@@ -5207,6 +5210,7 @@ TEST_F(UpdateGroupDetachedPeerTest, RibWalkDetachCopiesEgressEoRsPending) {
   /* Set slow peer threshold to 1 so first block triggers detach */
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = true;
     cfg.slowPeerTimeThreshold = std::chrono::milliseconds(50000);
     cfg.slowPeerBlockCountThreshold = 1;

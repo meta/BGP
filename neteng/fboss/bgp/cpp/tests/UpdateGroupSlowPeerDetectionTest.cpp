@@ -49,6 +49,7 @@ class UpdateGroupSlowPeerDetectionTest : public ::testing::Test {
     BgpStats::initCounters();
     evb_ = std::make_unique<folly::EventBase>();
     UpdateGroupConfig ugConfig;
+    ugConfig.enableSlowPeerBlockCountDetection = true;
     ugConfig.allowSlowPeerDetach = true;
     group_ = std::make_shared<AdjRibOutGroup>(
         *evb_,
@@ -207,6 +208,7 @@ TEST_F(
   // Set a short duration threshold so the timer fires quickly
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = true;
     cfg.slowPeerTimeThreshold = std::chrono::milliseconds(10);
     cfg.slowPeerBlockCountThreshold = 100; // high so frequency doesn't trigger
@@ -236,6 +238,35 @@ TEST_F(
   EXPECT_EQ(slowPeersBefore + 1, getNumSlowPeersCounter());
 }
 
+/*
+ * With enableSlowPeerBlockCountDetection left at its default (false), blocks
+ * past the count threshold neither detect nor detach the peer, and its block
+ * info is not populated.
+ */
+TEST_F(UpdateGroupSlowPeerDetectionTest, BlockCountDetectionDisabledByDefault) {
+  auto adjRib0 = createAndRegisterPeer(0);
+  auto adjRib1 = createAndRegisterPeer(1);
+  auto slowPeersBefore = getNumSlowPeersCounter();
+
+  {
+    UpdateGroupConfig cfg;
+    cfg.allowSlowPeerDetach = true;
+    cfg.slowPeerTimeThreshold = std::chrono::milliseconds(300000);
+    cfg.slowPeerBlockCountThreshold = 1;
+    cfg.slowPeerBlockCountWindow = std::chrono::milliseconds(300000);
+    group_->setUpdateGroupConfigForTesting(cfg);
+  }
+
+  group_->markPeerBlocked(adjRib0);
+  group_->markPeerUnblocked(adjRib0);
+  group_->markPeerBlocked(adjRib0);
+
+  EXPECT_EQ(adjRib0->getPeerState(), PeerUpdateState::JOINED_BLOCKED);
+  EXPECT_FALSE(group_->getDetachedPeers().contains(adjRib0));
+  EXPECT_EQ(0, adjRib0->getPeerBlockInfo().blockCount);
+  EXPECT_EQ(slowPeersBefore, getNumSlowPeersCounter());
+}
+
 TEST_F(
     UpdateGroupSlowPeerDetectionTest,
     FrequencyDetectionTriggersSlowPeerProcedure) {
@@ -245,6 +276,7 @@ TEST_F(
   // Set frequency threshold to 3 blocks within the window
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = true;
     cfg.slowPeerTimeThreshold =
         std::chrono::milliseconds(300000); // high so duration doesn't trigger
@@ -281,6 +313,7 @@ TEST_F(
   // Set a longer duration threshold
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = true;
     cfg.slowPeerTimeThreshold = std::chrono::milliseconds(500);
     cfg.slowPeerBlockCountThreshold = 100; // high so frequency doesn't trigger
@@ -334,6 +367,7 @@ TEST_F(
    */
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = true;
     cfg.slowPeerTimeThreshold = std::chrono::milliseconds(100);
     cfg.slowPeerBlockCountThreshold = 4;
@@ -427,6 +461,7 @@ TEST_F(UpdateGroupSlowPeerDetectionTest, MultiPeerDetectionIndependent) {
   // Set frequency threshold to 3
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = true;
     cfg.slowPeerTimeThreshold = std::chrono::milliseconds(300000);
     cfg.slowPeerBlockCountThreshold = 3;
@@ -502,6 +537,7 @@ TEST_F(
   // Disable slow peer detachment and set frequency threshold to 2
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = false;
     cfg.slowPeerTimeThreshold = std::chrono::milliseconds(300000);
     cfg.slowPeerBlockCountThreshold = 2;
@@ -573,6 +609,7 @@ TEST_F(
   // Disable detach, set frequency threshold to 2 blocks
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = false;
     cfg.slowPeerTimeThreshold = std::chrono::milliseconds(300000);
     cfg.slowPeerBlockCountThreshold = 2;
@@ -594,6 +631,7 @@ TEST_F(
    */
   {
     UpdateGroupConfig cfg;
+    cfg.enableSlowPeerBlockCountDetection = true;
     cfg.allowSlowPeerDetach = true;
     cfg.slowPeerTimeThreshold = std::chrono::milliseconds(300000);
     cfg.slowPeerBlockCountThreshold = 2;
@@ -615,6 +653,7 @@ TEST_F(
     ConstructorConfigurableThresholdsApplied) {
   // Create a new group with custom thresholds via constructor
   UpdateGroupConfig customConfig;
+  customConfig.enableSlowPeerBlockCountDetection = true;
   customConfig.allowSlowPeerDetach = true;
   customConfig.slowPeerTimeThreshold = std::chrono::milliseconds{100};
   customConfig.slowPeerBlockCountThreshold = 3;

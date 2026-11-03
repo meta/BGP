@@ -3603,7 +3603,8 @@ void AdjRibOutGroup::splitToNewGroup(
 
 /*
  * Mark a peer as blocked due to TCP backpressure.
- * Sets bitmap bit, checks frequency threshold, schedules duration timer.
+ * Sets bitmap bit, checks frequency threshold if enabled, schedules duration
+ * timer.
  */
 void AdjRibOutGroup::markPeerBlocked(
     const std::shared_ptr<AdjRib>& adjRib) noexcept {
@@ -3622,30 +3623,32 @@ void AdjRibOutGroup::markPeerBlocked(
       PeerUpdateState::JOINED_BLOCKED);
   adjRib->setPeerState(PeerUpdateState::JOINED_BLOCKED);
 
-  // Frequency-based detection: fixed window with counter reset
-  auto now = std::chrono::steady_clock::now();
-  auto& info = adjRib->getPeerBlockInfo();
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      now - info.windowStart);
-  if (elapsed >= updateGroupConfig_.slowPeerBlockCountWindow) {
-    // Window expired, reset counter
-    info.windowStart = now;
-    info.blockCount = 1;
-  } else {
-    info.blockCount++;
-  }
+  if (updateGroupConfig_.enableSlowPeerBlockCountDetection) {
+    // Frequency-based detection: fixed window with counter reset
+    auto now = std::chrono::steady_clock::now();
+    auto& info = adjRib->getPeerBlockInfo();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - info.windowStart);
+    if (elapsed >= updateGroupConfig_.slowPeerBlockCountWindow) {
+      // Window expired, reset counter
+      info.windowStart = now;
+      info.blockCount = 1;
+    } else {
+      info.blockCount++;
+    }
 
-  if (info.blockCount >= updateGroupConfig_.slowPeerBlockCountThreshold) {
-    XLOGF(
-        INFO,
-        "Group {}: Peer {} at bit {} exceeded block frequency threshold "
-        "({} blocks in window)",
-        groupDescriptor_,
-        adjRib->getPeerName(),
-        bitPos,
-        info.blockCount);
-    detachSlowPeer(adjRib);
-    return;
+    if (info.blockCount >= updateGroupConfig_.slowPeerBlockCountThreshold) {
+      XLOGF(
+          INFO,
+          "Group {}: Peer {} at bit {} exceeded block frequency threshold "
+          "({} blocks in window)",
+          groupDescriptor_,
+          adjRib->getPeerName(),
+          bitPos,
+          info.blockCount);
+      detachSlowPeer(adjRib);
+      return;
+    }
   }
 
   // Duration-based detection: schedule timer on AdjRib

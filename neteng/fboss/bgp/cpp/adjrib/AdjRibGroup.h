@@ -900,7 +900,8 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
 
   /*
    * Mark a peer as blocked due to TCP backpressure.
-   * Sets bitmap bit, checks frequency threshold, schedules duration timer.
+   * Sets bitmap bit, checks frequency threshold if enabled, schedules duration
+   * timer.
    * @param adjRib - The peer that just became blocked
    */
   void markPeerBlocked(const std::shared_ptr<AdjRib>& adjRib) noexcept;

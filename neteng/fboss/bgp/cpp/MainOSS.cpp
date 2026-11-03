@@ -36,6 +36,7 @@
 #include "neteng/fboss/bgp/cpp/config/Config.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigManager.h"
 #include "neteng/fboss/bgp/cpp/lib/coro/BackPressuredQueue.h"
+#include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopCache.h"
 #include "neteng/fboss/bgp/cpp/peer/NeighborWatcher.h"
 #include "neteng/fboss/bgp/cpp/peer/PeerManagerBase.h"
 #include "neteng/fboss/bgp/cpp/peer/SessionManager.h"
@@ -231,19 +232,49 @@ int main(int argc, char** argv) {
   BgpStats::logInitializationEvent(
       "Main", BgpInitializationEvent::AGENT_CONFIGURED);
 
+  // Start config before creating the watchers so their optional next-hop
+  // tracking dependencies can be derived from the configured global settings.
+  std::shared_ptr<Config> config = std::make_shared<Config>(FLAGS_config);
+
+  std::shared_ptr<NexthopCache> nexthopCache;
+  std::shared_ptr<fboss::fsdb::FsdbCowStateSubManager> sharedFsdbSubMgr;
+  if (config->getBgpGlobalConfig()->enableNextHopTracking) {
+    nexthopCache = std::make_shared<NexthopCache>();
+    /*
+     * FsdbFibWatcher and NeighborWatcher share one COW subscription so that
+     * interface neighbor updates and FIB host-route updates are processed by
+     * the same event stream. This is required before enabling next-hop
+     * tracking; without it the RIB receives a null cache and aborts on the
+     * first route update.
+     */
+    sharedFsdbSubMgr =
+        std::make_shared<fboss::fsdb::FsdbCowStateSubManager>(
+            fboss::fsdb::SubscriptionOptions("bgpd"),
+            fboss::utils::ConnectionOptions("::1", FLAGS_fsdbPort));
+  }
+
   auto neighborEventQ =
       std::make_optional<MonitoredMPMCQueue<NeighborWatcherMessage>>();
   facebook::nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage> ribInQ{
       facebook::nettools::bgplib::kMaxIngressQueueSize};
   MonitoredMPMCQueue<RibOutMessage> ribOutQ;
 
-  auto neighborWatcher =
-      std::make_shared<NeighborWatcher>(*neighborEventQ, ribInQ);
+  auto neighborWatcher = std::make_shared<NeighborWatcher>(
+      *neighborEventQ,
+      ribInQ,
+      false, /* enableDsfFastTearDown */
+      sharedFsdbSubMgr);
+  if (nexthopCache) {
+    neighborWatcher->learnConnectedNeighbors(nexthopCache, ribInQ);
+    std::vector<folly::IPAddress> peerAddresses;
+    peerAddresses.reserve(config->getPeerToConfig().size());
+    for (const auto& [peerAddress, _] : config->getPeerToConfig()) {
+      peerAddresses.push_back(peerAddress);
+    }
+    neighborWatcher->startFibWatcher(nexthopCache, ribInQ, peerAddresses);
+  }
   auto neighborWatcherThread = neighborWatcher->runInThread();
   neighborWatcher->subscribe();
-
-  // Start config without route watcher
-  std::shared_ptr<Config> config = std::make_shared<Config>(FLAGS_config);
 
   Watchdog watchdog(config);
   auto watchdogThread = watchdog.runInThread();
@@ -282,9 +313,10 @@ int main(int argc, char** argv) {
       ribOutQ, /* write to ribOutQ */
       FLAGS_platform,
       nullptr, /* no FSDB syncer for OSS */
-      nullptr, /* no nexthopCache for OSS */
+      nexthopCache,
       FLAGS_agent_thrift_port,
-      FLAGS_agent_thrift_recv_timeout_ms);
+      FLAGS_agent_thrift_recv_timeout_ms,
+      neighborWatcher);
   watchdog.monitorModule(rib.getModuleName(), rib);
   auto ribThread = rib.runInThread();
 

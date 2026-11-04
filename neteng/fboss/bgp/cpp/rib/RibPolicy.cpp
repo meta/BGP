@@ -492,6 +492,34 @@ bool RouteAttributeActions::updateLinkBandwidth(RibEntry& route) const {
   return true;
 }
 
+std::optional<RouteAttributeActions::MatchedWeight>
+RouteAttributeActions::findMatchingAction(
+    const std::shared_ptr<RouteInfo>& path) const {
+  // Iterate actions in index order, first match wins
+  for (size_t idx = 0; idx < nextHopWeightActions_.size(); ++idx) {
+    auto [isMatch, weight] = nextHopWeightActions_[idx]->Match(path);
+    if (isMatch) {
+      return MatchedWeight{idx, static_cast<int32_t>(weight)};
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<RouteAttributeActions::MatchedWeight>
+RouteAttributeActions::findMatchingActionCached(
+    const std::shared_ptr<RouteInfo>& path) const {
+  const auto& key = path->attrs;
+  auto it = weightIndex_.find(key);
+  if (it != weightIndex_.end()) {
+    RibStats::STATS_raPolicyWeightIndexHit.add(1);
+    return it->second;
+  }
+  RibStats::STATS_raPolicyWeightIndexMiss.add(1);
+  auto matched = findMatchingAction(path);
+  weightIndex_.emplace(key, matched);
+  return matched;
+}
+
 /**
  * Evaluate and apply the next-hop weights for this prefix.
  *
@@ -529,30 +557,6 @@ bool RouteAttributeActions::updateUcmpWeight(RibEntry& route) const {
     }
   }
 
-  // Helper: look up (actionIdx, weight) for a path in the weight index
-  auto lookupWeight = [this](const std::shared_ptr<RouteInfo>& path)
-      -> std::optional<std::pair<size_t, int32_t>> {
-    const auto& key = path->attrs;
-    auto it = weightIndex_.find(key);
-    if (it != weightIndex_.end()) {
-      RibStats::STATS_raPolicyWeightIndexHit.add(1);
-      return it->second;
-    }
-    RibStats::STATS_raPolicyWeightIndexMiss.add(1);
-    // Compute: iterate actions in index order, first match wins
-    for (size_t idx = 0; idx < nextHopWeightActions_.size(); ++idx) {
-      auto [isMatch, weight] = nextHopWeightActions_[idx]->Match(path);
-      if (isMatch) {
-        auto result = std::make_optional(std::make_pair(idx, weight));
-        weightIndex_.emplace(key, result);
-        return result;
-      }
-    }
-    // No action matched
-    weightIndex_.emplace(key, std::nullopt);
-    return std::nullopt;
-  };
-
   // Build nexthop -> (actionIdx, weight) map, enforcing "lowest actionIdx wins"
   folly::F14NodeMap<
       folly::IPAddress /* nexthop */,
@@ -560,7 +564,7 @@ bool RouteAttributeActions::updateUcmpWeight(RibEntry& route) const {
       policyNexthopAction;
 
   for (const auto& path : selectedPaths) {
-    auto weightResult = lookupWeight(path);
+    auto weightResult = findMatchingActionCached(path);
     if (!weightResult.has_value()) {
       continue;
     }

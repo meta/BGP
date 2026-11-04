@@ -440,6 +440,15 @@ class RouteAttributeActions {
   rib_policy::TRouteAttributeActions toThrift() const;
 
   /**
+   * The weight action that matched a path: its index in the action list and
+   * its weight.
+   */
+  struct MatchedWeight {
+    size_t actionIndex{0};
+    int32_t weight{0};
+  };
+
+  /**
    * Update route attributes.
    *
    * @returns boolean indicating if route is updated or not.
@@ -451,6 +460,23 @@ class RouteAttributeActions {
   }
 
  private:
+  /**
+   * Scan the actions in order and find the first one that matches `path`.
+   * Returns its index and weight, or std::nullopt if none matches. Called on
+   * a cache miss by findMatchingActionCached().
+   */
+  std::optional<MatchedWeight> findMatchingAction(
+      const std::shared_ptr<RouteInfo>& path) const;
+
+  /**
+   * Checks the action cache (weightIndex_) for the matching action for this
+   * path's attributes: returns it if present, otherwise calls
+   * findMatchingAction() and stores its result. Called by updateUcmpWeight()
+   * for each selected path.
+   */
+  std::optional<MatchedWeight> findMatchingActionCached(
+      const std::shared_ptr<RouteInfo>& path) const;
+
   /**
    * Update the link bandwidth of the route.
    *
@@ -502,14 +528,13 @@ class RouteAttributeActions {
   std::optional<bool> divideWeightsByMatchingPathCount_;
 
   /*
-   * Inverted index: path attrs -> (first matching action index, weight) or
+   * Inverted index: path attrs -> first matching action (MatchedWeight) or
    * nullopt if no action matches. Keyed on interned BgpPath for dedup across
-   * prefixes. Mutable for lazy population in updateUcmpWeight.
+   * prefixes. Mutable for lazy population in findMatchingActionCached().
    */
-  mutable folly::F14FastMap<
-      std::shared_ptr<const BgpPath>,
-      std::optional<std::pair<size_t, int32_t>>>
-      weightIndex_;
+  mutable folly::
+      F14FastMap<std::shared_ptr<const BgpPath>, std::optional<MatchedWeight>>
+          weightIndex_;
 
   // Grant tests access to private and protected members of this class.
 #ifdef RouteAttributeUcmpAction_TEST_FRIENDS

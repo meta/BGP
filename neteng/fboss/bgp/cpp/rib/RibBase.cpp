@@ -1794,6 +1794,7 @@ std::pair<bool, bool> RibBase::selectBestPath(
 
   if (routes.empty()) {
     entry.bestpath_ = nullptr;
+    entry.multipaths_ = {};
     entry.installToFib_ = true;
     entry.weightedNexthops_ = nullptr;
     return std::make_pair(

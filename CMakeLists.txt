@@ -41,7 +41,6 @@ set(
   "${CMAKE_SOURCE_DIR}"
   ${CMAKE_MODULE_PATH}
 )
-include(FBThriftCppLibrary)
 include(FBGenCMakeBuildInfo)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/BgpLibrary.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/BgpCommon.cmake)

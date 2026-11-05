@@ -33,7 +33,7 @@ CMAKE_FILES = (
 # [shipit.pathmap] in opensource/fbcode_builder/manifests/bgp: each fbsource
 # directory (relative to fbcode/) maps to a prefix in the OSS tree. We scan the
 # fbsource side and re-prefix to the OSS path so the comparison matches the
-# add_fbthrift_cpp_library() arguments.
+# thrift_add_library() arguments.
 THRIFT_SRC_DIRS = {
     # fbsource dir (relative to repo root)        : OSS-tree prefix
     "neteng/fboss/bgp/if": "neteng/fboss/bgp/if",
@@ -140,7 +140,7 @@ def get_thrift_files(repo_root: Path) -> set[str]:
 
 
 def get_cmake_thrift_targets(repo_root: Path) -> set[str]:
-    pattern = r"add_fbthrift_cpp_library\s*\(\s*\w+\s*\n\s*(\S+\.thrift)"
+    pattern = r"thrift_add_library\s*\(\s*\w+\s*\n\s*(\S+\.thrift)"
     thrift_files = set()
     for content in _get_cmake_contents(repo_root):
         for match in re.finditer(pattern, content):

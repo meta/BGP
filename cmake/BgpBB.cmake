@@ -57,7 +57,7 @@ target_link_libraries(bgp_netlink_wrapper
   bgp_nexthop
   bgp_stats_base
   bgp_watchdog
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${BGP_BASE_LIBS}
   ${OPENR_LIBS}
   ${RE2}
@@ -73,7 +73,7 @@ target_link_libraries(bgp_fib_ebb
   bgp_fib_out
   bgp_lib_core
   bgp_stats_base
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${BGP_BASE_LIBS}
   ${OPENR_LIBS}
 )
@@ -136,7 +136,7 @@ add_library(bgp_main_util_bb
 )
 
 target_link_libraries(bgp_main_util_bb
-  FBThrift::thriftcpp2
+  thrift::rpc
   bgp_config_cpp2
   bgp_stats_base
   ${BGP_BASE_LIBS}
@@ -166,7 +166,7 @@ target_link_libraries(bgp_bb_bin
   build_info
   "$<LINK_GROUP:RESCAN,${BGP_BB_LINK_GROUP_LIBS_CSV}>"
   ${BGP_BASE_LIBS}
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${FOLLY_EXCEPTION_TRACER}
 )
 
@@ -185,7 +185,7 @@ if (BUILD_TESTING)
   )
   add_dependencies(bgp_platform_constant_bb_test bgp_structs_cpp2)
   target_link_libraries(bgp_platform_constant_bb_test
-    FBThrift::thriftcpp2
+    thrift::rpc
     fmt::fmt
     Folly::folly
     GTest::gtest_main

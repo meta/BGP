@@ -150,7 +150,7 @@ target_link_libraries(bgp_fsdb_fib_watcher
   bgp_stats_dc
   ${BGP_THRIFT_LIBS}
   ${BGP_BASE_LIBS}
-  FBThrift::thriftcpp2
+  thrift::rpc
 )
 
 add_library(bgp_fib_fboss
@@ -163,7 +163,7 @@ target_link_libraries(bgp_fib_fboss
   bgp_fib_out
   bgp_lib_core
   cfgr_fboss_common_cpp2
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${BGP_BASE_LIBS}
 )
 
@@ -179,7 +179,7 @@ target_link_libraries(bgp_canonical_rib
   bgp_rib_base
   ${BGP_THRIFT_LIBS}
   ${BGP_BASE_LIBS}
-  FBThrift::thriftcpp2
+  thrift::rpc
 )
 
 add_library(bgp_fsdb_syncer
@@ -192,7 +192,7 @@ target_link_libraries(bgp_fsdb_syncer
   fb303::fb303
   ${BGP_THRIFT_LIBS}
   ${BGP_BASE_LIBS}
-  FBThrift::thriftcpp2
+  thrift::rpc
 )
 
 add_library(bgp_rib_dc
@@ -246,7 +246,7 @@ add_library(bgp_main_util_dc
 )
 
 target_link_libraries(bgp_main_util_dc
-  FBThrift::thriftcpp2
+  thrift::rpc
   bgp_config_cpp2
   bgp_stats_base
   ${BGP_BASE_LIBS}
@@ -271,7 +271,7 @@ target_link_libraries(bgp_bin
   "$<LINK_GROUP:RESCAN,${BGP_DC_LINK_GROUP_LIBS_CSV}>"
   fb303::fb303
   ${BGP_BASE_LIBS}
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${FOLLY_EXCEPTION_TRACER}
 )
 

@@ -28,6 +28,8 @@ find_package(fizz REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Gflags REQUIRED)
 find_package(Glog REQUIRED)
+# Not find_package(thrift): fb303's package config links FBThrift::thrift-cpp
+# without finding the FBThrift package itself.
 find_package(FBThrift CONFIG REQUIRED)
 find_package(wangle REQUIRED)
 find_package(Threads REQUIRED)
@@ -113,9 +115,10 @@ add_compile_definitions(IS_OSS)
 
 set(BGP_THRIFT_LIBS)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   fb303_cpp2
   common/fb303/if/fb303.thrift
+  LANGUAGE cpp2
   SERVICES
     FacebookService
   OPTIONS
@@ -125,57 +128,64 @@ set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} fb303_cpp2)
 
 # Layer 0 — no inter-project dependencies
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   network_address_cpp2
   common/network/if/Address.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} network_address_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   cfgr_fboss_common_cpp2
   configerator/structs/neteng/fboss/thrift/common.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} cfgr_fboss_common_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   routing_policy_cpp2
   configerator/structs/neteng/bgp_policy/thrift/routing_policy.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} routing_policy_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   nsf_policy_cpp2
   configerator/structs/neteng/bgp_policy/thrift/nsf_policy.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} nsf_policy_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_attr_cpp2
   configerator/structs/neteng/fboss/bgp/if/bgp_attr.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_attr_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   netwhoami_cpp2
   configerator/structs/neteng/netwhoami/netwhoami.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} netwhoami_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_cpp2
   neteng/fboss/bgp/if/bgp.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
 )
@@ -184,9 +194,10 @@ set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_cpp2)
 # bgp_thrift.thrift includes neteng/fboss/bgp/if/policy_thrift.thrift, so the
 # OSS build needs a thrift target for policy_thrift to generate
 # policy_thrift_types.h that bgp_thrift_types.h #includes.
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_policy_thrift_cpp2
   neteng/fboss/bgp/if/policy_thrift.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
 )
@@ -194,9 +205,10 @@ set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_policy_thrift_cpp2)
 
 # Layer 1 — depends on Layer 0
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_policy_cpp2
   configerator/structs/neteng/bgp_policy/thrift/bgp_policy.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
   DEPENDS
@@ -205,9 +217,10 @@ add_fbthrift_cpp_library(
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_policy_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_structs_cpp2
   neteng/fboss/bgp/if/BgpStructs.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
   DEPENDS
@@ -217,9 +230,10 @@ set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_structs_cpp2)
 
 # Layer 2 — depends on Layer 0+1
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   rib_policy_cpp2
   configerator/structs/neteng/bgp_policy/thrift/rib_policy.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
   DEPENDS
@@ -230,20 +244,23 @@ add_fbthrift_cpp_library(
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} rib_policy_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_route_types_cpp2
   neteng/fboss/bgp/if/bgp_route_types.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
   DEPENDS
     bgp_attr_cpp2
     rib_policy_cpp2
+    cfgr_fboss_common_cpp2
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_route_types_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_config_cpp2
   configerator/structs/neteng/fboss/bgp/bgp_config.thrift
+  LANGUAGE cpp2
   OPTIONS
     json
   DEPENDS
@@ -254,9 +271,10 @@ set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_config_cpp2)
 
 # Layer 3 — service thrift files
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_thrift_cpp2
   neteng/fboss/bgp/if/bgp_thrift.thrift
+  LANGUAGE cpp2
   SERVICES
     TBgpService
   OPTIONS
@@ -267,19 +285,22 @@ add_fbthrift_cpp_library(
     bgp_policy_thrift_cpp2
     bgp_config_cpp2
     bgp_attr_cpp2
+    bgp_route_types_cpp2
     fb303_cpp2
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_thrift_cpp2)
 
-add_fbthrift_cpp_library(
+thrift_add_library(
   bgp_stream_cpp2
   neteng/fboss/bgp/if/bgp_stream.thrift
+  LANGUAGE cpp2
   SERVICES
     TBgpServiceStream
   OPTIONS
     json
   DEPENDS
     bgp_structs_cpp2
+    network_address_cpp2
     fb303_cpp2
 )
 set(BGP_THRIFT_LIBS ${BGP_THRIFT_LIBS} bgp_stream_cpp2)
@@ -484,7 +505,7 @@ target_link_libraries(bgp_nexthop
   bgp_lib_core
   bgp_lib_transport
   bgp_watchdog
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${OPENR_LIBS}
 )
 
@@ -519,7 +540,7 @@ target_link_libraries(bgp_fib_out_thrift
   bgp_fib_out
   bgp_ip_prefix_utils
   bgp_route_types_cpp2
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${BGP_BASE_LIBS}
 )
 
@@ -557,7 +578,7 @@ target_link_libraries(bgp_rib_base
   bgp_routelib
   bgp_stats_base
   bgp_watchdog
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${OPENR_LIBS}
 )
 
@@ -609,7 +630,7 @@ target_link_libraries(bgp_peer_base
   bgp_rib_base
   bgp_stats_base
   bgp_watchdog
-  FBThrift::thriftcpp2
+  thrift::rpc
   ${OPENR_LIBS}
 )
 
@@ -637,7 +658,7 @@ target_link_libraries(bgp_service_base
   bgp_stats_base
   bgp_watchdog
   ${RE2}
-  FBThrift::thriftcpp2
+  thrift::rpc
   fb303::fb303
   ${OPENR_LIBS}
 )

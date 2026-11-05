@@ -391,6 +391,7 @@ class AdjRib : boost::noncopyable,
       switchLimitConfig_ = config->getBgpSwitchLimitConfig();
       if (auto globalConfig = config->getBgpGlobalConfig()) {
         enableUpdateGroup_ = globalConfig->enableUpdateGroup;
+        enableRibAllocatedPathId_ = globalConfig->enableRibAllocatedPathId;
         enableOptimizedGR_ = globalConfig->enableOptimizedGR;
         enableAddPathGrReconcile_ = globalConfig->enableAddPathGrReconcile;
         enableLegacyV4NlriEncoding_ = globalConfig->enableLegacyV4NlriEncoding;
@@ -2993,6 +2994,12 @@ class AdjRib : boost::noncopyable,
    * Feature flag to enable update group feature
    */
   bool enableUpdateGroup_{false};
+
+  /*
+   * Feature flag to use the path IDs allocated by Rib (pathIdToSend) for
+   * egress entries instead of PathIdGenerator's per-nexthop IDs
+   */
+  bool enableRibAllocatedPathId_{false};
 
   /**
    * Enable optimized GR (Graceful Restart) logic.

@@ -929,8 +929,7 @@ TEST_F(AdjRibOutboundFixture, VerifyUpdateAttributesWithAcceptAllPolicyTest) {
   // Create RibOutAnnouncementEntry for iBgpPeer with preAttrs1.
   auto update1 = RibOutAnnouncementEntry(
       kV4Prefix1, kPlaceholderPathID, iBgpPeer_, preAttrs1);
-  auto adjRibEntry = adjRib_->tryInsertRibOutEntry(
-      update1.prefix, update1.attrs->getNexthop(), update1.isLocalRoute());
+  auto adjRibEntry = adjRib_->tryInsertRibOutEntry(update1);
   // Apply policy on preAttrsClone.
   auto outputAttrs1 = preAttrs1->clone();
   auto postAttrs1 = adjRib_->getPostOutPolicyAttributes(
@@ -961,10 +960,7 @@ TEST_F(AdjRibOutboundFixture, VerifyUpdateAttributesWithAcceptAllPolicyTest) {
   auto update2 = RibOutAnnouncementEntry(
       kV4Prefix1, kPlaceholderPathID, iBgpPeer_, preAttrs2);
   // Expect the adjRibEntry to already exist.
-  EXPECT_EQ(
-      adjRibEntry,
-      adjRib_->tryInsertRibOutEntry(
-          update2.prefix, update2.attrs->getNexthop(), update2.isLocalRoute()));
+  EXPECT_EQ(adjRibEntry, adjRib_->tryInsertRibOutEntry(update2));
   // Apply policy on preAttrs clone.
   auto outputAttrs2 = preAttrs2->clone();
   auto postAttrs2 = adjRib_->getPostOutPolicyAttributes(
@@ -2102,8 +2098,7 @@ TEST_F(
   auto update = RibOutAnnouncementEntry(
       kV4Prefix1, kPlaceholderPathID, iBgpPeer_, preAttrs);
   update.isPartialDrain = true;
-  auto adjRibEntry = adjRib_->tryInsertRibOutEntry(
-      update.prefix, update.attrs->getNexthop(), update.isLocalRoute());
+  auto adjRibEntry = adjRib_->tryInsertRibOutEntry(update);
 
   // Mirror production sequence in AdjRib::processRibAnnouncedEntry.
   auto prePolicyAttrs = update.attrs->clone();
@@ -2155,8 +2150,7 @@ TEST_F(
     auto update =
         RibOutAnnouncementEntry(kV4Prefix1, pathId, iBgpPeer_, preAttrs);
     update.isPartialDrain = true;
-    auto adjRibEntry = adjRib_->tryInsertRibOutEntry(
-        update.prefix, update.attrs->getNexthop(), update.isLocalRoute());
+    auto adjRibEntry = adjRib_->tryInsertRibOutEntry(update);
 
     // Mirror production sequence in AdjRib::processRibAnnouncedEntry.
     auto prePolicyAttrs = update.attrs->clone();
@@ -2314,8 +2308,7 @@ TEST_F(
 
   auto update = RibOutAnnouncementEntry(
       kV4Prefix1, kPlaceholderPathID, iBgpPeer_, preAttrs);
-  auto adjRibEntry = adjRib_->tryInsertRibOutEntry(
-      update.prefix, update.attrs->getNexthop(), update.isLocalRoute());
+  auto adjRibEntry = adjRib_->tryInsertRibOutEntry(update);
   const auto peerIdStr =
       BgpPeerId(update.peer.addr, update.peer.routerId).str();
 

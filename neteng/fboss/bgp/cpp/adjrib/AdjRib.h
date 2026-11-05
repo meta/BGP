@@ -2490,14 +2490,12 @@ class AdjRib : boost::noncopyable,
   void processRibAnnouncedEntry(const RibOutAnnouncementEntry& update) noexcept;
 
   /*
-   * Try inserting a ribOutEntry based on the prefix and next hop.
+   * Try inserting a ribOutEntry for the update's prefix and next hop.
    * Return the existing one if the entry already exists; Otherwise,
    * create a new one and return it.
    */
-  AdjRibEntry* FOLLY_NULLABLE tryInsertRibOutEntry(
-      const folly::CIDRNetwork& prefix,
-      const folly::IPAddress& nexthop,
-      bool isLocalRoute) noexcept;
+  AdjRibEntry* FOLLY_NULLABLE
+  tryInsertRibOutEntry(const RibOutAnnouncementEntry& update) noexcept;
 
   /*
    * Get post policy attributes (including CRF filtering)

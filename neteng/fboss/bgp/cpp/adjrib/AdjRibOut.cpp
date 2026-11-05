@@ -1035,8 +1035,7 @@ void AdjRib::processRibAnnouncedEntry(
   const std::string updatePeerIdStr =
       BgpPeerId(update.peer.addr, update.peer.routerId).str();
 
-  auto* adjRibEntry = tryInsertRibOutEntry(
-      update.prefix, update.attrs->getNexthop(), update.isLocalRoute());
+  auto* adjRibEntry = tryInsertRibOutEntry(update);
   if (!adjRibEntry) {
     // Refused by the egress switch limit.
     return;
@@ -1189,14 +1188,14 @@ void AdjRib::processRibAnnouncedEntry(
 }
 
 /*
- * Try inserting a ribOutEntry based on the prefix and next hop.
+ * Try inserting a ribOutEntry for the update's prefix and next hop.
  * Return the existing one if the entry already exists; Otherwise,
  * create a new one and return it.
  */
-AdjRibEntry* FOLLY_NULLABLE AdjRib::tryInsertRibOutEntry(
-    const folly::CIDRNetwork& prefix,
-    const folly::IPAddress& nexthop,
-    bool isLocalRoute) noexcept {
+AdjRibEntry* FOLLY_NULLABLE
+AdjRib::tryInsertRibOutEntry(const RibOutAnnouncementEntry& update) noexcept {
+  const auto& prefix = update.prefix;
+  const auto& nexthop = update.attrs->getNexthop();
   /*
    * Resolve the path id without issuing one where we can: the generator
    * allocates on a miss, and the limit check below should not leave a path id
@@ -1248,7 +1247,7 @@ AdjRibEntry* FOLLY_NULLABLE AdjRib::tryInsertRibOutEntry(
      * Locally originated routes are advertised regardless; we only drop
      * routes learned from peers.
      */
-    if (!isLocalRoute) {
+    if (!update.isLocalRoute()) {
       incrementPrefixesDroppedByLimit();
       return nullptr;
     }

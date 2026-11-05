@@ -1623,6 +1623,9 @@ std::pair<bool, bool> RibDC::selectBestPath(
               (entry.isPartialDrain_ != oldIsPartialDrain),
           entry.weightedNexthops_ != input.oldMultipathWeightedNexthops);
     }
+    for (const auto& path : mp.selectedPaths) {
+      entry.getOrAssignSendPathId(path);
+    }
     const auto& policyResult =
         pathSelectionPolicy->getPathSelectionPolicyResult(entry.getPrefix());
     if (policyResult && policyResult->isCapacityThresholdViolation()) {

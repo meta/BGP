@@ -371,6 +371,12 @@ class RibEntry {
    */
   uint32_t getPathIdToSend();
 
+  /*
+   * Returns path's pathIdToSend, first assigning one from getPathIdToSend() if
+   * the path does not have one yet.
+   */
+  uint32_t getOrAssignSendPathId(const std::shared_ptr<RouteInfo>& path);
+
  private:
   void requirePathSelectionForNexthopResolvabilityChange() {
     needPathSelection_ = true;

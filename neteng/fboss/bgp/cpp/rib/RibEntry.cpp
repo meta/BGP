@@ -189,4 +189,12 @@ uint32_t RibEntry::getPathIdToSend() {
   return freePathIdInterval_.first++;
 }
 
+uint32_t RibEntry::getOrAssignSendPathId(
+    const std::shared_ptr<RouteInfo>& path) {
+  if (!path->pathIdToSend.has_value()) {
+    path->pathIdToSend = getPathIdToSend();
+  }
+  return path->pathIdToSend.value();
+}
+
 } // namespace facebook::bgp

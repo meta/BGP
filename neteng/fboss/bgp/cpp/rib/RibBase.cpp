@@ -1628,7 +1628,7 @@ std::vector<std::shared_ptr<RouteInfo>> RibBase::prePathSelectionFiltering(
 }
 
 RibBase::MultiPathSelectionResult RibBase::multiPathSelection(
-    RibEntry& /*entry*/,
+    RibEntry& entry,
     const std::vector<std::shared_ptr<RouteInfo>>& routes,
     const std::unique_ptr<RouteInfoSelector>& multipathSelector) noexcept {
   /*
@@ -1640,6 +1640,9 @@ RibBase::MultiPathSelectionResult RibBase::multiPathSelection(
   MultiPathSelectionResult result;
   result.selectedPaths = multipathSelector->selectRoutes(routes);
   XCHECK(!result.selectedPaths.empty());
+  for (const auto& path : result.selectedPaths) {
+    entry.getOrAssignSendPathId(path);
+  }
   return result;
 }
 
@@ -1654,9 +1657,6 @@ void RibBase::accumulateAggregateWeightsAndTopoInfo(
   bool missingLocalUcmpWeight{false};
 
   for (const auto& path : mp.selectedPaths) {
-    if (!path->pathIdToSend.has_value()) {
-      path->pathIdToSend = entry.getPathIdToSend();
-    }
     if (auto topoInfo = path->attrs->getTopologyInfo()) {
       nexthopsAndTopoInfo.emplace(path->attrs->getNexthop(), *topoInfo);
     }

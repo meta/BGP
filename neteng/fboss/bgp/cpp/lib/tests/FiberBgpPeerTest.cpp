@@ -33,6 +33,7 @@ class MockFiberBgpPeer;
   friend class FiberBgpPeerFixture;                                           \
   friend class facebook::nettools::bgplib::MockFiberBgpPeer;                  \
   FRIEND_TEST(FiberBgpPeerFixture, SendNotificationWhenHoldTimerExpiredTest); \
+  FRIEND_TEST(FiberBgpPeerFixture, GrNotificationHoldTimerExpiredTest);       \
   FRIEND_TEST(FiberBgpPeerFixture, SocketCloseTimerTest);                     \
   FRIEND_TEST(FiberBgpPeerFixture, MonitoredQueueTest);                       \
   FRIEND_TEST(FiberBgpPeerFixture, ProcessIngressLoopTerminationTest);        \
@@ -3421,6 +3422,42 @@ TEST_F(FiberBgpPeerFixture, SendNotificationWhenHoldTimerExpiredTest) {
 
   evb_.loop();
   SUCCEED();
+}
+
+/*
+ * RFC 8538 Sec. 4: with the N bit, both the peer whose hold timer expires and
+ * the peer receiving the BN_HOLD_TIMER_EXPIRED notification do graceful restart
+ */
+TEST_F(FiberBgpPeerFixture, GrNotificationHoldTimerExpiredTest) {
+  auto& fm = fmWrapper_.get();
+  fm.addTask([&] {
+    auto [peer1, peer2] = startTwoPeers(params3_, params4_);
+    EXPECT_EQ(
+        runUntilTargetStateOrTimeout(
+            peer1, BgpSessionState::ESTABLISHED, 100ms),
+        0);
+    EXPECT_EQ(
+        runUntilTargetStateOrTimeout(
+            peer2, BgpSessionState::ESTABLISHED, 100ms),
+        0);
+    peer1->setGrNotification(true);
+    peer2->setGrNotification(true);
+
+    // stop peer2 from sending keepAlive so peer1's hold timer expires
+    peer2->keepAliveTimer_.reset();
+
+    for (auto* output : {peer2Output_.get(), peer1Output_.get()}) {
+      auto msg = facebook::bgp::test::boundedBlockingPop(*output, "output");
+      ASSERT_TRUE(std::holds_alternative<FiberBgpPeer::BgpSessionStop>(msg));
+      EXPECT_TRUE(std::get<FiberBgpPeer::BgpSessionStop>(msg).gracefulRestart);
+    }
+
+    stopTwoPeers(peer1, peer2);
+    EXPECT_EQ(ResetReason::HOLD_TIMER_EXPIRE, peer1->getResetReason());
+    EXPECT_EQ(ResetReason::NOTIFICATION_RCVD, peer2->getResetReason());
+  });
+
+  evb_.loop();
 }
 
 TEST_F(FiberBgpPeerFixture, NeedToKeepThisPeerTest) {

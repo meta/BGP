@@ -544,7 +544,8 @@ class FiberBgpPeer : public std::enable_shared_from_this<FiberBgpPeer>,
   /*
    * RFC 8538: set when the session becomes ESTABLISHED with the Graceful
    * Restart Notification (N) bit negotiated. NOTIFICATIONs received on this
-   * session, except Cease/Hard Reset, follow Graceful Restart.
+   * session, except Cease/Hard Reset, and hold timer expiry follow Graceful
+   * Restart.
    */
   bool grNotification_{false};
 

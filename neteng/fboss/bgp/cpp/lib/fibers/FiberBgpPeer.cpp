@@ -292,8 +292,8 @@ bool FiberBgpPeer::processHoldTimerExpiration() {
   // record the reason to reset
   peeringState_.resetReason = ResetReason::HOLD_TIMER_EXPIRE;
 
-  // not eligible for graceful restart
-  return false;
+  // RFC 8538: eligible for graceful restart if the N bit is negotiated
+  return grNotification_;
 }
 
 bool FiberBgpPeer::processBgpSessionError() {

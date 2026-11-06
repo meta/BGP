@@ -140,9 +140,13 @@ std::unique_ptr<folly::IOBuf> BgpMessageSerializer::serializeBgpOpenMsg(
     ccursor.write<uint8_t>((uint8_t)BgpCapability::CAPA_GR);
     ccursor.write<uint8_t>((uint8_t)(2 + 4 * capa.grCapabilities()->size()));
     // Write restart state and time
-    uint16_t grValue = *capa.restartTime() & 0x0fff; // Consider only 12 LS bits
+    // Consider only 12 LS bits
+    uint16_t grValue = *capa.restartTime() & kGrRestartTimeMask;
     if (*capa.isRestarting()) {
-      grValue |= 0x8000; // Set the first bit of grValue
+      grValue |= kGrRestartStateBit; // Set the first bit of grValue
+    }
+    if (*capa.grNotification()) {
+      grValue |= kGrNotificationBit; // Set the second bit of grValue
     }
     ccursor.writeBE<uint16_t>((uint16_t)grValue);
     // Write afi, safi and their forwarding state

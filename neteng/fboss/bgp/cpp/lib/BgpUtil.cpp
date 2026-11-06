@@ -669,6 +669,8 @@ BgpCapabilities negotiateCapabilities(
   result.as4byte().value() &= *peerCapa.as4byte();
   result.gracefulRestart().value() &= *peerCapa.gracefulRestart();
   result.isRestarting() = *peerCapa.isRestarting();
+  // RFC 8538 procedures apply only if both peers advertise the N bit
+  result.grNotification().value() &= *peerCapa.grNotification();
   // Extended Next Hop Encoding capabilities, RFC 5549
   result.extNHEncodingCapabilities() = negotiateExtNHEncodingCapabilities(
       *myCapa.extNHEncodingCapabilities(),

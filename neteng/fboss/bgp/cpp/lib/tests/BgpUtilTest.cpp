@@ -428,6 +428,18 @@ TEST(BgpUtil, NegotiateCapabilitiesTest) {
   }
 }
 
+// RFC 8538: N bit is negotiated only if both peers advertise it
+TEST(BgpUtil, NegotiateGrNotificationTest) {
+  BgpCapabilities withN = setCapa(true);
+  *withN.grNotification() = true;
+  BgpCapabilities withoutN = setCapa(true);
+
+  EXPECT_TRUE(*negotiateCapabilities(withN, withN).grNotification());
+  EXPECT_FALSE(*negotiateCapabilities(withN, withoutN).grNotification());
+  EXPECT_FALSE(*negotiateCapabilities(withoutN, withN).grNotification());
+  EXPECT_FALSE(*negotiateCapabilities(withoutN, withoutN).grNotification());
+}
+
 /*
  * This test case is for verifying negotiation result for Extended Next Hop
  * Encoding capabilities. RFC 5549

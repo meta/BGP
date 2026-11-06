@@ -346,6 +346,44 @@ TEST(BgpMessageSerializer, BgpOpenMessageBackwardCompatibilityTest) {
   EXPECT_EQ(0, memcmp(iobuf->data(), msg, sizeof(msg)));
 }
 
+// RFC 8538 GR Notification (N) bit
+TEST(BgpMessageSerializer, BgpOpenMessageGrNotificationBitTest) {
+  uint8_t msg[] = {
+      // clang-format off
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x00, 0x23,   // Length of BGP PDU
+    0x01,         // Bgp message type (OPEN)
+      0x04,       // BGP Version
+      0x80, 0xa6, // ASN
+      0x00, 0x18, // Hold Time (24 seconds)
+      0x01, 0x02, 0x03, 0x04, // BGP ID
+      0x06, // Optional Param Length
+      // Params
+      0x02, // Capabilities
+      0x04, // Length
+        // Bgp Capabilities
+        0x40, 0x02, // Graceful Restart, Length-2
+          0x41, 0x01, // R = 0, N = 1, time = 257
+      // clang-format on
+  };
+  BgpOpenMsg bgpOpenMsg;
+  *bgpOpenMsg.version() = 4;
+  *bgpOpenMsg.asn() = 0x80a6;
+  *bgpOpenMsg.holdTime() = 0x18;
+  *bgpOpenMsg.bgpID() = 0x01020304;
+
+  auto& capa = *bgpOpenMsg.capabilities();
+  *capa.gracefulRestart() = true;
+  *capa.isRestarting() = false;
+  *capa.grNotification() = true;
+  *capa.restartTime() = 257;
+
+  auto iobuf = BgpMessageSerializer::serializeBgpOpenMsg(bgpOpenMsg);
+  EXPECT_EQ(iobuf->length(), sizeof(msg));
+  EXPECT_EQ(0, memcmp(iobuf->data(), msg, sizeof(msg)));
+}
+
 // RFC 5549 Sec. 4
 TEST(BgpMessageSerializer, BgpOpenMessageWithExtNHEncodingCapaTest) {
   std::vector<uint8_t> msg = {

@@ -82,6 +82,11 @@ const uint8_t kBgpVersion{4};
 constexpr uint16_t kAsTrans{23456};
 constexpr uint16_t k2BytesAsnLimit = (1 << 16) - 1; // 65535
 
+// Graceful Restart capability Restart Flags and Restart Time, RFC 4724/8538
+inline constexpr uint16_t kGrRestartStateBit{0x8000};
+inline constexpr uint16_t kGrNotificationBit{0x4000};
+inline constexpr uint16_t kGrRestartTimeMask{0x0fff};
+
 /*
  * Used to limit the number of items that can be written to
  * an egress message queue.

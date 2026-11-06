@@ -1159,11 +1159,12 @@ void parseBgpCapabilities(Cursor cursor, BgpCapabilities& capa) {
 
           capa.gracefulRestart() = true;
 
-          auto value = subCursor.read<uint8_t>();
+          auto value = subCursor.readBE<uint16_t>();
           // First bit is "restarting" flag
-          capa.isRestarting() = (value >> 7);
-          capa.restartTime() =
-              (((value & 0x0f) << 8) + subCursor.read<uint8_t>());
+          capa.isRestarting() = (value & kGrRestartStateBit) != 0;
+          // Second bit is "notification" flag, RFC 8538
+          capa.grNotification() = (value & kGrNotificationBit) != 0;
+          capa.restartTime() = value & kGrRestartTimeMask;
 
           std::vector<BgpGrCapability> grCapabilities;
           while (subCursor.length()) {

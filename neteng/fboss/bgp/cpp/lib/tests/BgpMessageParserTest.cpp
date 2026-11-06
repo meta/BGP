@@ -598,6 +598,7 @@ TEST_F(BgpOpenMessageFixture, BgpOpenMessageBackwardCompatible) {
 
   EXPECT_TRUE(*capa.gracefulRestart());
   EXPECT_TRUE(*capa.isRestarting());
+  EXPECT_FALSE(*capa.grNotification());
   EXPECT_EQ(257, *capa.restartTime());
 
   auto& grCapa = *capa.grCapabilities();
@@ -609,6 +610,38 @@ TEST_F(BgpOpenMessageFixture, BgpOpenMessageBackwardCompatible) {
   EXPECT_EQ(BgpUpdateAfi::AFI_IPv6, *grCapa[1].afi());
   EXPECT_EQ(BgpUpdateSafi::SAFI_LABELED_UNICAST, *grCapa[1].safi());
   EXPECT_FALSE(*grCapa[1].forwardingState());
+}
+
+// RFC 8538 GR Notification (N) bit
+TEST(BgpMessageParser, BgpOpenMessageGrNotificationBit) {
+  std::vector<uint8_t> msg = {
+      // clang-format off
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x00, 0x23,   // Length of BGP PDU
+    0x01,         // Bgp message type (OPEN)
+      0x04,       // BGP Version
+      0x80, 0xa6, // ASN
+      0x00, 0x18, // Hold Time (24 seconds)
+      0x01, 0x02, 0x03, 0x04, // BGP ID
+      0x06, // Optional Param Length
+      // Params
+      0x02, // Capabilities
+      0x04, // Length
+        // Bgp Capabilities
+        0x40, 0x02, // Graceful Restart, Length-2
+          0x41, 0x01, // R = 0, N = 1, time = 257
+      // clang-format on
+  };
+  auto openMsg = BgpMessageParser2::parseBgpOpenMsgRaw(
+      folly::IOBuf::wrapBufferAsValue(msg.data(), msg.size()));
+
+  auto& capa = *openMsg.capabilities();
+  EXPECT_TRUE(*capa.gracefulRestart());
+  EXPECT_FALSE(*capa.isRestarting());
+  EXPECT_TRUE(*capa.grNotification());
+  EXPECT_EQ(257, *capa.restartTime());
+  EXPECT_EQ(0, capa.grCapabilities()->size());
 }
 
 TEST_F(BgpOpenMessageFixture, BgpOpenMessageWithAddPath) {

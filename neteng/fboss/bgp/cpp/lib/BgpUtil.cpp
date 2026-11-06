@@ -16,9 +16,15 @@
 
 #include <boost/functional/hash.hpp>
 #include <common/network/AddressUtil.h>
+#include <fmt/format.h>
+#include <folly/io/Cursor.h>
+#include <folly/io/IOBuf.h>
 #include <folly/logging/xlog.h>
 #include <thrift/lib/cpp/util/EnumUtils.h>
 
+#include "neteng/fboss/bgp/cpp/lib/BgpException.h"
+#include "neteng/fboss/bgp/cpp/lib/BgpMessageParser.h"
+#include "neteng/fboss/bgp/cpp/lib/BgpMessageSerializer.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpUtil.h"
 
 using folly::IPAddress;
@@ -826,6 +832,48 @@ BgpNotification buildBgpNotification(
   notification.errSubCodeStr() = errSubCodeStr;
   notification.data() = data;
   return notification;
+}
+
+BgpNotification buildBgpHardResetNotification(
+    const BgpNotification& nestedNotification) {
+  const auto len =
+      kMinBgpNotificationBodyLen + nestedNotification.data()->size();
+  auto buf = folly::IOBuf::create(len);
+  buf->append(len);
+  folly::io::RWPrivateCursor cursor(buf.get());
+  BgpMessageSerializer::serializeBgpNotificationBody(
+      cursor, nestedNotification);
+
+  return buildBgpNotification(
+      BgpNotifErrCode::BN_CEASE,
+      static_cast<int16_t>(BgpNotifCeaseErrSubCode::BN_CEASE_HARD_RESET),
+      apache::thrift::util::enumNameSafe(
+          BgpNotifCeaseErrSubCode::BN_CEASE_HARD_RESET),
+      buf->to<std::string>());
+}
+
+bool isBgpHardResetNotification(const BgpNotification& notif) {
+  return *notif.errCode() == BgpNotifErrCode::BN_CEASE &&
+      *notif.errSubCode() ==
+      static_cast<int16_t>(BgpNotifCeaseErrSubCode::BN_CEASE_HARD_RESET);
+}
+
+BgpNotification decodeBgpHardResetNotification(const std::string& data) {
+  if (data.size() < kMinBgpNotificationBodyLen) {
+    throw BgpException(
+        fmt::format(
+            "Hard Reset data too short for a nested notification. "
+            "Expected at least {} bytes, got {}.",
+            kMinBgpNotificationBodyLen,
+            data.size()));
+  }
+  auto buf = folly::IOBuf::wrapBufferAsValue(data.data(), data.size());
+  folly::io::Cursor cursor(&buf);
+  return BgpMessageParser2::consumeBgpNotificationBody(cursor);
+}
+
+bool isGrNotificationNegotiated(const BgpCapabilities& negotiatedCapa) {
+  return *negotiatedCapa.gracefulRestart() && *negotiatedCapa.grNotification();
 }
 
 std::unique_ptr<BgpUpdate> constructAnnounceInBgpUpdateFormat(

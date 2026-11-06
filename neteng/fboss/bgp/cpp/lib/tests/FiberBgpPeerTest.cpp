@@ -187,6 +187,18 @@ class FiberBgpPeerFixture : public ::testing::Test {
     peer->processKeepAliveMsg();
   }
 
+  void setNegotiatedGrNotification(
+      const std::shared_ptr<MockFiberBgpPeer>& peer) {
+    peer->peeringState_.negotiatedCapabilities.grNotification() = true;
+  }
+
+  bool processNotificationError(
+      const std::shared_ptr<MockFiberBgpPeer>& peer,
+      const BgpNotification& notif) {
+    return peer->processBgpNotificationError(
+        FiberBgpPeer::BgpNotificationError{notif});
+  }
+
   folly::EventBase evb_;
 
   std::unique_ptr<FiberSocket> fs0_, fs1_;
@@ -3266,6 +3278,37 @@ TEST_P(BgpPeerAsnCapabilityFixture, AcceptedRemoteAsEstablishesSessionTest) {
 
   processKeepAlive(acceptingPeer);
   EXPECT_EQ(BgpSessionState::ESTABLISHED, acceptingPeer->getBgpSessionState());
+}
+
+/*
+ * RFC 8538 Sec. 4: on an ESTABLISHED session with the Graceful Restart and
+ * Notification (N) bits negotiated, a received NOTIFICATION other than
+ * Cease/Hard Reset is eligible for graceful restart
+ */
+TEST_F(FiberBgpPeerFixture, GrNotificationEligibleTest) {
+  auto params = params1_;
+  /* Avoid scheduling timers while driving the FSM synchronously. */
+  params.holdTime = 0s;
+
+  auto& fm = fmWrapper_.get();
+  auto peer = std::make_shared<MockFiberBgpPeer>(
+      params,
+      fm,
+      evb_,
+      std::move(*fs0_),
+      peer1Input_,
+      peer1BoundedInput_,
+      peer1Output_);
+
+  processOpenAndGetResponse(peer, params.remoteAs, true);
+  ASSERT_EQ(BgpSessionState::OPEN_CONFIRM, peer->getBgpSessionState());
+  ASSERT_TRUE(*peer->getNegotiatedCapabilities().gracefulRestart());
+  setNegotiatedGrNotification(peer);
+  processKeepAlive(peer);
+  ASSERT_EQ(BgpSessionState::ESTABLISHED, peer->getBgpSessionState());
+
+  EXPECT_TRUE(processNotificationError(peer, notifyMsg1_));
+  EXPECT_EQ(ResetReason::NOTIFICATION_RCVD, peer->getResetReason());
 }
 
 TEST_F(FiberBgpPeerFixture, SendNotificationWhenHoldTimerExpiredTest) {

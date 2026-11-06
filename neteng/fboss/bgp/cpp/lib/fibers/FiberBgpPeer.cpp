@@ -342,23 +342,56 @@ bool FiberBgpPeer::processBgpNotificationError(const BgpNotificationError& e) {
    * Any notification we will treat it as GR false. Going forward
    * we may expand it so that only certain notifications like admin shutdown
    * etc only lead to GR failure.
+   * RFC 8538: if the N bit is negotiated, any notification except Cease/Hard
+   * Reset is eligible for GR.
    */
-  XLOGF(
-      ERR,
-      "Notification from peer [{}]: Code = {} SubCode = {}. Msg: {}",
-      getRemotePeerAddrWithDescription(),
-      static_cast<uint16_t>(*e.notifyMsg.errCode()),
-      *e.notifyMsg.errSubCode(),
-      *e.notifyMsg.errSubCodeStr());
+  const bool isHardReset = isBgpHardResetNotification(e.notifyMsg);
+  std::optional<BgpNotification> nestedNotification;
+  if (isHardReset) {
+    try {
+      nestedNotification = decodeBgpHardResetNotification(*e.notifyMsg.data());
+      XLOGF(
+          ERR,
+          "Cease Hard Reset from peer [{}]: Code = {} SubCode = {}. Msg: {}",
+          getRemotePeerAddrWithDescription(),
+          static_cast<uint16_t>(*nestedNotification->errCode()),
+          *nestedNotification->errSubCode(),
+          *nestedNotification->errSubCodeStr());
+    } catch (const BgpException& ex) {
+      XLOGF(
+          ERR,
+          "Malformed Hard Reset from peer [{}]: {}, not sending notification "
+          "on already torn down session",
+          getRemotePeerAddrWithDescription(),
+          ex.what());
+    }
+  } else {
+    XLOGF(
+        ERR,
+        "Notification from peer [{}]: Code = {} SubCode = {}. Msg: {}",
+        getRemotePeerAddrWithDescription(),
+        static_cast<uint16_t>(*e.notifyMsg.errCode()),
+        *e.notifyMsg.errSubCode(),
+        *e.notifyMsg.errSubCodeStr());
+  }
+  // Per-subcode handling uses the NOTIFICATION wrapped in a Hard Reset
+  const auto& notifyMsg =
+      nestedNotification ? *nestedNotification : e.notifyMsg;
 
   // record the reason to reset
   peeringState_.resetReason = ResetReason::NOTIFICATION_RCVD;
 
-  if (*e.notifyMsg.errCode() == BgpNotifErrCode::BN_CEASE &&
-      *e.notifyMsg.errSubCode() ==
+  if (*notifyMsg.errCode() == BgpNotifErrCode::BN_CEASE &&
+      *notifyMsg.errSubCode() ==
           static_cast<int16_t>(
               BgpNotifCeaseErrSubCode::BN_CEASE_CONN_COLLISION_RES)) {
     bgp::PeerStats::incrConnectionCollisionClosedByPeer();
+  }
+
+  if (!isHardReset &&
+      isGrNotificationNegotiated(peeringState_.negotiatedCapabilities)) {
+    // eligible for graceful restart
+    return true;
   }
 
   // not eligible for graceful restart

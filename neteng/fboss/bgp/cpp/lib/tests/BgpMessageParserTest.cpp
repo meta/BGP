@@ -1177,6 +1177,22 @@ TEST_F(NotificationMessageFixture, BgpNotificationMessageNormal) {
   EXPECT_EQ(std::string({0x01, 0x02}), *notif.data());
 }
 
+// RFC 8538 Cease/Hard Reset
+TEST_F(NotificationMessageFixture, BgpNotificationMessageHardReset) {
+  msg[19] = 0x06; // Cease
+  msg[20] = 0x09; // Hard Reset
+  msg[21] = 0x06; // Data: nested Cease
+  msg[22] = 0x02; // Data: nested Administrative Shutdown
+
+  auto notif = BgpMessageParser2::parseBgpNotificationRaw(
+      folly::IOBuf::wrapBufferAsValue(msg.data(), msg.size()));
+
+  EXPECT_EQ(BgpNotifErrCode::BN_CEASE, *notif.errCode());
+  EXPECT_EQ(0x09, *notif.errSubCode());
+  EXPECT_EQ("BN_CEASE_HARD_RESET", *notif.errSubCodeStr());
+  EXPECT_EQ(std::string({0x06, 0x02}), *notif.data());
+}
+
 TEST_F(NotificationMessageFixture, BgpNotificationMessageWrongLength) {
   // set incorrect length
   msg[17] = 0x14;

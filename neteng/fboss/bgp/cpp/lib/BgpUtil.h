@@ -235,6 +235,28 @@ BgpNotification buildBgpNotification(
     const ::std::string& errSubCodeStr,
     const ::std::string& data);
 
+/*
+ * RFC 8538 Sec. 3: build a Cease/Hard Reset NOTIFICATION whose data carries
+ * the nested NOTIFICATION error code, subcode and data
+ */
+BgpNotification buildBgpHardResetNotification(
+    const BgpNotification& nestedNotification);
+
+bool isBgpHardResetNotification(const BgpNotification& notif);
+
+/*
+ * Decodes the nested NOTIFICATION from the data of a Cease/Hard Reset.
+ * Throws BgpException if the data is too short or carries an unknown error
+ * code or subcode.
+ */
+BgpNotification decodeBgpHardResetNotification(const std::string& data);
+
+/*
+ * RFC 8538 Sec. 2: true if both peers advertised the Graceful Restart
+ * capability with the Notification (N) bit set
+ */
+bool isGrNotificationNegotiated(const BgpCapabilities& negotiatedCapa);
+
 /**
  * Construct a BgpUpdate announcement message
  */

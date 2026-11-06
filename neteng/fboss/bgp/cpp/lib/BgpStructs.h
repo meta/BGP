@@ -51,6 +51,9 @@ const size_t kMsgBatchSizeToYield{10};
  */
 const size_t kMinBgpUpdateMsgLen = 23;
 
+// Minimum length of a NOTIFICATION body: 1B (error code), 1B (error subcode)
+inline constexpr size_t kMinBgpNotificationBodyLen{2};
+
 /*
  * Maximum length of withdrawn routes + path attrs + nlri info in BGP Update
  * message

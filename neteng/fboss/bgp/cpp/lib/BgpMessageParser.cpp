@@ -361,7 +361,8 @@ BgpNotification BgpMessageParser2::consumeBgpNotificationBody(Cursor& cursor) {
       }
       break;
     case (int)BgpNotifErrCode::BN_CEASE:
-      if (subCode > 8) {
+      if (subCode >
+          static_cast<uint8_t>(BgpNotifCeaseErrSubCode::BN_CEASE_HARD_RESET)) {
         throw BgpException(
             fmt::format(
                 "Unknown BgpNotification cease msg error subcode. "

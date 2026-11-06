@@ -22,6 +22,7 @@
 
 #include <folly/init/Init.h>
 #include "common/network/AddressUtil.h"
+#include "neteng/fboss/bgp/cpp/lib/BgpException.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpMessageParser.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpMessageSerializer.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpUtil.h"
@@ -481,6 +482,64 @@ TEST(BgpUtil, BgpNotificationBuilderTest) {
   EXPECT_EQ(*builtNotification.errSubCode(), static_cast<uint16_t>(subCode));
   EXPECT_EQ(*builtNotification.errSubCodeStr(), subCodeStr);
   EXPECT_EQ(*builtNotification.data(), data);
+}
+
+// RFC 8538 Sec. 3
+TEST(BgpUtil, BgpHardResetNotificationTest) {
+  const std::string data = "some data";
+  const auto nestedNotification = buildBgpNotification(
+      BgpNotifErrCode::BN_CEASE,
+      static_cast<int16_t>(BgpNotifCeaseErrSubCode::BN_CEASE_ADMIN_SHUTDOWN),
+      "BN_CEASE_ADMIN_SHUTDOWN",
+      data);
+
+  auto hardReset = buildBgpHardResetNotification(nestedNotification);
+  EXPECT_TRUE(isBgpHardResetNotification(hardReset));
+  EXPECT_EQ(std::string({0x06, 0x02}) + data, *hardReset.data());
+
+  EXPECT_EQ(
+      nestedNotification, decodeBgpHardResetNotification(*hardReset.data()));
+}
+
+TEST(BgpUtil, BgpHardResetNotificationSerializeParseTest) {
+  const auto nestedNotification = buildBgpNotification(
+      BgpNotifErrCode::BN_CEASE,
+      static_cast<int16_t>(BgpNotifCeaseErrSubCode::BN_CEASE_ADMIN_SHUTDOWN),
+      "BN_CEASE_ADMIN_SHUTDOWN",
+      "some data");
+  const auto hardReset = buildBgpHardResetNotification(nestedNotification);
+
+  auto iobuf = BgpMessageSerializer::serializeBgpNotification(hardReset);
+  auto parsed = BgpMessageParser2::parseBgpNotificationRaw(
+      folly::IOBuf::wrapBufferAsValue(iobuf->data(), iobuf->length()));
+
+  EXPECT_TRUE(isBgpHardResetNotification(parsed));
+  EXPECT_EQ(*hardReset.data(), *parsed.data());
+  EXPECT_EQ(nestedNotification, decodeBgpHardResetNotification(*parsed.data()));
+}
+
+TEST(BgpUtil, DecodeBgpHardResetNotificationMalformedTest) {
+  // Hard Reset data without the nested error code and subcode
+  EXPECT_THROW(decodeBgpHardResetNotification(""), BgpException);
+  EXPECT_THROW(
+      decodeBgpHardResetNotification(std::string({0x06})), BgpException);
+
+  // unknown nested error code
+  EXPECT_THROW(
+      decodeBgpHardResetNotification(std::string({0x7f, 0x00})), BgpException);
+}
+
+// RFC 8538 Sec. 2
+TEST(BgpUtil, GrNotificationNegotiatedTest) {
+  BgpCapabilities withN = setCapa(true);
+  *withN.grNotification() = true;
+  BgpCapabilities withoutN = setCapa(true);
+  BgpCapabilities withNWithoutGr = setCapa(false);
+  *withNWithoutGr.grNotification() = true;
+
+  EXPECT_TRUE(isGrNotificationNegotiated(withN));
+  EXPECT_FALSE(isGrNotificationNegotiated(withoutN));
+  EXPECT_FALSE(isGrNotificationNegotiated(withNWithoutGr));
 }
 
 // Tests for constructAnnounceInBgpUpdateFormat

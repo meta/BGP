@@ -24,6 +24,7 @@
 #include "neteng/fboss/bgp/cpp/BgpServiceUtil.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibGroup.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigManager.h"
+#include "neteng/fboss/bgp/cpp/lib/BgpUtil.h"
 #include "neteng/fboss/bgp/cpp/peer/PeerManagerBase.h"
 #include "neteng/fboss/bgp/cpp/rib/canonical/CanonicalRibBuilder.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
@@ -715,6 +716,9 @@ TBgpSession PeerManagerBase::getDetailSessionInfo(
     tBgpSessionDetail.gr_remote_restart_time() =
         peerInfo->remoteGrRestartTime.value();
   }
+  tBgpSessionDetail.gr_notification_negotiated() =
+      nettools::bgplib::isGrNotificationNegotiated(
+          peerInfo->negotiatedCapabilities);
   tBgpSessionDetail.rr_client() = peerInfo->peeringParams.isRrClient;
   tBgpSessionDetail.connect_mode() = peerInfo->peeringParams.connectMode;
   if (peerInfo->peeringParams.ttlSecurityHops.has_value()) {

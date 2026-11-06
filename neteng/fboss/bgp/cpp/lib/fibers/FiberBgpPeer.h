@@ -103,6 +103,16 @@ struct PeeringState {
    */
   SocketMessageCounters txMsgs;
   SocketMessageCounters rxMsgs;
+
+  /*
+   * Last NOTIFICATION sent to / received from this peer. Same threading
+   * discipline as txMsgs/rxMsgs above: written only on the I/O evb (tx in the
+   * sendSocketLoop visitor, rx in processBgpNotificationMsg) and read
+   * cross-thread only through the BgpPeerDisplayInfo snapshot taken on that
+   * same evb.
+   */
+  std::optional<TimestampedNotification> lastNotificationSent;
+  std::optional<TimestampedNotification> lastNotificationReceived;
 };
 
 class FiberBgpPeer : public std::enable_shared_from_this<FiberBgpPeer>,
@@ -312,6 +322,15 @@ class FiberBgpPeer : public std::enable_shared_from_this<FiberBgpPeer>,
   uint64_t getSendQueueTotalBlockDuration() const;
   uint64_t getLastSendQueueBlockTime() const;
   uint64_t getLastSocketEgressBufferedTime() const;
+
+  const std::optional<TimestampedNotification>& getLastNotificationSent()
+      const {
+    return peeringState_.lastNotificationSent;
+  }
+  const std::optional<TimestampedNotification>& getLastNotificationReceived()
+      const {
+    return peeringState_.lastNotificationReceived;
+  }
 
   const SocketMessageCounters& getTxMessageCounters() const {
     return peeringState_.txMsgs;

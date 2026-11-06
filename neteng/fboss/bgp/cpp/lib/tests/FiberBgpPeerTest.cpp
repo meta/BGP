@@ -3424,6 +3424,26 @@ TEST_F(FiberBgpPeerFixture, SendNotificationWhenHoldTimerExpiredTest) {
     stopTwoPeers(peer1, peer2);
     EXPECT_EQ(ResetReason::HOLD_TIMER_EXPIRE, peer1->getResetReason());
     EXPECT_EQ(ResetReason::NOTIFICATION_RCVD, peer2->getResetReason());
+
+    /*
+     * T265127391: the reset reason says a NOTIFICATION was involved but not
+     * what it carried. peer1 sent BN_HOLD_TIMER_EXPIRED and peer2 received
+     * exactly that; each direction is recorded only on the side it happened
+     * on.
+     */
+    ASSERT_TRUE(peer1->getLastNotificationSent().has_value());
+    EXPECT_EQ(
+        BgpNotifErrCode::BN_HOLD_TIMER_EXPIRED,
+        *peer1->getLastNotificationSent()->notification.errCode());
+    EXPECT_GT(peer1->getLastNotificationSent()->timeMs, 0);
+    EXPECT_FALSE(peer1->getLastNotificationReceived().has_value());
+
+    ASSERT_TRUE(peer2->getLastNotificationReceived().has_value());
+    EXPECT_EQ(
+        BgpNotifErrCode::BN_HOLD_TIMER_EXPIRED,
+        *peer2->getLastNotificationReceived()->notification.errCode());
+    EXPECT_GT(peer2->getLastNotificationReceived()->timeMs, 0);
+    EXPECT_FALSE(peer2->getLastNotificationSent().has_value());
   });
 
   evb_.loop();

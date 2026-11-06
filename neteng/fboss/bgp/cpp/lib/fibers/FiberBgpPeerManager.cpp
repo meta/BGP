@@ -509,6 +509,12 @@ void FiberBgpPeerManager::processObservableState(
 
           sessionInfo->lastResetReason =
               sessionInfo->establishedSessionInfo->peer->getResetReason();
+          sessionInfo->lastNotificationSent =
+              sessionInfo->establishedSessionInfo->peer
+                  ->getLastNotificationSent();
+          sessionInfo->lastNotificationReceived =
+              sessionInfo->establishedSessionInfo->peer
+                  ->getLastNotificationReceived();
           sessionInfo->numResets++;
           stateEvt.lastResetReason = sessionInfo->lastResetReason;
 
@@ -2231,6 +2237,13 @@ BgpPeerDisplayInfo FiberBgpPeerManager::getEstablishedPeerDisplayInfoHelper(
       static_cast<int64_t>(sessionInfo->numResets),
       establishedSession->peer->getTxMessageCounters(),
       establishedSession->peer->getRxMessageCounters(),
+      /*
+       * From sessionInfo, not the live peer, matching lastResetReason above:
+       * these describe the previous reset, and the peer backing an ESTABLISHED
+       * session has not seen a NOTIFICATION on this incarnation.
+       */
+      sessionInfo->lastNotificationSent,
+      sessionInfo->lastNotificationReceived,
       establishedSession->peer->getRemoteCapabilities(),
       establishedSession->peer->getRemoteAs(),
   };
@@ -2262,9 +2275,14 @@ BgpPeerDisplayInfo FiberBgpPeerManager::getIdlePeerDisplayInfoHelper(
     if (lastSessionInfo) {
       peerInfo.lastResetTime = lastSessionInfo->lastResetTime;
       peerInfo.lastResetReason = lastSessionInfo->lastResetReason;
+      peerInfo.lastNotificationSent = lastSessionInfo->lastNotificationSent;
+      peerInfo.lastNotificationReceived =
+          lastSessionInfo->lastNotificationReceived;
       peerInfo.numResets = lastSessionInfo->numResets;
     } else {
       peerInfo.lastResetReason = std::nullopt;
+      peerInfo.lastNotificationSent = std::nullopt;
+      peerInfo.lastNotificationReceived = std::nullopt;
       peerInfo.numResets = 0;
     }
   } // end of weak_ptr lock(), shared_ptr is destroyed
@@ -2307,9 +2325,14 @@ BgpPeerDisplayInfo FiberBgpPeerManager::getActivePeerDisplayInfoHelper(
     if (lastSessionInfo) {
       peerInfo.lastResetTime = lastSessionInfo->lastResetTime;
       peerInfo.lastResetReason = lastSessionInfo->lastResetReason;
+      peerInfo.lastNotificationSent = lastSessionInfo->lastNotificationSent;
+      peerInfo.lastNotificationReceived =
+          lastSessionInfo->lastNotificationReceived;
       peerInfo.numResets = lastSessionInfo->numResets;
     } else {
       peerInfo.lastResetReason = std::nullopt;
+      peerInfo.lastNotificationSent = std::nullopt;
+      peerInfo.lastNotificationReceived = std::nullopt;
       peerInfo.numResets = 0;
     }
   } // end of weak_ptr lock(), shared_ptr is destroyed

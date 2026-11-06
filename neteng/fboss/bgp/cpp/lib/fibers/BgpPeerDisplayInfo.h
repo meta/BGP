@@ -17,6 +17,7 @@
 #pragma once
 
 #include "neteng/fboss/bgp/cpp/config/ConfigStructs.h"
+#include "neteng/fboss/bgp/if/gen-cpp2/BgpStructs_types.h"
 
 namespace facebook::nettools::bgplib {
 
@@ -42,6 +43,16 @@ enum class ResetReason : uint8_t {
 };
 
 std::string getResetReasonName(ResetReason reason);
+
+/*
+ * A NOTIFICATION sent to or received from a peer, with when it happened. Held
+ * in one optional so the time cannot exist without its notification.
+ */
+struct TimestampedNotification {
+  BgpNotification notification;
+  // Milliseconds since epoch
+  int64_t timeMs{0};
+};
 
 /*
  * Per-peer count of BGP messages actually written to / read from the peer's
@@ -91,6 +102,15 @@ struct BgpPeerDisplayInfo {
   int64_t numResets;
   SocketMessageCounters txMsgs;
   SocketMessageCounters rxMsgs;
+  /*
+   * Last NOTIFICATION seen on the session that went down, in each direction.
+   * lastResetReason says the session reset; these say what the NOTIFICATION
+   * actually carried, which the reason alone loses -- NOTIFICATION_RCVD does
+   * not distinguish a peer's administrative shutdown from a collision
+   * resolution. Unset until a NOTIFICATION is sent/received on the peer.
+   */
+  std::optional<TimestampedNotification> lastNotificationSent;
+  std::optional<TimestampedNotification> lastNotificationReceived;
   /*
    * Remote (pre-negotiation) capabilities the peer advertised in its OPEN,
    * copied whole to mirror negotiatedCapabilities. Only mpExtExist() is

@@ -1193,6 +1193,23 @@ TEST_F(NotificationMessageFixture, BgpNotificationMessageHardReset) {
   EXPECT_EQ(std::string({0x06, 0x02}), *notif.data());
 }
 
+/*
+ * An unnamed subcode keeps the parser's "NA" seed rather than coming through
+ * empty. Pins the contract `show bgpcpp neighbors` relies on: its renderer
+ * treats "NA" as unnamed and prints the bare number, so a change to this
+ * sentinel would silently turn the output into "subcode NA (0)".
+ */
+TEST_F(NotificationMessageFixture, CeaseZeroSubCodeStaysUnnamed) {
+  msg[19] = 0x06; // Cease
+  msg[20] = 0x00;
+  auto notif = BgpMessageParser2::parseBgpNotificationRaw(
+      folly::IOBuf::wrapBufferAsValue(msg.data(), msg.size()));
+
+  EXPECT_EQ(BgpNotifErrCode::BN_CEASE, *notif.errCode());
+  EXPECT_EQ(0x00, *notif.errSubCode());
+  EXPECT_EQ("NA", *notif.errSubCodeStr());
+}
+
 TEST_F(NotificationMessageFixture, BgpNotificationMessageWrongLength) {
   // set incorrect length
   msg[17] = 0x14;

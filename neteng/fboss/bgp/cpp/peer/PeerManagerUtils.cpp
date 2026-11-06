@@ -996,6 +996,19 @@ TBgpSession PeerManagerBase::getSessionInfo(
             facebook::nettools::bgplib::getResetReasonName(
                 peerInfo->lastResetReason.value());
       }
+      /*
+       * Carried from the same lastSessionInfo as lastResetReason, and left
+       * unset when no NOTIFICATION was exchanged -- a session can reset
+       * without one (socket error, hold timer expiry with no send).
+       */
+      if (const auto& sent = peerInfo->lastNotificationSent) {
+        tBgpSession.last_notification_sent() = sent->notification;
+        tBgpSession.last_notification_sent_time() = sent->timeMs;
+      }
+      if (const auto& received = peerInfo->lastNotificationReceived) {
+        tBgpSession.last_notification_received() = received->notification;
+        tBgpSession.last_notification_received_time() = received->timeMs;
+      }
     }
   }
   tBgpSession.num_resets() = peerInfo->numResets;

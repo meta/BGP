@@ -385,6 +385,13 @@ bool FiberBgpPeer::processBgpNotificationError(const BgpNotificationError& e) {
 
   // record the reason to reset
   peeringState_.resetReason = ResetReason::NOTIFICATION_RCVD;
+  /*
+   * Retain the notification itself, not just the reason: NOTIFICATION_RCVD
+   * alone cannot distinguish an administrative shutdown from a collision
+   * resolution. Surfaced by `show bgp neighbors`.
+   */
+  peeringState_.lastNotificationReceived =
+      TimestampedNotification{e.notifyMsg, getCurrentTimeMs()};
 
   if (*notifyMsg.errCode() == BgpNotifErrCode::BN_CEASE &&
       *notifyMsg.errSubCode() ==
@@ -727,9 +734,17 @@ void FiberBgpPeer::sendSocketLoop() noexcept {
           bgp::PeerStats::incrRouteRefreshMessagesSent(peerIdOdsStr_);
           ++peeringState_.txMsgs.routeRefresh;
         },
-        [this](const BgpNotification&) {
+        [this](const BgpNotification& notification) {
           bgp::PeerStats::incrNotificationMessagesSent(peerIdOdsStr_);
           ++peeringState_.txMsgs.notification;
+          /*
+           * Captured here rather than at the ~9 buildBgpNotification call
+           * sites: this visitor is the single point every sent NOTIFICATION
+           * passes through, including the one AdjRibIn pushes onto the
+           * adjRibOut queue instead of calling sendBgpMessage.
+           */
+          peeringState_.lastNotificationSent =
+              TimestampedNotification{notification, getCurrentTimeMs()};
         },
         [](const auto&) {});
   } // while

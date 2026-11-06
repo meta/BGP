@@ -380,6 +380,14 @@ struct BgpSessionInfo {
   std::shared_ptr<VersionNumber> versionNumber;
   // Set only when session goes down from ESTABLISHED state
   std::optional<ResetReason> lastResetReason;
+  /*
+   * Last NOTIFICATION in each direction on the session that went down,
+   * captured alongside lastResetReason. Held here rather than read from the
+   * peer at display time because the peer object is replaced when the session
+   * re-forms, which would lose the reason the previous one ended.
+   */
+  std::optional<TimestampedNotification> lastNotificationSent;
+  std::optional<TimestampedNotification> lastNotificationReceived;
   // number of times peer went down
   uint64_t numResets{0};
   // last time peer went down

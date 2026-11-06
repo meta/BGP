@@ -57,8 +57,7 @@ std::string RouteFilterConfig::str() const {
       {RouteMetric::BGP_WEIGHT_VALUE, "Weight"},
       {RouteMetric::IGP_COST, "IGP Cost"}};
 
-  auto filterCriterion = folly::variant_match(
-      opts,
+  auto describeFilter = folly::overload(
       [](const RangedRouteFilterOpts& rangeFilter) -> std::string {
         return (fmt::format(
             "Select Within Range [{}, {}]",
@@ -109,6 +108,7 @@ std::string RouteFilterConfig::str() const {
             });
         return str;
       });
+  auto filterCriterion = boost::apply_visitor(describeFilter, opts);
   return fmt::format(
       "{}, Filter Criterion: {}",
       routeMetricDescription.count(metric) ? routeMetricDescription.at(metric)
@@ -198,8 +198,7 @@ unique_ptr<RouteFilter> RouteFilter::createRouteFilter(
     const RouteFilterConfig& routeFilterConfig,
     const Rule& rule) {
   unique_ptr<RouteFilter> routeFilter;
-  folly::variant_match(
-      routeFilterConfig.opts,
+  auto createFilter = folly::overload(
       [&](RangedRouteFilterOpts const& rangedFilterOpts) {
         routeFilter.reset(new RangedRouteFilter(
             routeFilterConfig,
@@ -224,6 +223,7 @@ unique_ptr<RouteFilter> RouteFilter::createRouteFilter(
             rule,
             recoverEquivalentFilterOpts.tiebreakerConfigs));
       });
+  boost::apply_visitor(createFilter, routeFilterConfig.opts);
   return routeFilter;
 }
 

@@ -139,6 +139,14 @@ class BgpMessageParser2 {
   static BgpNotification parseBgpNotificationRaw(folly::IOBuf buf);
 
   /**
+   * Parse and consume a NOTIFICATION body (error code, subcode and data)
+   * from the cursor. Expects at least 2 bytes to be readable.
+   * @returns: BgpNotification
+   * @throws: BgpException on unknown error code or subcode
+   */
+  static BgpNotification consumeBgpNotificationBody(folly::io::Cursor& cursor);
+
+  /**
    * Parse raw BGP OPEN message. It's up to the caller to construct
    * proper IOBuf and decide whether to copy or move it into our
    * value argument.

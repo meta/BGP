@@ -215,14 +215,20 @@ std::unique_ptr<folly::IOBuf> BgpMessageSerializer::serializeBgpNotification(
   // Leave room for BGP Header
   auto wcursor = cursor + kBgpMsgHeaderLen;
 
-  // Write errCode, errSubCode and data
-  wcursor.write<uint8_t>((uint8_t)*notif.errCode());
-  wcursor.write<uint8_t>((uint8_t)*notif.errSubCode());
-  wcursor.push((const uint8_t*)notif.data()->c_str(), notif.data()->size());
+  serializeBgpNotificationBody(wcursor, notif);
 
   auto len = serializeBgpHeader(cursor, wcursor, BGP_MSG_TYPE_NOTIFICATION);
   buf->trimEnd(kMaxBgpMsgLen - len);
   return buf;
+}
+
+void BgpMessageSerializer::serializeBgpNotificationBody(
+    RWPrivateCursor& cursor,
+    const BgpNotification& notif) {
+  // Write errCode, errSubCode and data
+  cursor.write<uint8_t>((uint8_t)*notif.errCode());
+  cursor.write<uint8_t>((uint8_t)*notif.errSubCode());
+  cursor.push((const uint8_t*)notif.data()->c_str(), notif.data()->size());
 }
 
 std::unique_ptr<folly::IOBuf> BgpMessageSerializer::serializeBgpKeepAlive() {

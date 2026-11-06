@@ -304,6 +304,10 @@ BgpNotification BgpMessageParser2::parseBgpNotificationRaw(folly::IOBuf buf) {
             buf.length()));
   }
 
+  return consumeBgpNotificationBody(cursor);
+}
+
+BgpNotification BgpMessageParser2::consumeBgpNotificationBody(Cursor& cursor) {
   BgpNotification notif;
   notif.errSubCode() = 0;
   notif.errSubCodeStr() = "NA";

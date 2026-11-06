@@ -49,6 +49,14 @@ class BgpMessageSerializer {
       const BgpNotification& notif);
 
   /**
+   * Serialize a NOTIFICATION body (error code, subcode and data) at the
+   * cursor, advancing it past the written bytes.
+   */
+  static void serializeBgpNotificationBody(
+      folly::io::RWPrivateCursor& cursor,
+      const BgpNotification& notif);
+
+  /**
    * Generates new KeepAlive message into a folly::IOBuf buffer.
    * @returns: Serialized buffer with size of bgp msg
    * @throws: BgpSerializerException on failure

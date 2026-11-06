@@ -542,6 +542,13 @@ class FiberBgpPeer : public std::enable_shared_from_this<FiberBgpPeer>,
   const bool enableSerializeGroupPdu_{false};
 
   /*
+   * RFC 8538: set when the session becomes ESTABLISHED with the Graceful
+   * Restart Notification (N) bit negotiated. NOTIFICATIONs received on this
+   * session, except Cease/Hard Reset, follow Graceful Restart.
+   */
+  bool grNotification_{false};
+
+  /*
    * This reports the state transitions for this peer
    */
   RWQueue<ObservableStateT> observerStateQueue_;

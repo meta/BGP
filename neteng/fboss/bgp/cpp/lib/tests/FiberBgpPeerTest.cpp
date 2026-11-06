@@ -63,6 +63,7 @@ class MockFiberBgpPeer;
 
 #include "common/network/AddressUtil.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpException.h"
+#include "neteng/fboss/bgp/cpp/lib/BgpUtil.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/BgpSerializer.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberBgpPeer.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberBgpPeerManager.h"
@@ -135,6 +136,11 @@ class MockFiberBgpPeer : public FiberBgpPeer {
   }
   BgpCapabilities getRemoteCapabilities() const noexcept {
     return peeringState_.remoteCapabilities;
+  }
+
+  // Stands in for an ESTABLISHED session with the RFC 8538 N bit negotiated
+  void setGrNotification(bool grNotification) noexcept {
+    grNotification_ = grNotification;
   }
 
   bool getValidateRemoteAs() {
@@ -320,6 +326,45 @@ class FiberBgpPeerFixture : public ::testing::Test {
       const std::shared_ptr<MockFiberBgpPeer>& peer2) {
     peer1->stop();
     peer2->stop();
+  }
+
+  /*
+   * Establish two peers with the RFC 8538 N bit, have peer1 send notif and
+   * return whether peer2 stops with graceful restart
+   */
+  bool peer2GrOnNotification(const BgpNotification& notif) {
+    bool gracefulRestart{true};
+    auto& fm = fmWrapper_.get();
+    fm.addTask([&] {
+      auto [peer1, peer2] = startTwoPeers(params3_, params4_);
+      EXPECT_EQ(
+          runUntilTargetStateOrTimeout(
+              peer1, BgpSessionState::ESTABLISHED, 100ms),
+          0);
+      EXPECT_EQ(
+          runUntilTargetStateOrTimeout(
+              peer2, BgpSessionState::ESTABLISHED, 100ms),
+          0);
+      peer1->setGrNotification(true);
+      peer2->setGrNotification(true);
+
+      auto copyNotif = notif;
+      if (FLAGS_enable_egress_queue_backpressure) {
+        EXPECT_TRUE(peer1BoundedInput_->push(std::move(copyNotif)));
+      } else {
+        peer1Input_->push(std::move(copyNotif));
+      }
+      auto msg = facebook::bgp::test::boundedBlockingPop(
+          *peer2Output_, "peer2Output_");
+      EXPECT_TRUE(std::holds_alternative<FiberBgpPeer::BgpSessionStop>(msg));
+      gracefulRestart =
+          std::get<FiberBgpPeer::BgpSessionStop>(msg).gracefulRestart;
+
+      stopTwoPeers(peer1, peer2);
+      EXPECT_EQ(ResetReason::NOTIFICATION_RCVD, peer2->getResetReason());
+    });
+    evb_.loop();
+    return gracefulRestart;
   }
 
   int runUntilTargetStateOrTimeout(
@@ -2659,6 +2704,17 @@ TEST_F(FiberBgpPeerFixture, GracefulRestartNotificationTest) {
       std::optional<std::function<void()>>(lambdaVerifyGRNotification),
       update1_,
       update2_);
+}
+
+// RFC 8538 Sec. 4
+TEST_F(FiberBgpPeerFixture, GrNotificationReceivedTest) {
+  EXPECT_TRUE(peer2GrOnNotification(notifyMsg1_));
+}
+
+// RFC 8538 Sec. 3
+TEST_F(FiberBgpPeerFixture, GrNotificationHardResetReceivedTest) {
+  EXPECT_FALSE(
+      peer2GrOnNotification(buildBgpHardResetNotification(notifyMsg1_)));
 }
 
 /**

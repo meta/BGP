@@ -388,14 +388,8 @@ bool FiberBgpPeer::processBgpNotificationError(const BgpNotificationError& e) {
     bgp::PeerStats::incrConnectionCollisionClosedByPeer();
   }
 
-  if (!isHardReset &&
-      isGrNotificationNegotiated(peeringState_.negotiatedCapabilities)) {
-    // eligible for graceful restart
-    return true;
-  }
-
-  // not eligible for graceful restart
-  return false;
+  // RFC 8538: eligible for graceful restart unless it is a Hard Reset
+  return grNotification_ && !isHardReset;
 }
 
 bool FiberBgpPeer::processBgpSessionStop(const BgpSessionStop& e) {
@@ -1193,6 +1187,8 @@ void FiberBgpPeer::processKeepAliveMsg() {
   switch (peeringState_.state) {
     case BgpSessionState::OPEN_CONFIRM: {
       peeringState_.state = BgpSessionState::ESTABLISHED;
+      grNotification_ =
+          isGrNotificationNegotiated(peeringState_.negotiatedCapabilities);
       observerStateQueue_.put({getRemoteBgpPeerId(), peeringState_.state, 0});
       break;
     }

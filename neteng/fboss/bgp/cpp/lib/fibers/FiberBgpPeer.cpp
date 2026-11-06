@@ -47,7 +47,8 @@ BgpCapabilities buildBgpCapabilities(
     const bool mpExtV4LU,
     const bool mpExtV6LU,
     const bool enhancedRouteRefresh,
-    const bool routeRefresh) {
+    const bool routeRefresh,
+    const bool grNotification) {
   BgpCapabilities capabilities;
   capabilities.mpExtV4Unicast() = mpExtV4Unicast;
   capabilities.mpExtV6Unicast() = mpExtV6Unicast;
@@ -66,6 +67,8 @@ BgpCapabilities buildBgpCapabilities(
     capabilities.isRestarting() = isRestarting;
     // Estimated time for re-establishing connection after restart
     capabilities.restartTime() = restartTime->count();
+    // RFC 8538 Notification (N) bit
+    capabilities.grNotification() = grNotification;
     /*
      * Address families which support GR
      * forwardingState is set to true to workaround NX-OS's issue of purging
@@ -146,7 +149,8 @@ FiberBgpPeer::FiberBgpPeer(
     std::shared_ptr<OutputQueueT> oqueue,
     const bool isRestarting,
     const bool enableEgressQueueBackpressure,
-    const bool enableSerializeGroupPdu)
+    const bool enableSerializeGroupPdu,
+    const bool enableGrNotification)
     : peeringParams_(peeringParams),
       peerIdOdsStr_(peeringParams.getUniquePeerId()),
       caps_(buildBgpCapabilities(
@@ -160,7 +164,8 @@ FiberBgpPeer::FiberBgpPeer(
           peeringParams.isAfiIpv4LUConfigured,
           peeringParams.isAfiIpv6LUConfigured,
           peeringParams.isEnhancedRouteRefreshConfigured,
-          peeringParams.isRouteRefreshConfigured)),
+          peeringParams.isRouteRefreshConfigured,
+          enableGrNotification)),
       msgParser_(FiberBgpParser(caps_, rcvdQueue_)),
       fm_{fm},
       evb_{evb},

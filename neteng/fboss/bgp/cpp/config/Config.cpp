@@ -994,10 +994,14 @@ void Config::populateConfigDatabase(
   std::vector<std::string> includeInterfaceRegexes{};
   bool enableNetlinkDampening{false};
   bool enableFibOutTracking{false};
+  bool enableGrNotification{false};
 
   if (auto setting = config_.bgp_setting_config()) {
     if (auto fibOutTrackingFlag = setting->enable_fib_out_tracking()) {
       enableFibOutTracking = *fibOutTrackingFlag;
+    }
+    if (auto grNotificationFlag = setting->enable_gr_notification()) {
+      enableGrNotification = *grNotificationFlag;
     }
     if (auto nexthopTrackingFlag = setting->enable_next_hop_tracking()) {
       enableNextHopTracking = *nexthopTrackingFlag;
@@ -1129,7 +1133,8 @@ void Config::populateConfigDatabase(
       enableStreamSubscriberBackpressure,
       enableNetlinkDampening,
       enableRouteRefresh,
-      enableFibOutTracking);
+      enableFibOutTracking,
+      enableGrNotification);
 
   // populate peer groups
   if (config_.peer_groups().has_value()) {

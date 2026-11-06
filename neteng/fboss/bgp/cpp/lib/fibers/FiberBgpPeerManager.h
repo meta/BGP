@@ -1064,6 +1064,9 @@ class FiberBgpPeerManager
    */
   bool enableSerializeGroupPdu_{false};
 
+  // Advertise the RFC 8538 Notification (N) bit in the GR capability.
+  bool enableGrNotification_{false};
+
   std::atomic<bool> isRestarting_{true};
 
 #ifdef FiberBgpPeerManager_TEST_FRIENDS

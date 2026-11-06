@@ -194,7 +194,8 @@ class FiberBgpPeer : public std::enable_shared_from_this<FiberBgpPeer>,
       std::shared_ptr<OutputQueueT> oqueue,
       const bool isRestarting = false,
       const bool enableEgressQueueBackpressure = false,
-      const bool enableSerializeGroupPdu = false);
+      const bool enableSerializeGroupPdu = false,
+      const bool enableGrNotification = false);
 
   // movable
   FiberBgpPeer(FiberBgpPeer&&) = default;

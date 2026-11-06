@@ -106,7 +106,8 @@ class MockFiberBgpPeer : public FiberBgpPeer {
       const bool isRestarting = false,
       const bool enableEgressQueueBackpressure =
           FLAGS_enable_egress_queue_backpressure,
-      const bool enableSerializeGroupPdu = false)
+      const bool enableSerializeGroupPdu = false,
+      const bool enableGrNotification = false)
       : FiberBgpPeer(
             peeringParams,
             fm,
@@ -117,7 +118,8 @@ class MockFiberBgpPeer : public FiberBgpPeer {
             oqueue,
             isRestarting,
             enableEgressQueueBackpressure,
-            enableSerializeGroupPdu) {}
+            enableSerializeGroupPdu,
+            enableGrNotification) {}
 
   bool getSerializeGroupPdu() const noexcept {
     return enableSerializeGroupPdu_;
@@ -137,6 +139,10 @@ class MockFiberBgpPeer : public FiberBgpPeer {
   }
   BgpCapabilities getRemoteCapabilities() const noexcept {
     return peeringState_.remoteCapabilities;
+  }
+
+  BgpCapabilities getLocalCapabilities() const noexcept {
+    return caps_;
   }
 
   // Stands in for an ESTABLISHED session with the RFC 8538 N bit negotiated
@@ -4326,6 +4332,42 @@ TEST_F(FiberBgpPeerFixture, RcvdQueueBackpressureTest) {
 
   evb_.loop();
   folly::collectAll(workers.begin(), workers.end()).get();
+}
+
+// RFC 8538: the N bit is advertised in the GR capability only when enabled
+TEST_F(FiberBgpPeerFixture, GrNotificationCapabilityTest) {
+  auto& fm = fmWrapper_.get();
+  folly::SocketPair sp;
+  auto fs = std::make_unique<FiberSocket>(
+      folly::AsyncSocket::newSocket(
+          &evb_, folly::NetworkSocket::fromFd(sp.extractFD0())),
+      &evb_);
+
+  auto disabledPeer = std::make_shared<MockFiberBgpPeer>(
+      params1_,
+      fm,
+      evb_,
+      std::move(*fs0_),
+      peer1Input_,
+      peer1BoundedInput_,
+      peer1Output_);
+  auto enabledPeer = std::make_shared<MockFiberBgpPeer>(
+      params1_,
+      fm,
+      evb_,
+      std::move(*fs),
+      peer1Input_,
+      peer1BoundedInput_,
+      peer1Output_,
+      false /* isRestarting */,
+      false /* enableEgressQueueBackpressure */,
+      false /* enableSerializeGroupPdu */,
+      true /* enableGrNotification */);
+
+  ASSERT_TRUE(*disabledPeer->getLocalCapabilities().gracefulRestart());
+  EXPECT_FALSE(*disabledPeer->getLocalCapabilities().grNotification());
+  ASSERT_TRUE(*enabledPeer->getLocalCapabilities().gracefulRestart());
+  EXPECT_TRUE(*enabledPeer->getLocalCapabilities().grNotification());
 }
 
 TEST_F(FiberBgpPeerFixture, SerializeGroupPduFlagTest) {

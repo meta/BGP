@@ -161,7 +161,8 @@ FiberBgpPeerManager::FiberBgpPeerManager(
       enableCoroNotifyQueue_(enableCoroNotifyQueue),
       enableEgressQueueBackpressure_(config.enableEgressQueueBackpressure),
       enableSerializeGroupPdu_(
-          config.updateGroupConfig.enableSerializeGroupPdu) {}
+          config.updateGroupConfig.enableSerializeGroupPdu),
+      enableGrNotification_(config.enableGrNotification) {}
 
 FiberBgpPeerManager::FiberBgpPeerManager(
     const bgp::BgpGlobalConfig& config,
@@ -177,7 +178,8 @@ FiberBgpPeerManager::FiberBgpPeerManager(
       enableCoroNotifyQueue_(enableCoroNotifyQueue),
       enableEgressQueueBackpressure_(config.enableEgressQueueBackpressure),
       enableSerializeGroupPdu_(
-          config.updateGroupConfig.enableSerializeGroupPdu) {}
+          config.updateGroupConfig.enableSerializeGroupPdu),
+      enableGrNotification_(config.enableGrNotification) {}
 
 FiberBgpPeerManager::~FiberBgpPeerManager() {
   shutdownWithGR(false);
@@ -1576,7 +1578,8 @@ FiberBgpPeerManager::setupBgpPeerActiveSession(
       enableMessagesOverNotifyQueue_ ? nullptr : activeSessionInfo->peerOutput,
       isRestarting_,
       enableEgressQueueBackpressure_,
-      enableSerializeGroupPdu_);
+      enableSerializeGroupPdu_,
+      enableGrNotification_);
   return activeSessionInfo;
 }
 

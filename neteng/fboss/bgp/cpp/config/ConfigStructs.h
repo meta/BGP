@@ -151,7 +151,8 @@ struct BgpGlobalConfig {
       const EnableNetlinkDampening enableNetlinkDampening =
           EnableNetlinkDampening{false},
       const bool enableRouteRefresh = false,
-      const bool enableFibOutTracking = false)
+      const bool enableFibOutTracking = false,
+      const bool enableGrNotification = false)
       : localAsn(localAsn),
         routerId(routerId),
         clusterId(clusterId),
@@ -189,7 +190,8 @@ struct BgpGlobalConfig {
         enableLegacyV4NlriEncoding(enableLegacyV4NlriEncoding),
         enableRouteRefresh(enableRouteRefresh),
         enableStreamSubscriberBackpressure(enableStreamSubscriberBackpressure),
-        enableFibOutTracking(enableFibOutTracking) {}
+        enableFibOutTracking(enableFibOutTracking),
+        enableGrNotification(enableGrNotification) {}
 
   const uint32_t localAsn;
   const folly::IPAddress routerId;
@@ -368,6 +370,9 @@ struct BgpGlobalConfig {
 
   // Record the last normalized platform FIB request for each RIB entry.
   const bool enableFibOutTracking{false};
+
+  // Advertise the RFC 8538 Notification (N) bit in the GR capability.
+  const bool enableGrNotification{false};
 };
 
 struct BgpCommonPeerGroupConfig {

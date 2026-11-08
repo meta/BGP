@@ -340,7 +340,7 @@ void BgpProfiler::writeToFb303() {
 ScopedProfile::ScopedProfile(const std::string& name) : name_(name) {
   auto* profiler = BgpProfiler::getInstance();
 
-  if (FOLLY_LIKELY(!profiler->isEnabled())) {
+  if (!profiler->isEnabled()) [[likely]] {
     return;
   }
 

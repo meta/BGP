@@ -886,7 +886,7 @@ AdjRibOutGroup::buildAndScheduleSendInitialDumpFromShadowRib() {
     co_return;
   }
 
-  if (FOLLY_UNLIKELY(testOnlyDeferInitialDump)) {
+  if (testOnlyDeferInitialDump) [[unlikely]] {
     /*
      * The dump is deferred, not completed. Retire this task's source and queue
      * a fresh dump so the group keeps reporting one scheduled until the defer
@@ -4013,7 +4013,7 @@ void AdjRibOutGroup::checkAndAcceptReadyToJoinPeers() noexcept {
       continue;
     }
 
-    if (FOLLY_UNLIKELY(adjRib->testOnlyDeferDrjAcceptance)) {
+    if (adjRib->testOnlyDeferDrjAcceptance) [[unlikely]] {
       continue;
     }
 
@@ -4103,7 +4103,7 @@ void AdjRibOutGroup::checkAndAcceptReadyToJoinPeers() noexcept {
  */
 void AdjRibOutGroup::maybeAcceptDSPPeer(
     const std::shared_ptr<AdjRib>& adjRib) noexcept {
-  if (FOLLY_UNLIKELY(adjRib->testOnlyDeferDrjAcceptance)) {
+  if (adjRib->testOnlyDeferDrjAcceptance) [[unlikely]] {
     return;
   }
   /* Revalidate at the final production acceptance boundary. */

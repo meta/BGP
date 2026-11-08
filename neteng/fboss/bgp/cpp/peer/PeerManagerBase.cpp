@@ -1513,7 +1513,7 @@ folly::coro::Task<void> PeerManagerBase::processRibDumpReqWithCancellationCoro(
     co_return;
   }
 
-  if (FOLLY_UNLIKELY(adjRib->testOnlyDeferInitDump)) {
+  if (adjRib->testOnlyDeferInitDump) [[unlikely]] {
     /*
      * The dump is deferred, not completed. Retire this coro's cancellation
      * source and schedule a fresh dump so the peer stays "scheduled" (a dump is
@@ -5721,9 +5721,8 @@ PeerManagerBase::processIngressAndEgressRouteFilterUpdate(
     size_t ingressAffectedCount,
     size_t egressAffectedCount) {
   // Test-only: pause routing-policy processing at coroutine entry.
-  if (FOLLY_UNLIKELY(
-          testOnlyPolicyUpdateProcessingEntered_ &&
-          testOnlyPolicyUpdateProcessingRelease_)) {
+  if (testOnlyPolicyUpdateProcessingEntered_ &&
+      testOnlyPolicyUpdateProcessingRelease_) [[unlikely]] {
     auto entered = std::move(testOnlyPolicyUpdateProcessingEntered_);
     auto release = std::move(testOnlyPolicyUpdateProcessingRelease_);
     entered->post();

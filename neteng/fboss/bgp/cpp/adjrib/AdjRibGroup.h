@@ -1158,7 +1158,7 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
    * reset.
    */
   void setLastSeenRibVersion(uint64_t version) noexcept {
-    if (FOLLY_UNLIKELY(version < lastSeenRibVersion_)) {
+    if (version < lastSeenRibVersion_) [[unlikely]] {
       XLOGF_EVERY_MS(
           ERR,
           100000,

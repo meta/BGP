@@ -19,6 +19,8 @@
  */
 #include "RouteFilter.h"
 
+#include <variant>
+
 #include <fmt/format.h>
 #include <folly/Optional.h>
 #include <folly/Overload.h>
@@ -108,7 +110,7 @@ std::string RouteFilterConfig::str() const {
             });
         return str;
       });
-  auto filterCriterion = boost::apply_visitor(describeFilter, opts);
+  auto filterCriterion = std::visit(describeFilter, opts);
   return fmt::format(
       "{}, Filter Criterion: {}",
       routeMetricDescription.count(metric) ? routeMetricDescription.at(metric)
@@ -223,7 +225,7 @@ unique_ptr<RouteFilter> RouteFilter::createRouteFilter(
             rule,
             recoverEquivalentFilterOpts.tiebreakerConfigs));
       });
-  boost::apply_visitor(createFilter, routeFilterConfig.opts);
+  std::visit(createFilter, routeFilterConfig.opts);
   return routeFilter;
 }
 

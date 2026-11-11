@@ -23,13 +23,12 @@
 
 #pragma once
 
-#include <boost/variant.hpp>
-#include <boost/variant/variant_fwd.hpp>
 #include <folly/Optional.h>
 #include <functional>
 #include <map>
 #include <memory>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 #include "neteng/fboss/bgp/cpp/routelib/RouteBase.h"
@@ -124,19 +123,7 @@ struct MembershipRouteFilterOpts {
 };
 
 // Forward declaration
-struct RecoverEquivalentRouteFilterOpts;
-
-using RouteFilterOpts = boost::variant<
-    RangedRouteFilterOpts,
-    HighestLowestRouteFilterOpts,
-    MembershipRouteFilterOpts,
-    boost::recursive_wrapper<RecoverEquivalentRouteFilterOpts>>;
-
-struct RouteFilterConfig {
-  RouteMetric metric;
-  RouteFilterOpts opts;
-  std::string str() const;
-};
+struct RouteFilterConfig;
 
 /*
  * Options for RecoverEquivalentRouteFilter. This struct is needed so that the
@@ -145,6 +132,18 @@ struct RouteFilterConfig {
 struct RecoverEquivalentRouteFilterOpts {
   // Additional tiebreakers to filter routes before recovering
   std::vector<RouteFilterConfig> tiebreakerConfigs;
+};
+
+using RouteFilterOpts = std::variant<
+    RangedRouteFilterOpts,
+    HighestLowestRouteFilterOpts,
+    MembershipRouteFilterOpts,
+    RecoverEquivalentRouteFilterOpts>;
+
+struct RouteFilterConfig {
+  RouteMetric metric;
+  RouteFilterOpts opts;
+  std::string str() const;
 };
 
 /*

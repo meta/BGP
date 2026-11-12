@@ -708,6 +708,29 @@ class RouteAttributePolicy {
     std::unordered_set<folly::CIDRNetwork> updatedRoutes{};
   };
 
+  /*
+   * CTE weights are applied in two steps:
+   *  1. computeStatementWeights(): find the route's matching statement and
+   *     compute each nexthop's weight action, over all paths.
+   *  2. overwriteRouteAttributes(): apply those weights to the selected
+   *     nexthops, divided per action if configured.
+   */
+
+  /**
+   * Result of computeStatementWeights(). `statement` is nullptr if no active
+   * statement matches the route.
+   */
+  struct StatementWeights {
+    const RouteAttributeStatement* statement{nullptr};
+    RouteAttributeActions::NexthopWeights nexthopWeights;
+  };
+
+  /**
+   * Find the route's matching statement and compute the weight action of
+   * each of the route's nexthops.
+   */
+  StatementWeights computeStatementWeights(const RibEntry& route) const;
+
   /**
    * Calls updateAttribute on the given route and save the changes in
    * change

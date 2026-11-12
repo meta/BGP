@@ -794,14 +794,26 @@ RouteAttributePolicy::findMatchingStatement(const RibEntry& route) const {
   return &statements_.at(*matchedStmtName);
 }
 
+RouteAttributePolicy::StatementWeights
+RouteAttributePolicy::computeStatementWeights(const RibEntry& route) const {
+  StatementWeights statementWeights;
+  statementWeights.statement = findMatchingStatement(route);
+  if (statementWeights.statement != nullptr) {
+    statementWeights.nexthopWeights =
+        statementWeights.statement->computeNexthopWeights(route);
+  }
+  return statementWeights;
+}
+
 bool RouteAttributePolicy::overwriteRouteAttributes(
     RibEntry& route,
     RouteAttributePolicy::RibChange& change) const {
-  const auto* stmt = findMatchingStatement(route);
+  const auto statementWeights = computeStatementWeights(route);
+  const auto* stmt = statementWeights.statement;
   if (stmt == nullptr) {
     return false;
   }
-  if (stmt->updateAttribute(route, stmt->computeNexthopWeights(route))) {
+  if (stmt->updateAttribute(route, statementWeights.nexthopWeights)) {
     const auto& prefix = route.getPrefix();
     change.updatedRoutes.emplace(prefix);
     XLOGF(

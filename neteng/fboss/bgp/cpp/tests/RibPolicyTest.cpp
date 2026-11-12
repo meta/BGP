@@ -3455,6 +3455,52 @@ TEST_F(RouteAttributeUcmpActionFixture, RibPolicyRouteAttributeUCMP) {
   }
 }
 
+namespace {
+
+WeightedNexthopMap computedWeights(
+    const RouteAttributePolicy::StatementWeights& statementWeights) {
+  WeightedNexthopMap weights;
+  for (const auto& [nh, matched] : statementWeights.nexthopWeights) {
+    weights.emplace(nh, matched.weight);
+  }
+  return weights;
+}
+
+} // namespace
+
+/*
+ * Test computeStatementWeights returns the active statement and each nexthop's
+ * weight without changing the route.
+ */
+TEST_F(
+    RouteAttributeUcmpActionFixture,
+    ComputeStatementWeightsReturnsStatementAndNexthopWeights) {
+  const auto tPolicy =
+      createTRibPolicyUcmp({kV4Prefix2}, tRouteAttributeUcmpAction);
+  const auto raPolicy =
+      std::make_unique<RouteAttributePolicy>(*tPolicy.route_attribute_policy());
+  const auto peer1 = TinyPeerInfo(
+      kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false);
+  const auto peer2 = TinyPeerInfo(
+      kPeerAddr2, kPeerAsn2, kPeerRouterId2, BgpSessionType::EBGP, false);
+  RibEntry matched(kV4Prefix2);
+  RibEntry unmatched(kV4Prefix1);
+  for (auto* entry : {&matched, &unmatched}) {
+    ASSERT_TRUE(entry->updatePath(peer1, attrs1, false));
+    ASSERT_TRUE(entry->updatePath(peer2, attrs2, false));
+  }
+
+  const auto statementWeights = raPolicy->computeStatementWeights(matched);
+  const WeightedNexthopMap expected{{kV4Nexthop1, nhWt1}, {kV4Nexthop2, nhWt2}};
+  EXPECT_NE(nullptr, statementWeights.statement);
+  EXPECT_EQ(expected, computedWeights(statementWeights));
+  EXPECT_EQ(nullptr, matched.getMultipathWeightedNexthops());
+
+  const auto noStatementWeights = raPolicy->computeStatementWeights(unmatched);
+  EXPECT_EQ(nullptr, noStatementWeights.statement);
+  EXPECT_TRUE(noStatementWeights.nexthopWeights.empty());
+}
+
 /*
  * Test computeNexthopWeights gives every matched nexthop its action and weight,
  * before any path is selected, and skips unmatched nexthops.

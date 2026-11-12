@@ -2425,12 +2425,6 @@ void RibBase::handleAddUpdatedUnicastRoute(
    */
   uint64_t currentRibVersion = incrementRibVersion();
 
-  const auto oldAdvMultipathNHs =
-      entry.getAdvertisedMultipathWeightedNexthops();
-  entry.commitMultipathNexthops();
-  const auto newAdvMultipathNHs =
-      entry.getAdvertisedMultipathWeightedNexthops();
-
   /*
    * If this is the first time we are calculating a bestpath then mark it
    * as new entry later in the RibOutAnnouncement for out-delay purpose.
@@ -2448,79 +2442,13 @@ void RibBase::handleAddUpdatedUnicastRoute(
   const auto prevAdvertisedMultipathSize =
       entry.getAdvertisedMultipaths().size();
 
-  if (entry.commitMultipaths() && entry.bestpath_) {
-    /*
-     * TODO: It looks here that we are re-advertising all paths whether or
-     * not they changed.  While this is not incorrect, it will result in
-     * sending more info than we need.  Something can be done here, or in
-     * AdjRib to fix this.
-     */
-    const auto advMultPaths = entry.getAdvertisedMultipaths();
-    for (const auto& [_, advMultPath] : advMultPaths) {
-      if (announcementAddPath.addPathEntries.size() == kRibChunkSize) {
-        flushAnnouncementChunk(
-            announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
-
-        /*
-         * rule 2: this prefix's remaining add-path entries land in a new
-         * chunk (a separate RibOut message), so bump the version. A peer
-         * that detached after the flushed chunk must observe a strictly
-         * higher version on the entries that follow, otherwise
-         * isEntryShared would wrongly treat them as already-seen and the
-         * peer would miss them.
-         */
-        currentRibVersion = incrementRibVersion();
-      }
-
-      auto nextHop = advMultPath->attrs->getNexthop();
-      std::optional<uint32_t> nhWeight;
-      // Check if nhWeightMap is a nullptr or not
-      if (newAdvMultipathNHs && newAdvMultipathNHs->contains(nextHop)) {
-        nhWeight = newAdvMultipathNHs->at(nextHop);
-      }
-
-      XCHECK(advMultPath->pathIdToSend.has_value());
-      announcementAddPath.addPathEntries.emplace_back(
-          prefix,
-          advMultPath->pathIdToSend.value(),
-          advMultPath->peer,
-          advMultPath->attrs,
-          switchId_,
-          entry.getMultipaths().size(),
-          entry.getAggregateReceivedUcmpWeight(),
-          entry.getAggregateLocalUcmpWeight(),
-          entry.getRibPolicyUcmpWeight(),
-          newlyInstalledInLocalRib,
-          entry.installTimeStamp_,
-          currentRibVersion,
-          entry.getIsPartialDrain());
-    }
-
-    // if we are withdrawing certain paths, we need to notify AdjRib
-    if (oldAdvMultipathNHs && newAdvMultipathNHs &&
-        (*oldAdvMultipathNHs != *newAdvMultipathNHs)) {
-      for (const auto oldNhIter : *oldAdvMultipathNHs) {
-        if (newAdvMultipathNHs->find(oldNhIter.first) ==
-            newAdvMultipathNHs->end()) {
-          if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
-            flushWithdrawalChunk(
-                withdrawalAddPath,
-                /*reserveAddPath=*/true,
-                /*logAsAddPath=*/false);
-
-            /*
-             * rule 2: this prefix's remaining add-path withdrawals land in
-             * a new chunk, so bump the version (see the add-path
-             * announcement flush above for the reasoning).
-             */
-            currentRibVersion = incrementRibVersion();
-          }
-          withdrawalAddPath.addPathEntries.emplace_back(
-              prefix, kPlaceholderPathID, oldNhIter.first, currentRibVersion);
-        }
-      }
-    }
-  }
+  handleAddUpdatedMultipaths(
+      entry,
+      sendWithEoR,
+      newlyInstalledInLocalRib,
+      currentRibVersion,
+      announcementAddPath,
+      withdrawalAddPath);
 
   /*
    * Persist the final (highest) version reached for this prefix, so
@@ -2566,6 +2494,92 @@ void RibBase::handleAddUpdatedUnicastRoute(
       entry.installTimeStamp_,
       currentRibVersion,
       entry.getIsPartialDrain());
+}
+
+void RibBase::handleAddUpdatedMultipaths(
+    RibEntry& entry,
+    bool sendWithEoR,
+    bool newlyInstalledInLocalRib,
+    uint64_t& currentRibVersion,
+    RibOutAnnouncement& announcementAddPath,
+    RibOutWithdrawal& withdrawalAddPath) noexcept {
+  const auto oldAdvMultipathNHs =
+      entry.getAdvertisedMultipathWeightedNexthops();
+  entry.commitMultipathNexthops();
+  const auto newAdvMultipathNHs =
+      entry.getAdvertisedMultipathWeightedNexthops();
+
+  if (!(entry.commitMultipaths() && entry.bestpath_)) {
+    return;
+  }
+
+  /*
+   * TODO: It looks here that we are re-advertising all paths whether or
+   * not they changed.  While this is not incorrect, it will result in
+   * sending more info than we need.  Something can be done here, or in
+   * AdjRib to fix this.
+   */
+  const auto advMultPaths = entry.getAdvertisedMultipaths();
+  for (const auto& [_, advMultPath] : advMultPaths) {
+    if (announcementAddPath.addPathEntries.size() == kRibChunkSize) {
+      flushAnnouncementChunk(
+          announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
+
+      /*
+       * rule 2: this prefix's remaining add-path entries land in a new
+       * chunk (a separate RibOut message), so bump the version. A peer
+       * that detached after the flushed chunk must observe a strictly
+       * higher version on the entries that follow, otherwise
+       * isEntryShared would wrongly treat them as already-seen and the
+       * peer would miss them.
+       */
+      currentRibVersion = incrementRibVersion();
+    }
+
+    XCHECK(advMultPath->pathIdToSend.has_value());
+    announcementAddPath.addPathEntries.emplace_back(
+        entry.getPrefix(),
+        advMultPath->pathIdToSend.value(),
+        advMultPath->peer,
+        advMultPath->attrs,
+        switchId_,
+        entry.getMultipaths().size(),
+        entry.getAggregateReceivedUcmpWeight(),
+        entry.getAggregateLocalUcmpWeight(),
+        entry.getRibPolicyUcmpWeight(),
+        newlyInstalledInLocalRib,
+        entry.installTimeStamp_,
+        currentRibVersion,
+        entry.getIsPartialDrain());
+  }
+
+  // if we are withdrawing certain paths, we need to notify AdjRib
+  if (oldAdvMultipathNHs && newAdvMultipathNHs &&
+      (*oldAdvMultipathNHs != *newAdvMultipathNHs)) {
+    for (const auto oldNhIter : *oldAdvMultipathNHs) {
+      if (newAdvMultipathNHs->find(oldNhIter.first) ==
+          newAdvMultipathNHs->end()) {
+        if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
+          flushWithdrawalChunk(
+              withdrawalAddPath,
+              /*reserveAddPath=*/true,
+              /*logAsAddPath=*/false);
+
+          /*
+           * rule 2: this prefix's remaining add-path withdrawals land in
+           * a new chunk, so bump the version (see the add-path
+           * announcement flush above for the reasoning).
+           */
+          currentRibVersion = incrementRibVersion();
+        }
+        withdrawalAddPath.addPathEntries.emplace_back(
+            entry.getPrefix(),
+            kPlaceholderPathID,
+            oldNhIter.first,
+            currentRibVersion);
+      }
+    }
+  }
 }
 
 TFibNexthopDatabase RibBase::getFibNexthopDatabase() {

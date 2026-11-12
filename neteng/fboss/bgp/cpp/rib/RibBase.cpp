@@ -2262,8 +2262,8 @@ void RibBase::handleFibProgrammedMessage(
    * not deleted from Fib, there may be a case where one or more of the ECMP
    * paths were deleted, we need to send withdrawals of paths to neighbors.
    */
-  RibOutWithdrawal withdrawal;
-  withdrawal.addPathEntries.reserve(kRibChunkSize);
+  RibOutWithdrawal withdrawalAddPath;
+  withdrawalAddPath.addPathEntries.reserve(kRibChunkSize);
 
   for (const auto& [_, path] : msg.fibProgrammedPfxs) {
     // Send updates to all established peers
@@ -2283,227 +2283,36 @@ void RibBase::handleFibProgrammedMessage(
       }
       auto& entry = kv->second;
 
-      /*
-       * For any withdraw routes, we must have already notified all peers.
-       * Erase ribEntry if no update in the interim.
-       */
-      if (weightedNexthops == nullptr) {
-        XLOGF(
-            DBG3,
-            "Done withdrawing {} from Fib. Skip notifying BGP peers",
-            folly::IPAddress::networkToString(prefix));
-        // If no new route is added, delete ribEntry for this prefix.
-        if (entry.getAllPathsCnt() == 0) {
-          if (!entry.isOnFibBatchList()) {
-            XLOGF(
-                DBG3,
-                "All paths withdrawn for {}, deleting RibEntry.",
-                folly::IPAddress::networkToString(prefix));
-            ribCounters_.onPrefixRemoved(
-                prefix.first.isV4(), prefix.second, entry.getInactivePathCnt());
-            eraseFibOut(entry);
-            ribEntries_.erase(prefix);
-          } else {
-            XLOGF(
-                DBG1,
-                "All paths withdrawn for {}, when on the FibBatchList. Not deleting RibEntry.",
-                folly::IPAddress::networkToString(prefix));
-          }
-        }
+      /* Handle prefix removed from Fib by deleteUnicastRoutes. */
+      if (handleDeletedUnicastRoute(entry, weightedNexthops)) {
         continue;
       }
-
-      /*
-       * If there has been some change to any of the ECMP paths, delay sending
-       * the update
-       */
-      if (entry.getMultipathWeightedNexthops() != weightedNexthops) {
-        /*
-         * nexthops have been changed. Do not advertise it to BGP peers now.
-         * The new nexthops will trigger another Fib programming and then come
-         * back here with the new nexthops. We will advertise the prefix to
-         * BGP peers then.
-         */
-        XLOGF(
-            DBG3,
-            "Done updating {} to Fib. But nexthops will change in next fib "
-            "programming. Skip notifying BGP peers",
-            folly::IPAddress::networkToString(prefix));
+      /* Handle prefix whose FIB programmed nexthops are outdated. */
+      if (handleStaleUnicastRoute(entry, weightedNexthops)) {
         continue;
       }
-
-      /*
-       * Stamp the RIB version at emission time. Each prefix starts at a fresh
-       * version (rule 3: different prefixes within a message strictly
-       * increase). The local currentRibVersion is re-bumped at each chunk
-       * (kRibChunkSize) flush below, so a prefix whose add-path entries span
-       * more than one chunk strictly increases across those chunks (rule 2),
-       * while all entries emitted within a single chunk share one version
-       * (rule 1). A prefix appears exactly once in the FIB-ack (one
-       * updateUnicastRoute per prefix, best-path-attr key), so this per-prefix
-       * initialization runs once and needs no deduplication. Placed after the
-       * two continue-guards above so a prefix that is skipped (already
-       * withdrawn from FIB, or whose nexthops will change next round) does not
-       * consume a version.
-       *
-       * The final (highest) version is persisted onto the entry after add-path
-       * processing (see the entry.setRibVersion below); the emit sites read
-       * currentRibVersion directly.
-       */
-      uint64_t currentRibVersion = incrementRibVersion();
-
-      const auto oldAdvMultipathNHs =
-          entry.getAdvertisedMultipathWeightedNexthops();
-      entry.commitMultipathNexthops();
-      const auto newAdvMultipathNHs =
-          entry.getAdvertisedMultipathWeightedNexthops();
-
-      /*
-       * If this is the first time we are calculating a bestpath then mark it
-       * as new entry later in the RibOutAnnouncement for out-delay purpose.
-       * Note that if a route was already in RIB and then withdrawn by all
-       * advertising peers and then readvertised again by some(all) of peers
-       * it is also treated as eligible for out-delay and as such marked with
-       * newlyInstalledInRib flag.
-       */
-      bool newlyInstalledInLocalRib = false;
-      if (entry.advertisedBestpath_ == nullptr) {
-        entry.installTimeStamp_ = std::chrono::system_clock::now();
-        newlyInstalledInLocalRib = true;
-      }
-
-      const auto prevAdvertisedMultipathSize =
-          entry.getAdvertisedMultipaths().size();
-      if (entry.commitMultipaths() && entry.bestpath_) {
-        /*
-         * TODO: It looks here that we are re-advertising all paths whether or
-         * not they changed.  While this is not incorrect, it will result in
-         * sending more info than we need.  Something can be done here, or in
-         * AdjRib to fix this.
-         */
-        const auto advMultPaths = entry.getAdvertisedMultipaths();
-        for (const auto& [_, advMultPath] : advMultPaths) {
-          if (announcementAddPath.addPathEntries.size() == kRibChunkSize) {
-            flushAnnouncementChunk(
-                announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
-
-            /*
-             * rule 2: this prefix's remaining add-path entries land in a new
-             * chunk (a separate RibOut message), so bump the version. A peer
-             * that detached after the flushed chunk must observe a strictly
-             * higher version on the entries that follow, otherwise
-             * isEntryShared would wrongly treat them as already-seen and the
-             * peer would miss them.
-             */
-            currentRibVersion = incrementRibVersion();
-          }
-
-          auto nextHop = advMultPath->attrs->getNexthop();
-          std::optional<uint32_t> nhWeight;
-          // Check if nhWeightMap is a nullptr or not
-          if (newAdvMultipathNHs && newAdvMultipathNHs->contains(nextHop)) {
-            nhWeight = newAdvMultipathNHs->at(nextHop);
-          }
-
-          XCHECK(advMultPath->pathIdToSend.has_value());
-          announcementAddPath.addPathEntries.emplace_back(
-              prefix,
-              advMultPath->pathIdToSend.value(),
-              advMultPath->peer,
-              advMultPath->attrs,
-              switchId_,
-              entry.getMultipaths().size(),
-              entry.getAggregateReceivedUcmpWeight(),
-              entry.getAggregateLocalUcmpWeight(),
-              entry.getRibPolicyUcmpWeight(),
-              newlyInstalledInLocalRib,
-              entry.installTimeStamp_,
-              currentRibVersion,
-              entry.getIsPartialDrain());
-        }
-
-        // if we are withdrawing certain paths, we need to notify AdjRib
-        if (oldAdvMultipathNHs && newAdvMultipathNHs &&
-            (*oldAdvMultipathNHs != *newAdvMultipathNHs)) {
-          for (const auto oldNhIter : *oldAdvMultipathNHs) {
-            if (newAdvMultipathNHs->find(oldNhIter.first) ==
-                newAdvMultipathNHs->end()) {
-              if (withdrawal.addPathEntries.size() == kRibChunkSize) {
-                flushWithdrawalChunk(
-                    withdrawal,
-                    /*reserveAddPath=*/true,
-                    /*logAsAddPath=*/false);
-
-                /*
-                 * rule 2: this prefix's remaining add-path withdrawals land in
-                 * a new chunk, so bump the version (see the add-path
-                 * announcement flush above for the reasoning).
-                 */
-                currentRibVersion = incrementRibVersion();
-              }
-              withdrawal.addPathEntries.emplace_back(
-                  prefix,
-                  kPlaceholderPathID,
-                  oldNhIter.first,
-                  currentRibVersion);
-            }
-          }
-        }
-      }
-
-      /*
-       * Persist the final (highest) version reached for this prefix, so
-       * getRibVersion() and any later reader reflect the last chunk emitted --
-       * including when the best path itself did not change and we
-       * early-continue below without emitting a best-path entry.
-       */
-      entry.setRibVersion(currentRibVersion);
-
-      if (!entry.commitBestpath()) {
-        if (!shouldReadvertiseBestpathOnMultipathSizeChange(entry) ||
-            prevAdvertisedMultipathSize ==
-                entry.getAdvertisedMultipaths().size()) {
-          // bestpath did not change, no need for new advertisement
-          continue;
-        }
-      }
-
-      const auto& bestpath = entry.getAdvertisedBestPath();
-      XLOGF(
-          DBG3,
-          "Done updating {} to Fib. Added to BGP peer announcement.",
-          folly::IPAddress::networkToString(prefix));
-
-      /*
-       * Announce the messages if we reached chunk size. This ensures that
-       * while Rib is processing remaining message, adjRib, FiberBgp etc will
-       * start working on previous chunks.
-       */
-      if (announcement.entries.size() == kRibChunkSize) {
-        flushAnnouncementChunk(
-            announcement, /*reserveAddPath=*/false, sendWithEoR);
-      }
-      announcement.entries.emplace_back(
-          prefix,
-          kDefaultPathID,
-          bestpath->peer,
-          bestpath->attrs,
-          switchId_,
-          entry.getMultipaths().size(),
-          entry.getAggregateReceivedUcmpWeight(),
-          entry.getAggregateLocalUcmpWeight(),
-          entry.getRibPolicyUcmpWeight(),
-          newlyInstalledInLocalRib,
-          entry.installTimeStamp_,
-          currentRibVersion,
-          entry.getIsPartialDrain());
+      /* Handle prefix added or updated in Fib by addUnicastRoutes */
+      handleAddUpdatedUnicastRoute(
+          entry,
+          sendWithEoR,
+          announcement,
+          announcementAddPath,
+          withdrawalAddPath);
     }
   }
 
+  /*
+   * TODO: Move chunking into a unified RibOut writer that owns the in-progress
+   * announcement and withdrawal messages. The messages would then no longer
+   * need to be passed through each loop iteration (into
+   * handleAddUpdatedUnicastRoute) and flushed separately here at the end of
+   * the loop.
+   */
   // if there are further withdraw for add path entries, we send them out.
-  if (withdrawal.addPathEntries.size()) {
-    XLOGF(DBG1, "{}", formatRibOutWithdrawalLog(withdrawal));
-    ribOutQPushAndMayPauseBestPathAndFibProgramming(std::move(withdrawal));
+  if (withdrawalAddPath.addPathEntries.size()) {
+    XLOGF(DBG1, "{}", formatRibOutWithdrawalLog(withdrawalAddPath));
+    ribOutQPushAndMayPauseBestPathAndFibProgramming(
+        std::move(withdrawalAddPath));
   }
 
   announcement.addPathEntries = std::move(announcementAddPath.addPathEntries);
@@ -2525,6 +2334,238 @@ void RibBase::handleFibProgrammedMessage(
   if (ribEntries_.size() <= localRoutes_.size()) {
     FibStats::incrFibFlushed();
   }
+}
+
+/*
+ * For any withdraw routes, we must have already notified all peers. Erase
+ * ribEntry if no update in the interim. Returns true if the prefix was deleted
+ * from Fib.
+ */
+bool RibBase::handleDeletedUnicastRoute(
+    RibEntry& entry,
+    const std::shared_ptr<const WeightedNexthopMap>&
+        weightedNexthops) noexcept {
+  if (weightedNexthops != nullptr) {
+    return false;
+  }
+  // copy: erasing the RibEntry below destroys entry.getPrefix()
+  const auto prefix = entry.getPrefix();
+  XLOGF(
+      DBG3,
+      "Done withdrawing {} from Fib. Skip notifying BGP peers",
+      folly::IPAddress::networkToString(prefix));
+  // If no new route is added, delete ribEntry for this prefix.
+  if (entry.getAllPathsCnt() == 0) {
+    if (!entry.isOnFibBatchList()) {
+      XLOGF(
+          DBG3,
+          "All paths withdrawn for {}, deleting RibEntry.",
+          folly::IPAddress::networkToString(prefix));
+      ribCounters_.onPrefixRemoved(
+          prefix.first.isV4(), prefix.second, entry.getInactivePathCnt());
+      eraseFibOut(entry);
+      ribEntries_.erase(prefix);
+    } else {
+      XLOGF(
+          DBG1,
+          "All paths withdrawn for {}, when on the FibBatchList. Not deleting RibEntry.",
+          folly::IPAddress::networkToString(prefix));
+    }
+  }
+  return true;
+}
+
+/*
+ * If there has been some change to any of the ECMP paths, delay sending the
+ * update. Returns true if the programmed nexthops are already stale.
+ */
+bool RibBase::handleStaleUnicastRoute(
+    const RibEntry& entry,
+    const std::shared_ptr<const WeightedNexthopMap>&
+        weightedNexthops) noexcept {
+  /*
+   * If nexthops have been changed, do not advertise it to BGP peers now.
+   * The new nexthops will trigger another Fib programming and then come
+   * back here with the new nexthops. We will advertise the prefix to
+   * BGP peers then.
+   */
+  const bool isStale = entry.getMultipathWeightedNexthops() != weightedNexthops;
+  XLOGF_IF(
+      DBG3,
+      isStale,
+      "Done updating {} to Fib. But nexthops will change in next fib "
+      "programming. Skip notifying BGP peers",
+      folly::IPAddress::networkToString(entry.getPrefix()));
+  return isStale;
+}
+
+void RibBase::handleAddUpdatedUnicastRoute(
+    RibEntry& entry,
+    bool sendWithEoR,
+    RibOutAnnouncement& announcement,
+    RibOutAnnouncement& announcementAddPath,
+    RibOutWithdrawal& withdrawalAddPath) noexcept {
+  const auto& prefix = entry.getPrefix();
+  /*
+   * Stamp the RIB version at emission time. Each prefix starts at a fresh
+   * version (rule 3: different prefixes within a message strictly
+   * increase). currentRibVersion is re-bumped at each chunk (kRibChunkSize)
+   * flush below, so a prefix whose add-path entries span more than one chunk
+   * strictly increases across those chunks (rule 2),
+   * while all entries emitted within a single chunk share one version
+   * (rule 1). A prefix appears exactly once in the FIB-ack (one
+   * updateUnicastRoute per prefix, best-path-attr key), so this per-prefix
+   * initialization runs once and needs no deduplication. Called after the
+   * deleted/stale checks so a prefix that is skipped (already withdrawn from
+   * FIB, or whose nexthops will change next round) does not consume a version.
+   *
+   * The final (highest) version is persisted onto the entry after add-path
+   * processing (see the entry.setRibVersion below); the emit sites read
+   * currentRibVersion directly.
+   */
+  uint64_t currentRibVersion = incrementRibVersion();
+
+  const auto oldAdvMultipathNHs =
+      entry.getAdvertisedMultipathWeightedNexthops();
+  entry.commitMultipathNexthops();
+  const auto newAdvMultipathNHs =
+      entry.getAdvertisedMultipathWeightedNexthops();
+
+  /*
+   * If this is the first time we are calculating a bestpath then mark it
+   * as new entry later in the RibOutAnnouncement for out-delay purpose.
+   * Note that if a route was already in RIB and then withdrawn by all
+   * advertising peers and then readvertised again by some(all) of peers
+   * it is also treated as eligible for out-delay and as such marked with
+   * newlyInstalledInRib flag.
+   */
+  bool newlyInstalledInLocalRib = false;
+  if (entry.advertisedBestpath_ == nullptr) {
+    entry.installTimeStamp_ = std::chrono::system_clock::now();
+    newlyInstalledInLocalRib = true;
+  }
+
+  const auto prevAdvertisedMultipathSize =
+      entry.getAdvertisedMultipaths().size();
+
+  if (entry.commitMultipaths() && entry.bestpath_) {
+    /*
+     * TODO: It looks here that we are re-advertising all paths whether or
+     * not they changed.  While this is not incorrect, it will result in
+     * sending more info than we need.  Something can be done here, or in
+     * AdjRib to fix this.
+     */
+    const auto advMultPaths = entry.getAdvertisedMultipaths();
+    for (const auto& [_, advMultPath] : advMultPaths) {
+      if (announcementAddPath.addPathEntries.size() == kRibChunkSize) {
+        flushAnnouncementChunk(
+            announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
+
+        /*
+         * rule 2: this prefix's remaining add-path entries land in a new
+         * chunk (a separate RibOut message), so bump the version. A peer
+         * that detached after the flushed chunk must observe a strictly
+         * higher version on the entries that follow, otherwise
+         * isEntryShared would wrongly treat them as already-seen and the
+         * peer would miss them.
+         */
+        currentRibVersion = incrementRibVersion();
+      }
+
+      auto nextHop = advMultPath->attrs->getNexthop();
+      std::optional<uint32_t> nhWeight;
+      // Check if nhWeightMap is a nullptr or not
+      if (newAdvMultipathNHs && newAdvMultipathNHs->contains(nextHop)) {
+        nhWeight = newAdvMultipathNHs->at(nextHop);
+      }
+
+      XCHECK(advMultPath->pathIdToSend.has_value());
+      announcementAddPath.addPathEntries.emplace_back(
+          prefix,
+          advMultPath->pathIdToSend.value(),
+          advMultPath->peer,
+          advMultPath->attrs,
+          switchId_,
+          entry.getMultipaths().size(),
+          entry.getAggregateReceivedUcmpWeight(),
+          entry.getAggregateLocalUcmpWeight(),
+          entry.getRibPolicyUcmpWeight(),
+          newlyInstalledInLocalRib,
+          entry.installTimeStamp_,
+          currentRibVersion,
+          entry.getIsPartialDrain());
+    }
+
+    // if we are withdrawing certain paths, we need to notify AdjRib
+    if (oldAdvMultipathNHs && newAdvMultipathNHs &&
+        (*oldAdvMultipathNHs != *newAdvMultipathNHs)) {
+      for (const auto oldNhIter : *oldAdvMultipathNHs) {
+        if (newAdvMultipathNHs->find(oldNhIter.first) ==
+            newAdvMultipathNHs->end()) {
+          if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
+            flushWithdrawalChunk(
+                withdrawalAddPath,
+                /*reserveAddPath=*/true,
+                /*logAsAddPath=*/false);
+
+            /*
+             * rule 2: this prefix's remaining add-path withdrawals land in
+             * a new chunk, so bump the version (see the add-path
+             * announcement flush above for the reasoning).
+             */
+            currentRibVersion = incrementRibVersion();
+          }
+          withdrawalAddPath.addPathEntries.emplace_back(
+              prefix, kPlaceholderPathID, oldNhIter.first, currentRibVersion);
+        }
+      }
+    }
+  }
+
+  /*
+   * Persist the final (highest) version reached for this prefix, so
+   * getRibVersion() and any later reader reflect the last chunk emitted --
+   * including when the best path itself did not change and we
+   * return early without emitting a best-path entry.
+   */
+  entry.setRibVersion(currentRibVersion);
+
+  if (!entry.commitBestpath()) {
+    if (!shouldReadvertiseBestpathOnMultipathSizeChange(entry) ||
+        prevAdvertisedMultipathSize == entry.getAdvertisedMultipaths().size()) {
+      // bestpath did not change, no need for new advertisement
+      return;
+    }
+  }
+
+  const auto& bestpath = entry.getAdvertisedBestPath();
+  XLOGF(
+      DBG3,
+      "Done updating {} to Fib. Added to BGP peer announcement.",
+      folly::IPAddress::networkToString(prefix));
+
+  /*
+   * Announce the messages if we reached chunk size. This ensures that
+   * while Rib is processing remaining message, adjRib, FiberBgp etc will
+   * start working on previous chunks.
+   */
+  if (announcement.entries.size() == kRibChunkSize) {
+    flushAnnouncementChunk(announcement, /*reserveAddPath=*/false, sendWithEoR);
+  }
+  announcement.entries.emplace_back(
+      prefix,
+      kDefaultPathID,
+      bestpath->peer,
+      bestpath->attrs,
+      switchId_,
+      entry.getMultipaths().size(),
+      entry.getAggregateReceivedUcmpWeight(),
+      entry.getAggregateLocalUcmpWeight(),
+      entry.getRibPolicyUcmpWeight(),
+      newlyInstalledInLocalRib,
+      entry.installTimeStamp_,
+      currentRibVersion,
+      entry.getIsPartialDrain());
 }
 
 TFibNexthopDatabase RibBase::getFibNexthopDatabase() {

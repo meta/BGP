@@ -149,6 +149,25 @@
   FRIEND_TEST(RibFixture, RibVersionDistinctPerPrefixInWithdrawal);            \
   FRIEND_TEST(                                                                 \
       RibFixture, RibVersionAddPathWithdrawalsSpanningChunksBumpAcrossChunks); \
+  FRIEND_TEST(RibFixture, HandleDeletedUnicastRouteIgnoresProgrammedRoute);    \
+  FRIEND_TEST(RibFixture, HandleDeletedUnicastRouteErasesEntryWithNoPaths);    \
+  FRIEND_TEST(RibFixture, HandleDeletedUnicastRouteKeepsEntryOnFibBatchList);  \
+  FRIEND_TEST(RibFixture, HandleStaleUnicastRouteSameNexthops);                \
+  FRIEND_TEST(RibFixture, HandleStaleUnicastRouteDifferentNexthops);           \
+  FRIEND_TEST(RibFixture, HandleStaleUnicastRouteComparesPointers);            \
+  FRIEND_TEST(RibFixture, HandleAddUpdatedUnicastRouteUnchangedBumpsVersion);  \
+  FRIEND_TEST(                                                                 \
+      RibFixture, HandleAddUpdatedUnicastRouteNewPrefixNewlyInstalled);        \
+  FRIEND_TEST(                                                                 \
+      RibFixture, HandleAddUpdatedUnicastRouteAnnouncesBestpathChange);        \
+  FRIEND_TEST(RibFixture, HandleAddUpdatedUnicastRouteAnnouncesMultipaths);    \
+  FRIEND_TEST(                                                                 \
+      RibFixture, HandleAddUpdatedUnicastRouteWithdrawsDroppedNexthop);        \
+  FRIEND_TEST(                                                                 \
+      RibFixture, HandleAddUpdatedUnicastRouteNoAddPathWithoutBestpath);       \
+  FRIEND_TEST(RibFixture, HandleAddUpdatedUnicastRouteAddPathSpansChunks);     \
+  FRIEND_TEST(RibFixture, HandleAddUpdatedUnicastRouteWithdrawalSpansChunks);  \
+  FRIEND_TEST(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion);   \
   FRIEND_TEST(RibFixture, CreateTRibEntryBestGroupReflectsBestPathPresence);   \
   FRIEND_TEST(RibFibNexthopDatabaseFixture, KeepsCompleteNexthopSetsDistinct); \
   FRIEND_TEST(RibFibNexthopDatabaseFixture, PropagatesConversionFailure);      \
@@ -159,7 +178,10 @@
       RibAllocatedPathIdFixture,                                               \
       FullAddPathWithdrawalSharedNexthopWithdrawsEachPathId);
 
-#define RibEntry_TEST_FRIENDS
+#define RibEntry_TEST_FRIENDS                                           \
+  FRIEND_TEST(                                                          \
+      RibFixture, HandleAddUpdatedUnicastRouteNewPrefixNewlyInstalled); \
+  FRIEND_TEST(RibFixture, HandleAddUpdatedUnicastRouteNoAddPathWithoutBestpath);
 
 #define RibDC_TEST_FRIENDS \
   FRIEND_TEST(RibFixture, CreateTRibEntryBestGroupReflectsBestPathPresence);
@@ -2942,6 +2964,555 @@ TEST_F(RibFixture, RibVersionAddPathWithdrawalsSpanningChunksBumpAcrossChunks) {
   EXPECT_EQ(kNumPaths, addPathTotal);
   ASSERT_EQ(2, chunkVersions.size());
   EXPECT_LT(chunkVersions[0], chunkVersions[1]);
+}
+
+/*
+ * A prefix still programmed in Fib (non-null nexthops) is not a deletion and
+ * is left alone.
+ */
+TEST_F(RibFixture, HandleDeletedUnicastRouteIgnoresProgrammedRoute) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    auto nexthops = std::make_shared<const WeightedNexthopMap>(
+        WeightedNexthopMap{{kV4Nexthop1, 1}});
+
+    EXPECT_FALSE(rib_->handleDeletedUnicastRoute(entry, nexthops));
+    EXPECT_TRUE(rib_->ribEntries_.contains(kV4Prefix1));
+  });
+}
+
+/*
+ * A prefix deleted from Fib with no paths left, and not queued for Fib
+ * programming, has its RibEntry erased.
+ */
+TEST_F(RibFixture, HandleDeletedUnicastRouteErasesEntryWithNoPaths) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    rib_->ribCounters_.onPrefixAdded(true, kV4Prefix1.second);
+    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    const auto prefixesBefore = rib_->ribCounters_.totalPrefixes(true);
+
+    EXPECT_TRUE(rib_->handleDeletedUnicastRoute(entry, nullptr));
+    EXPECT_FALSE(rib_->ribEntries_.contains(kV4Prefix1));
+    EXPECT_EQ(prefixesBefore - 1, rib_->ribCounters_.totalPrefixes(true));
+  });
+}
+
+/*
+ * A prefix deleted from Fib with no paths left is kept while it is still on
+ * the Fib batch list.
+ */
+TEST_F(RibFixture, HandleDeletedUnicastRouteKeepsEntryOnFibBatchList) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->fibBatchList_.push_back(entry);
+
+    EXPECT_TRUE(rib_->handleDeletedUnicastRoute(entry, nullptr));
+    EXPECT_TRUE(rib_->ribEntries_.contains(kV4Prefix1));
+
+    rib_->fibBatchList_.clear();
+  });
+}
+
+/*
+ * Programmed nexthops that are the entry's current nexthops are not stale.
+ */
+TEST_F(RibFixture, HandleStaleUnicastRouteSameNexthops) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs->publish();
+    entry.updatePath(eBgpPeer1_, attrs);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_NE(entry.getMultipathWeightedNexthops(), nullptr);
+
+    EXPECT_FALSE(rib_->handleStaleUnicastRoute(
+        entry, entry.getMultipathWeightedNexthops()));
+  });
+}
+
+/*
+ * Programmed nexthops that differ from the entry's current nexthops are stale.
+ */
+TEST_F(RibFixture, HandleStaleUnicastRouteDifferentNexthops) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs->publish();
+    entry.updatePath(eBgpPeer1_, attrs);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    auto programmed = std::make_shared<const WeightedNexthopMap>(
+        WeightedNexthopMap{{kV4Nexthop2, 1}});
+
+    EXPECT_TRUE(rib_->handleStaleUnicastRoute(entry, programmed));
+  });
+}
+
+/*
+ * Staleness compares the nexthop map pointers, so a copy with the same
+ * contents is still stale.
+ */
+TEST_F(RibFixture, HandleStaleUnicastRouteComparesPointers) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs->publish();
+    entry.updatePath(eBgpPeer1_, attrs);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_NE(entry.getMultipathWeightedNexthops(), nullptr);
+    auto programmed = std::make_shared<const WeightedNexthopMap>(
+        *entry.getMultipathWeightedNexthops());
+
+    EXPECT_TRUE(rib_->handleStaleUnicastRoute(entry, programmed));
+  });
+}
+
+/*
+ * A prefix whose best path and multipaths were already advertised emits
+ * nothing, but still consumes a RIB version and records it on the entry.
+ */
+TEST_F(RibFixture, HandleAddUpdatedUnicastRouteUnchangedBumpsVersion) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs->publish();
+    entry.updatePath(eBgpPeer1_, attrs);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    const auto versionBefore = rib_->ribVersion_;
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    EXPECT_TRUE(announcement.entries.empty());
+    EXPECT_TRUE(announcementAddPath.addPathEntries.empty());
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+    EXPECT_EQ(versionBefore + 1, rib_->ribVersion_);
+    EXPECT_EQ(rib_->ribVersion_, entry.getRibVersion());
+  });
+}
+
+/*
+ * The first advertisement of a prefix is marked newly installed, with the
+ * entry's install time stamp, for out-delay.
+ */
+TEST_F(RibFixture, HandleAddUpdatedUnicastRouteNewPrefixNewlyInstalled) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs->publish();
+    entry.updatePath(eBgpPeer1_, attrs);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    ASSERT_EQ(1, announcement.entries.size());
+    const auto& bestEntry = announcement.entries[0];
+    EXPECT_EQ(kV4Prefix1, bestEntry.prefix);
+    EXPECT_TRUE(bestEntry.newlyInstalledInLocalRib);
+    EXPECT_EQ(entry.installTimeStamp_, bestEntry.installTimeStamp);
+  });
+}
+
+/*
+ * A best path change is announced with kDefaultPathID and the new best path's
+ * peer and attributes.
+ */
+TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAnnouncesBestpathChange) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs1 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs1->setNexthop(kV4Nexthop1);
+    attrs1->publish();
+    auto attrs2 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs2->setNexthop(kV4Nexthop2);
+    attrs2->publish();
+    entry.updatePath(eBgpPeer1_, attrs1);
+    entry.updatePath(eBgpPeer2_, attrs2);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then withdraw the best path.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    const bool peer1WasBest = entry.getBestPath()->attrs == attrs1;
+    entry.updatePath(peer1WasBest ? eBgpPeer1_ : eBgpPeer2_, nullptr);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    ASSERT_EQ(1, announcement.entries.size());
+    const auto& bestEntry = announcement.entries[0];
+    EXPECT_EQ(kV4Prefix1, bestEntry.prefix);
+    EXPECT_EQ(kDefaultPathID, bestEntry.pathIdToSend);
+    EXPECT_EQ(
+        (peer1WasBest ? eBgpPeer2_ : eBgpPeer1_).addr, bestEntry.peer.addr);
+    EXPECT_EQ(peer1WasBest ? attrs2 : attrs1, bestEntry.attrs);
+    EXPECT_FALSE(bestEntry.newlyInstalledInLocalRib);
+    EXPECT_EQ(rib_->ribVersion_, bestEntry.ribVersion);
+  });
+}
+
+/*
+ * Changed multipaths are announced as one add-path entry per multipath, each
+ * with its own path ID. A first advertisement has nothing to withdraw.
+ */
+TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAnnouncesMultipaths) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs1 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs1->setNexthop(kV4Nexthop1);
+    attrs1->publish();
+    auto attrs2 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs2->setNexthop(kV4Nexthop2);
+    attrs2->publish();
+    entry.updatePath(eBgpPeer1_, attrs1);
+    entry.updatePath(eBgpPeer2_, attrs2);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(2, entry.getMultipaths().size());
+    std::set<std::pair<uint32_t, folly::IPAddress>> expected;
+    for (const auto& [pathId, path] : entry.getMultipaths()) {
+      expected.emplace(pathId, path->attrs->getNexthop());
+    }
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    std::set<std::pair<uint32_t, folly::IPAddress>> announced;
+    for (const auto& addPathEntry : announcementAddPath.addPathEntries) {
+      EXPECT_EQ(kV4Prefix1, addPathEntry.prefix);
+      announced.emplace(
+          addPathEntry.pathIdToSend, addPathEntry.attrs->getNexthop());
+    }
+    EXPECT_EQ(expected, announced);
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+  });
+}
+
+/*
+ * A multipath nexthop that is no longer selected is withdrawn by nexthop,
+ * with kPlaceholderPathID.
+ */
+TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawsDroppedNexthop) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs1 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs1->setNexthop(kV4Nexthop1);
+    attrs1->publish();
+    auto attrs2 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs2->setNexthop(kV4Nexthop2);
+    attrs2->publish();
+    entry.updatePath(eBgpPeer1_, attrs1);
+    entry.updatePath(eBgpPeer2_, attrs2);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then withdraw the kV4Nexthop2 path.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    entry.updatePath(eBgpPeer2_, nullptr);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    ASSERT_EQ(1, withdrawalAddPath.addPathEntries.size());
+    const auto& withdrawn = withdrawalAddPath.addPathEntries[0];
+    EXPECT_EQ(kV4Prefix1, withdrawn.prefix);
+    EXPECT_EQ(kPlaceholderPathID, withdrawn.pathIdToSend);
+    EXPECT_EQ(kV4Nexthop2, withdrawn.nh);
+    EXPECT_EQ(rib_->ribVersion_, withdrawn.ribVersion);
+  });
+}
+
+/*
+ * Multipaths without a best path (e.g. a CPS policy failing the native
+ * criteria) are committed but not announced.
+ */
+TEST_F(RibFixture, HandleAddUpdatedUnicastRouteNoAddPathWithoutBestpath) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs1 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs1->setNexthop(kV4Nexthop1);
+    attrs1->publish();
+    auto attrs2 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs2->setNexthop(kV4Nexthop2);
+    attrs2->publish();
+    entry.updatePath(eBgpPeer1_, attrs1);
+    entry.updatePath(eBgpPeer2_, attrs2);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(2, entry.getMultipaths().size());
+    entry.bestpath_ = nullptr;
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    EXPECT_TRUE(announcement.entries.empty());
+    EXPECT_TRUE(announcementAddPath.addPathEntries.empty());
+    EXPECT_EQ(2, entry.getAdvertisedMultipaths().size());
+  });
+}
+
+/*
+ * Add-path announcements past kRibChunkSize are flushed to ribOutQ_. The rest
+ * stay in the caller's message with a bumped RIB version (rule 2).
+ */
+TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAddPathSpansChunks) {
+  constexpr uint32_t kNumPaths = 170;
+  constexpr int kNexthopBase = 0x0B010000; // 11.1.0.0
+  uint64_t versionBefore = 0;
+  std::set<std::pair<uint32_t, folly::IPAddress>> expected;
+  RibOutAnnouncement announcement;
+  RibOutAnnouncement announcementAddPath;
+  RibOutWithdrawal withdrawalAddPath;
+
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    for (uint32_t i = 0; i < kNumPaths; i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(folly::IPAddress::fromLongHBO(kNexthopBase + i));
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(kNumPaths, entry.getMultipaths().size());
+    for (const auto& [pathId, path] : entry.getMultipaths()) {
+      expected.emplace(pathId, path->attrs->getNexthop());
+    }
+    versionBefore = rib_->ribVersion_;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    // One bump for the prefix, one for the chunk flush.
+    EXPECT_EQ(versionBefore + 2, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
+  });
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
+  const auto& flushed = std::get<RibOutAnnouncement>(msg).addPathEntries;
+  ASSERT_EQ(kRibChunkSize, flushed.size());
+  ASSERT_EQ(
+      kNumPaths - kRibChunkSize, announcementAddPath.addPathEntries.size());
+  std::set<std::pair<uint32_t, folly::IPAddress>> announced;
+  for (const auto& addPathEntry : flushed) {
+    EXPECT_EQ(versionBefore + 1, addPathEntry.ribVersion);
+    announced.emplace(
+        addPathEntry.pathIdToSend, addPathEntry.attrs->getNexthop());
+  }
+  for (const auto& addPathEntry : announcementAddPath.addPathEntries) {
+    EXPECT_EQ(versionBefore + 2, addPathEntry.ribVersion);
+    announced.emplace(
+        addPathEntry.pathIdToSend, addPathEntry.attrs->getNexthop());
+  }
+  EXPECT_EQ(expected, announced);
+  // The best path is not flushed and carries the final version.
+  ASSERT_EQ(1, announcement.entries.size());
+  EXPECT_EQ(versionBefore + 2, announcement.entries[0].ribVersion);
+  EXPECT_EQ(0, ribOutQ_.size());
+}
+
+/*
+ * Add-path withdrawals past kRibChunkSize are flushed to ribOutQ_. The rest
+ * stay in the caller's message with a bumped RIB version (rule 2).
+ */
+TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawalSpansChunks) {
+  constexpr uint32_t kNumPaths = 170;
+  constexpr int kNexthopBase = 0x0B010000; // 11.1.0.0
+  uint64_t versionBefore = 0;
+  std::set<folly::IPAddress> expected;
+  RibOutAnnouncement announcement;
+  RibOutAnnouncement announcementAddPath;
+  RibOutWithdrawal withdrawalAddPath;
+
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    for (uint32_t i = 0; i < kNumPaths; i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(folly::IPAddress::fromLongHBO(kNexthopBase + i));
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(kNumPaths, entry.getMultipaths().size());
+    // Commit as advertised, then withdraw every path but the first.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    for (uint32_t i = 1; i < kNumPaths; i++) {
+      entry.updatePath(eBgpPeer1_, nullptr, true, i + 1);
+      expected.emplace(folly::IPAddress::fromLongHBO(kNexthopBase + i));
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(1, entry.getMultipaths().size());
+    versionBefore = rib_->ribVersion_;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    // One bump for the prefix, one for the chunk flush.
+    EXPECT_EQ(versionBefore + 2, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
+  });
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
+  const auto& flushed = std::get<RibOutWithdrawal>(msg).addPathEntries;
+  ASSERT_EQ(kRibChunkSize, flushed.size());
+  ASSERT_EQ(
+      kNumPaths - 1 - kRibChunkSize, withdrawalAddPath.addPathEntries.size());
+  std::set<folly::IPAddress> withdrawn;
+  for (const auto& wd : flushed) {
+    EXPECT_EQ(kPlaceholderPathID, wd.pathIdToSend);
+    EXPECT_EQ(versionBefore + 1, wd.ribVersion);
+    ASSERT_TRUE(wd.nh.has_value());
+    withdrawn.emplace(*wd.nh);
+  }
+  for (const auto& wd : withdrawalAddPath.addPathEntries) {
+    EXPECT_EQ(kPlaceholderPathID, wd.pathIdToSend);
+    EXPECT_EQ(versionBefore + 2, wd.ribVersion);
+    ASSERT_TRUE(wd.nh.has_value());
+    withdrawn.emplace(*wd.nh);
+  }
+  EXPECT_EQ(expected, withdrawn);
+  // The remaining path is announced without a flush.
+  EXPECT_EQ(1, announcementAddPath.addPathEntries.size());
+  EXPECT_EQ(0, ribOutQ_.size());
+}
+
+/*
+ * Prefixes skipped as deleted or stale do not consume a RIB version. Only the
+ * announced prefix does.
+ */
+TEST_F(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion) {
+  uint64_t versionBefore = 0;
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    // kV4Prefix1 is deleted from Fib and has no paths left.
+    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    rib_->ribCounters_.onPrefixAdded(true, kV4Prefix1.second);
+    // kV4Prefix2 is stale and kV4Prefix3 is up to date.
+    for (const auto& prefix : {kV4Prefix2, kV4Prefix3}) {
+      rib_->ribEntries_.emplace(prefix, RibEntry(prefix));
+      auto& entry = rib_->ribEntries_.at(prefix);
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs);
+      RibBase::selectBestPath(
+          entry, multipathSelector, bestpathSelector, false, 0);
+    }
+    const auto& staleEntry = rib_->ribEntries_.at(kV4Prefix2);
+    const auto& programmedEntry = rib_->ribEntries_.at(kV4Prefix3);
+    Fib::FibProgrammedPfxs fibProgrammedPfxs;
+    fibProgrammedPfxs[nullptr] = {
+        {kV4Prefix1, nullptr},
+        {kV4Prefix2,
+         std::make_shared<const WeightedNexthopMap>(
+             *staleEntry.getMultipathWeightedNexthops())},
+        {kV4Prefix3, programmedEntry.getMultipathWeightedNexthops()}};
+    versionBefore = rib_->ribVersion_;
+
+    rib_->handleFibProgrammedMessage(
+        Fib::FibProgrammedMessage(std::move(fibProgrammedPfxs), false));
+
+    EXPECT_EQ(versionBefore + 1, rib_->ribVersion_);
+    EXPECT_FALSE(rib_->ribEntries_.contains(kV4Prefix1));
+    EXPECT_EQ(0, rib_->ribEntries_.at(kV4Prefix2).getRibVersion());
+    EXPECT_EQ(
+        versionBefore + 1, rib_->ribEntries_.at(kV4Prefix3).getRibVersion());
+  });
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
+  const auto& entries = std::get<RibOutAnnouncement>(msg).entries;
+  ASSERT_EQ(1, entries.size());
+  EXPECT_EQ(kV4Prefix3, entries[0].prefix);
+  EXPECT_EQ(versionBefore + 1, entries[0].ribVersion);
 }
 
 /*

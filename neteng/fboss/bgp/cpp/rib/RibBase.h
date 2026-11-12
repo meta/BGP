@@ -983,6 +983,22 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   void handleFibProgrammedMessage(
       const Fib::FibProgrammedMessage& msg) noexcept;
+
+  // Steps of handleFibProgrammedMessage for one Fib-programmed prefix.
+  bool handleDeletedUnicastRoute(
+      RibEntry& entry,
+      const std::shared_ptr<const WeightedNexthopMap>&
+          weightedNexthops) noexcept;
+  bool handleStaleUnicastRoute(
+      const RibEntry& entry,
+      const std::shared_ptr<const WeightedNexthopMap>&
+          weightedNexthops) noexcept;
+  void handleAddUpdatedUnicastRoute(
+      RibEntry& entry,
+      bool sendWithEoR,
+      RibOutAnnouncement& announcement,
+      RibOutAnnouncement& announcementAddPath,
+      RibOutWithdrawal& withdrawalAddPath) noexcept;
   void handleFibSyncReq(const Fib::FibSyncReq& req) noexcept;
 
  protected:

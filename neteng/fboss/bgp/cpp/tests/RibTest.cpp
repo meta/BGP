@@ -176,22 +176,55 @@
       RibAllocatedPathIdFixture, FullAddPathWithdrawalUsesAdvertisedPathIds);  \
   FRIEND_TEST(                                                                 \
       RibAllocatedPathIdFixture,                                               \
-      FullAddPathWithdrawalSharedNexthopWithdrawsEachPathId);
+      FullAddPathWithdrawalSharedNexthopWithdrawsEachPathId);                  \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture,                                               \
+      MultipathDeltaFirstAdvertisementAnnouncesAll);                           \
+  FRIEND_TEST(RibAllocatedPathIdFixture, MultipathDeltaSkipsUnchangedPaths);   \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture, MultipathDeltaReannouncesUpdatedPath);        \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture, MultipathDeltaWithdrawsDroppedPathId);        \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture, MultipathDeltaSharedNexthopWithdrawsPathId);  \
+  FRIEND_TEST(RibAllocatedPathIdFixture, MultipathDeltaNoChangeSendsNothing);  \
+  FRIEND_TEST(RibAllocatedPathIdFixture, MultipathDeltaNoBestpathSkipsCommit); \
+  FRIEND_TEST(RibAllocatedPathIdFixture, MultipathDeltaAddPathSpansChunks);    \
+  FRIEND_TEST(RibAllocatedPathIdFixture, MultipathDeltaWithdrawalSpansChunks); \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture,                                               \
+      MultipathDeltaReannouncesPathsKeptAfterFullWithdrawal);                  \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture,                                               \
+      MultipathDeltaPartialDrainChangeReannouncesAllPaths);                    \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture,                                               \
+      MultipathDeltaUcmpWeightChangeReannouncesAllPaths);                      \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture,                                               \
+      MultipathDeltaRibPolicyWeightChangeReannouncesAllPaths);
 
-#define RibEntry_TEST_FRIENDS                                           \
-  FRIEND_TEST(                                                          \
-      RibFixture, HandleAddUpdatedUnicastRouteNewPrefixNewlyInstalled); \
-  FRIEND_TEST(RibFixture, HandleAddUpdatedUnicastRouteNoAddPathWithoutBestpath);
+#define RibEntry_TEST_FRIENDS                                                  \
+  FRIEND_TEST(                                                                 \
+      RibFixture, HandleAddUpdatedUnicastRouteNewPrefixNewlyInstalled);        \
+  FRIEND_TEST(                                                                 \
+      RibFixture, HandleAddUpdatedUnicastRouteNoAddPathWithoutBestpath);       \
+  FRIEND_TEST(RibAllocatedPathIdFixture, MultipathDeltaNoBestpathSkipsCommit); \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture,                                               \
+      MultipathDeltaPartialDrainChangeReannouncesAllPaths);
 
 #define RibDC_TEST_FRIENDS \
   FRIEND_TEST(RibFixture, CreateTRibEntryBestGroupReflectsBestPathPresence);
 
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
+#include <functional>
 #include <initializer_list>
 #include <limits>
 #include <optional>
 #include <set>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -3621,6 +3654,795 @@ TEST_F(
   }
   ASSERT_EQ(kNumPaths, expected.size());
   EXPECT_EQ(expected, withdrawn);
+}
+
+/*
+ * With RIB allocated path IDs, the first advertisement announces every
+ * multipath by its path ID and withdraws nothing.
+ */
+TEST_F(
+    RibAllocatedPathIdFixture,
+    MultipathDeltaFirstAdvertisementAnnouncesAll) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    ASSERT_TRUE(rib_->enableRibAllocatedPathId_);
+    RibEntry entry(kV4Prefix1);
+    const std::vector<folly::IPAddress> nexthops{kV4Nexthop1, kV4Nexthop2};
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(nexthops[i]);
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(nexthops.size(), entry.getMultipaths().size());
+    std::set<std::pair<uint32_t, folly::IPAddress>> expected;
+    for (const auto& [pathId, path] : entry.getMultipaths()) {
+      expected.emplace(pathId, path->attrs->getNexthop());
+    }
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    std::set<std::pair<uint32_t, folly::IPAddress>> announced;
+    for (const auto& addPathEntry : announcementAddPath.addPathEntries) {
+      announced.emplace(
+          addPathEntry.pathIdToSend, addPathEntry.attrs->getNexthop());
+    }
+    EXPECT_EQ(expected, announced);
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+  });
+}
+
+/*
+ * With RIB allocated path IDs, adding a multipath announces only the new path.
+ * Already advertised, unchanged paths are not re-announced.
+ */
+TEST_F(RibAllocatedPathIdFixture, MultipathDeltaSkipsUnchangedPaths) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    // A peer without a local UCMP weight keeps the aggregate weights unchanged.
+    const TinyPeerInfo peer(
+        kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false);
+    const std::vector<folly::IPAddress> nexthops{
+        kV4Nexthop1, kV4Nexthop2, kV4Nexthop3};
+    std::vector<std::shared_ptr<facebook::bgp::BgpPath>> attrs;
+    for (const auto& nexthop : nexthops) {
+      auto pathAttrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      pathAttrs->setNexthop(nexthop);
+      pathAttrs->publish();
+      attrs.push_back(std::move(pathAttrs));
+    }
+    entry.updatePath(peer, attrs[0], true, 1);
+    entry.updatePath(peer, attrs[1], true, 2);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then add a third multipath.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    entry.updatePath(peer, attrs[2], true, 3);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(3, entry.getMultipaths().size());
+    std::optional<uint32_t> newPathId;
+    for (const auto& [pathId, path] : entry.getMultipaths()) {
+      if (path->attrs == attrs[2]) {
+        newPathId = pathId;
+      }
+    }
+    ASSERT_TRUE(newPathId.has_value());
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    ASSERT_EQ(1, announcementAddPath.addPathEntries.size());
+    EXPECT_EQ(*newPathId, announcementAddPath.addPathEntries[0].pathIdToSend);
+    EXPECT_EQ(attrs[2], announcementAddPath.addPathEntries[0].attrs);
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+  });
+}
+
+/*
+ * With RIB allocated path IDs, a path updated with new attributes keeps its
+ * path ID and is re-announced. The other paths are not.
+ */
+TEST_F(RibAllocatedPathIdFixture, MultipathDeltaReannouncesUpdatedPath) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    const std::vector<folly::IPAddress> nexthops{kV4Nexthop1, kV4Nexthop2};
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(nexthops[i]);
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then send new attributes for received path ID 1.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    std::optional<uint32_t> updatedPathId;
+    for (const auto& [pathId, path] : entry.getAdvertisedMultipaths()) {
+      if (path->attrs->getNexthop() == kV4Nexthop1) {
+        updatedPathId = pathId;
+      }
+    }
+    ASSERT_TRUE(updatedPathId.has_value());
+    auto newAttrs = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    newAttrs->setNexthop(kV4Nexthop1);
+    newAttrs->publish();
+    entry.updatePath(eBgpPeer1_, newAttrs, true, 1);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(2, entry.getMultipaths().size());
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    ASSERT_EQ(1, announcementAddPath.addPathEntries.size());
+    EXPECT_EQ(
+        *updatedPathId, announcementAddPath.addPathEntries[0].pathIdToSend);
+    EXPECT_EQ(newAttrs, announcementAddPath.addPathEntries[0].attrs);
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+  });
+}
+
+/*
+ * With RIB allocated path IDs, a dropped multipath is withdrawn by its path ID
+ * and nexthop. The remaining path is not re-announced.
+ */
+TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawsDroppedPathId) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    // A peer without a local UCMP weight keeps the aggregate weights unchanged.
+    const TinyPeerInfo peer(
+        kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false);
+    const std::vector<folly::IPAddress> nexthops{kV4Nexthop1, kV4Nexthop2};
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(nexthops[i]);
+      attrs->publish();
+      entry.updatePath(peer, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then withdraw the kV4Nexthop2 path.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    std::optional<uint32_t> droppedPathId;
+    for (const auto& [pathId, path] : entry.getAdvertisedMultipaths()) {
+      if (path->attrs->getNexthop() == kV4Nexthop2) {
+        droppedPathId = pathId;
+      }
+    }
+    ASSERT_TRUE(droppedPathId.has_value());
+    entry.updatePath(peer, nullptr, true, 2);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(1, entry.getMultipaths().size());
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    ASSERT_EQ(1, withdrawalAddPath.addPathEntries.size());
+    const auto& withdrawn = withdrawalAddPath.addPathEntries[0];
+    EXPECT_EQ(kV4Prefix1, withdrawn.prefix);
+    EXPECT_EQ(*droppedPathId, withdrawn.pathIdToSend);
+    EXPECT_EQ(kV4Nexthop2, withdrawn.nh);
+    EXPECT_EQ(rib_->ribVersion_, withdrawn.ribVersion);
+    EXPECT_TRUE(announcementAddPath.addPathEntries.empty());
+  });
+}
+
+/*
+ * With RIB allocated path IDs, dropping one of two paths that share a nexthop
+ * withdraws that path ID, although the nexthop is still advertised.
+ */
+TEST_F(RibAllocatedPathIdFixture, MultipathDeltaSharedNexthopWithdrawsPathId) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    // Same peer and nexthop, different received path IDs
+    for (uint32_t i = 0; i < 2; i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(kV4Nexthop1);
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(2, entry.getMultipaths().size());
+    // Commit as advertised, then withdraw received path ID 2.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    const auto oldAdvMultipaths = entry.getAdvertisedMultipaths();
+    entry.updatePath(eBgpPeer1_, nullptr, true, 2);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(1, entry.getMultipaths().size());
+    std::optional<uint32_t> droppedPathId;
+    for (const auto& [pathId, _] : oldAdvMultipaths) {
+      if (!entry.getMultipaths().contains(pathId)) {
+        droppedPathId = pathId;
+      }
+    }
+    ASSERT_TRUE(droppedPathId.has_value());
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    ASSERT_EQ(1, withdrawalAddPath.addPathEntries.size());
+    EXPECT_EQ(*droppedPathId, withdrawalAddPath.addPathEntries[0].pathIdToSend);
+    EXPECT_EQ(kV4Nexthop1, withdrawalAddPath.addPathEntries[0].nh);
+  });
+}
+
+/*
+ * With RIB allocated path IDs, unchanged multipaths emit nothing.
+ */
+TEST_F(RibAllocatedPathIdFixture, MultipathDeltaNoChangeSendsNothing) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    const std::vector<folly::IPAddress> nexthops{kV4Nexthop1, kV4Nexthop2};
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(nexthops[i]);
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    uint64_t currentRibVersion = rib_->ribVersion_;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedMultipathDelta(
+        entry,
+        false /* sendWithEoR */,
+        false /* newlyInstalledInLocalRib */,
+        currentRibVersion,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    EXPECT_TRUE(announcementAddPath.addPathEntries.empty());
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+  });
+}
+
+/*
+ * With RIB allocated path IDs, multipaths without a best path announce
+ * nothing and are not committed as advertised.
+ */
+TEST_F(RibAllocatedPathIdFixture, MultipathDeltaNoBestpathSkipsCommit) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    const std::vector<folly::IPAddress> nexthops{
+        kV4Nexthop1, kV4Nexthop2, kV4Nexthop3};
+    for (uint32_t i = 0; i < 2; i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(nexthops[i]);
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then add a third multipath without a best path.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    auto attrs3 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs3->setNexthop(nexthops[2]);
+    attrs3->publish();
+    entry.updatePath(eBgpPeer1_, attrs3, true, 3);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(3, entry.getMultipaths().size());
+    const auto advertisedBefore = entry.getAdvertisedMultipaths();
+    entry.bestpath_ = nullptr;
+    uint64_t currentRibVersion = rib_->ribVersion_;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedMultipathDelta(
+        entry,
+        false /* sendWithEoR */,
+        false /* newlyInstalledInLocalRib */,
+        currentRibVersion,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    EXPECT_TRUE(announcementAddPath.addPathEntries.empty());
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+    EXPECT_EQ(advertisedBefore, entry.getAdvertisedMultipaths());
+  });
+}
+
+/*
+ * With RIB allocated path IDs, delta announcements past kRibChunkSize are
+ * flushed to ribOutQ_. The rest stay in the caller's message with a bumped
+ * RIB version (rule 2).
+ */
+TEST_F(RibAllocatedPathIdFixture, MultipathDeltaAddPathSpansChunks) {
+  constexpr uint32_t kNumPaths = 170;
+  constexpr int kNexthopBase = 0x0B010000; // 11.1.0.0
+  uint64_t versionBefore = 0;
+  std::set<std::pair<uint32_t, folly::IPAddress>> expected;
+  RibOutAnnouncement announcement;
+  RibOutAnnouncement announcementAddPath;
+  RibOutWithdrawal withdrawalAddPath;
+
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    for (uint32_t i = 0; i < kNumPaths; i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(folly::IPAddress::fromLongHBO(kNexthopBase + i));
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(kNumPaths, entry.getMultipaths().size());
+    for (const auto& [pathId, path] : entry.getMultipaths()) {
+      expected.emplace(pathId, path->attrs->getNexthop());
+    }
+    versionBefore = rib_->ribVersion_;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    // One bump for the prefix, one for the chunk flush.
+    EXPECT_EQ(versionBefore + 2, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
+  });
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
+  const auto& flushed = std::get<RibOutAnnouncement>(msg).addPathEntries;
+  ASSERT_EQ(kRibChunkSize, flushed.size());
+  ASSERT_EQ(
+      kNumPaths - kRibChunkSize, announcementAddPath.addPathEntries.size());
+  std::set<std::pair<uint32_t, folly::IPAddress>> announced;
+  for (const auto& addPathEntry : flushed) {
+    EXPECT_EQ(versionBefore + 1, addPathEntry.ribVersion);
+    announced.emplace(
+        addPathEntry.pathIdToSend, addPathEntry.attrs->getNexthop());
+  }
+  for (const auto& addPathEntry : announcementAddPath.addPathEntries) {
+    EXPECT_EQ(versionBefore + 2, addPathEntry.ribVersion);
+    announced.emplace(
+        addPathEntry.pathIdToSend, addPathEntry.attrs->getNexthop());
+  }
+  EXPECT_EQ(expected, announced);
+  EXPECT_EQ(0, ribOutQ_.size());
+}
+
+/*
+ * With RIB allocated path IDs, delta withdrawals past kRibChunkSize are
+ * flushed to ribOutQ_, each carrying its path ID. The rest stay in the
+ * caller's message with a bumped RIB version (rule 2).
+ */
+TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawalSpansChunks) {
+  constexpr uint32_t kNumPaths = 170;
+  constexpr int kNexthopBase = 0x0B010000; // 11.1.0.0
+  uint64_t versionBefore = 0;
+  std::set<std::pair<uint32_t, folly::IPAddress>> expected;
+  RibOutAnnouncement announcement;
+  RibOutAnnouncement announcementAddPath;
+  RibOutWithdrawal withdrawalAddPath;
+
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    // A peer without a local UCMP weight keeps the aggregate weights unchanged.
+    const TinyPeerInfo peer(
+        kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false);
+    for (uint32_t i = 0; i < kNumPaths; i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(folly::IPAddress::fromLongHBO(kNexthopBase + i));
+      attrs->publish();
+      entry.updatePath(peer, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(kNumPaths, entry.getMultipaths().size());
+    // Commit as advertised, then withdraw every path but the first.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    for (const auto& [pathId, path] : entry.getAdvertisedMultipaths()) {
+      if (path->attrs->getNexthop() !=
+          folly::IPAddress::fromLongHBO(kNexthopBase)) {
+        expected.emplace(pathId, path->attrs->getNexthop());
+      }
+    }
+    for (uint32_t i = 1; i < kNumPaths; i++) {
+      entry.updatePath(peer, nullptr, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(1, entry.getMultipaths().size());
+    versionBefore = rib_->ribVersion_;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    // One bump for the prefix, one for the chunk flush.
+    EXPECT_EQ(versionBefore + 2, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
+  });
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
+  const auto& flushed = std::get<RibOutWithdrawal>(msg).addPathEntries;
+  ASSERT_EQ(kRibChunkSize, flushed.size());
+  ASSERT_EQ(
+      kNumPaths - 1 - kRibChunkSize, withdrawalAddPath.addPathEntries.size());
+  std::set<std::pair<uint32_t, folly::IPAddress>> withdrawn;
+  for (const auto& wd : flushed) {
+    EXPECT_EQ(versionBefore + 1, wd.ribVersion);
+    ASSERT_TRUE(wd.nh.has_value());
+    withdrawn.emplace(wd.pathIdToSend, *wd.nh);
+  }
+  for (const auto& wd : withdrawalAddPath.addPathEntries) {
+    EXPECT_EQ(versionBefore + 2, wd.ribVersion);
+    ASSERT_TRUE(wd.nh.has_value());
+    withdrawn.emplace(wd.pathIdToSend, *wd.nh);
+  }
+  EXPECT_EQ(expected, withdrawn);
+  // The remaining path is unchanged, so it is not re-announced.
+  EXPECT_TRUE(announcementAddPath.addPathEntries.empty());
+  EXPECT_EQ(0, ribOutQ_.size());
+}
+
+/*
+ * With RIB allocated path IDs, a relaxed min aggregate LBW policy withdraws the
+ * prefix but keeps its multipaths in the RibEntry (and in FIB). When the best
+ * path returns, the kept multipaths are announced again, together with the new
+ * one, instead of being skipped as unchanged.
+ */
+TEST_F(
+    RibAllocatedPathIdFixture,
+    MultipathDeltaReannouncesPathsKeptAfterFullWithdrawal) {
+  auto fibFuture = fib_->getFibProgramFuture();
+  sendInitialPathComputation();
+  fibFuture.wait();
+  rib_->setFibBatchTime(milliseconds(2));
+  WITH_RETRIES({ ASSERT_EVENTUALLY_EQ(ribOutQ_.size(), 2); });
+  REPEAT_N(2, folly::coro::blockingWait(ribOutQ_.pop()));
+
+  // Pop ribOutQ_ messages until one matches pred.
+  auto popUntil = [&](const std::function<bool(const RibOutMessage&)>& pred)
+      -> std::optional<RibOutMessage> {
+    for (int i = 0; i < 500; i++) {
+      WITH_RETRIES({ EXPECT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
+      if (ribOutQ_.size() == 0) {
+        return std::nullopt;
+      }
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      if (pred(msg)) {
+        return msg;
+      }
+    }
+    return std::nullopt;
+  };
+  auto multipathIds = [&](bool advertised) {
+    std::set<uint32_t> pathIds;
+    rib_->evb_.runInEventBaseThreadAndWait([&]() {
+      auto it = rib_->ribEntries_.find(kV4Prefix1);
+      if (it == rib_->ribEntries_.end()) {
+        return;
+      }
+      for (const auto& [pathId, _] : advertised
+               ? it->second.getAdvertisedMultipaths()
+               : it->second.getMultipaths()) {
+        pathIds.insert(pathId);
+      }
+    });
+    return pathIds;
+  };
+
+  /* Two multipaths with 10G LBW each are advertised. */
+  auto prefixBatch = PrefixPathIds{{kV4Prefix1, kDefaultPathID}};
+  auto attrs1 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(4, 4, 4, 4));
+  attrs1->setNexthop(kV4Nexthop1);
+  attrs1->setNonTransitiveLbwExtCommunity(kLocalAs1, kLbw10G);
+  attrs1->publish();
+  auto attrs2 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(4, 4, 4, 4));
+  attrs2->setNexthop(kV4Nexthop2);
+  attrs2->setNonTransitiveLbwExtCommunity(kLocalAs1, kLbw10G);
+  attrs2->publish();
+  sendAnnouncement(prefixBatch, eBgpPeer1_, attrs1);
+  sendAnnouncement(prefixBatch, eBgpPeer2_, attrs2);
+  WITH_RETRIES({ ASSERT_EVENTUALLY_EQ(2, multipathIds(true).size()); });
+  const auto keptPathIds = multipathIds(true);
+
+  /*
+   * A min aggregate LBW of 25G, relaxed and without drain, withdraws the
+   * prefix (20G) but keeps both multipaths.
+   */
+  TPathSelector tPathSelector;
+  tPathSelector.bgp_min_aggregate_lbw_bps() =
+      static_cast<int64_t>(25 * BpsPerGBps);
+  tPathSelector.relax_bgp_min_aggregate_lbw_bps() = true;
+  auto ribFuture = rib_->getRibPrepareFibProgrammingFuture();
+  sendPathSelectionPolicySet(
+      createTPathSelectionPolicyWithPathSelector({kV4Prefix1}, tPathSelector));
+  rib_->waitForPathSelectionPolicyUpdate();
+  ribFuture.wait();
+  auto withdrawalMsg = popUntil([](const RibOutMessage& msg) {
+    const auto* withdrawal = std::get_if<RibOutWithdrawal>(&msg);
+    return withdrawal && !withdrawal->addPathEntries.empty();
+  });
+  ASSERT_TRUE(withdrawalMsg.has_value());
+  std::set<uint32_t> withdrawnPathIds;
+  for (const auto& wd :
+       std::get<RibOutWithdrawal>(*withdrawalMsg).addPathEntries) {
+    withdrawnPathIds.insert(wd.pathIdToSend);
+  }
+  EXPECT_EQ(keptPathIds, withdrawnPathIds);
+  EXPECT_EQ(keptPathIds, multipathIds(false));
+  EXPECT_TRUE(multipathIds(true).empty());
+
+  /* A third 10G path satisfies the policy (30G), so the best path returns. */
+  auto attrs3 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(4, 4, 4, 4));
+  attrs3->setNexthop(kV4Nexthop3);
+  attrs3->setNonTransitiveLbwExtCommunity(kLocalAs1, kLbw10G);
+  attrs3->publish();
+  sendAnnouncement(prefixBatch, eBgpPeer3_, attrs3);
+  auto announcementMsg = popUntil([](const RibOutMessage& msg) {
+    const auto* announcement = std::get_if<RibOutAnnouncement>(&msg);
+    return announcement && !announcement->addPathEntries.empty();
+  });
+  ASSERT_TRUE(announcementMsg.has_value());
+  std::set<uint32_t> announcedPathIds;
+  for (const auto& addPathEntry :
+       std::get<RibOutAnnouncement>(*announcementMsg).addPathEntries) {
+    announcedPathIds.insert(addPathEntry.pathIdToSend);
+  }
+  const auto expectedPathIds = multipathIds(false);
+  ASSERT_EQ(3, expectedPathIds.size());
+  EXPECT_EQ(expectedPathIds, announcedPathIds);
+  for (const auto pathId : keptPathIds) {
+    EXPECT_TRUE(announcedPathIds.contains(pathId)) << "path ID " << pathId;
+  }
+}
+
+/*
+ * With RIB allocated path IDs, a partial drain change with unchanged multipaths
+ * re-sends every advertised path with the new partial drain state.
+ */
+TEST_F(
+    RibAllocatedPathIdFixture,
+    MultipathDeltaPartialDrainChangeReannouncesAllPaths) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    // A peer without a local UCMP weight keeps the aggregate weights unchanged.
+    const TinyPeerInfo peer(
+        kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false);
+    const std::vector<folly::IPAddress> nexthops{kV4Nexthop1, kV4Nexthop2};
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(nexthops[i]);
+      attrs->publish();
+      entry.updatePath(peer, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    std::set<uint32_t> expected;
+    for (const auto& [pathId, _] : entry.getAdvertisedMultipaths()) {
+      expected.insert(pathId);
+    }
+
+    for (const bool isPartialDrain : {true, false}) {
+      entry.isPartialDrain_ = isPartialDrain;
+      ASSERT_FALSE(entry.multipathChanged());
+      RibOutAnnouncement announcement;
+      RibOutAnnouncement announcementAddPath;
+      RibOutWithdrawal withdrawalAddPath;
+
+      rib_->handleAddUpdatedUnicastRoute(
+          entry,
+          false /* sendWithEoR */,
+          announcement,
+          announcementAddPath,
+          withdrawalAddPath);
+
+      std::set<uint32_t> announced;
+      for (const auto& addPathEntry : announcementAddPath.addPathEntries) {
+        EXPECT_EQ(isPartialDrain, addPathEntry.isPartialDrain);
+        announced.insert(addPathEntry.pathIdToSend);
+      }
+      EXPECT_EQ(expected, announced) << "isPartialDrain " << isPartialDrain;
+      EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+      EXPECT_FALSE(entry.advertisedPrefixFieldsChanged());
+    }
+  });
+}
+
+/*
+ * With RIB allocated path IDs, adding a path that changes the aggregate UCMP
+ * weight re-sends every advertised path with the new weight, not only the new
+ * path.
+ */
+TEST_F(
+    RibAllocatedPathIdFixture,
+    MultipathDeltaUcmpWeightChangeReannouncesAllPaths) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    auto attrs1 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs1->setNexthop(kV4Nexthop1);
+    attrs1->publish();
+    auto attrs2 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs2->setNexthop(kV4Nexthop2);
+    attrs2->publish();
+    auto attrs3 = std::make_shared<facebook::bgp::BgpPath>(
+        *buildBgpPathFields(4, 4, 4, 4));
+    attrs3->setNexthop(kV4Nexthop3);
+    attrs3->publish();
+    // The fixture peers have local UCMP weights 10, 20 and 30.
+    entry.updatePath(eBgpPeer1_, attrs1);
+    entry.updatePath(eBgpPeer2_, attrs2);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then add a third path.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    const auto weightBefore = entry.getAggregateLocalUcmpWeight();
+    entry.updatePath(eBgpPeer3_, attrs3);
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(3, entry.getMultipaths().size());
+    ASSERT_NE(weightBefore, entry.getAggregateLocalUcmpWeight());
+    ASSERT_TRUE(entry.advertisedPrefixFieldsChanged());
+    std::set<uint32_t> expected;
+    for (const auto& [pathId, _] : entry.getMultipaths()) {
+      expected.insert(pathId);
+    }
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    std::set<uint32_t> announced;
+    for (const auto& addPathEntry : announcementAddPath.addPathEntries) {
+      EXPECT_EQ(
+          entry.getAggregateLocalUcmpWeight(),
+          addPathEntry.aggregateLocalUcmpWeight);
+      announced.insert(addPathEntry.pathIdToSend);
+    }
+    EXPECT_EQ(expected, announced);
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+  });
+}
+
+/*
+ * With RIB allocated path IDs, a rib policy UCMP weight change with unchanged
+ * multipaths re-sends every advertised path with the new weight.
+ */
+TEST_F(
+    RibAllocatedPathIdFixture,
+    MultipathDeltaRibPolicyWeightChangeReannouncesAllPaths) {
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    RibEntry entry(kV4Prefix1);
+    // A peer without a local UCMP weight keeps the aggregate weights unchanged.
+    const TinyPeerInfo peer(
+        kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false);
+    const std::vector<folly::IPAddress> nexthops{kV4Nexthop1, kV4Nexthop2};
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(nexthops[i]);
+      attrs->publish();
+      entry.updatePath(peer, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then set a rib policy UCMP weight.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    std::set<uint32_t> expected;
+    for (const auto& [pathId, _] : entry.getAdvertisedMultipaths()) {
+      expected.insert(pathId);
+    }
+    entry.setRibPolicyUcmpWeight(5.0f);
+    ASSERT_FALSE(entry.multipathChanged());
+    RibOutAnnouncement announcement;
+    RibOutAnnouncement announcementAddPath;
+    RibOutWithdrawal withdrawalAddPath;
+
+    rib_->handleAddUpdatedUnicastRoute(
+        entry,
+        false /* sendWithEoR */,
+        announcement,
+        announcementAddPath,
+        withdrawalAddPath);
+
+    std::set<uint32_t> announced;
+    for (const auto& addPathEntry : announcementAddPath.addPathEntries) {
+      EXPECT_EQ(std::optional<float>(5.0f), addPathEntry.ribPolicyUcmpWeight);
+      announced.insert(addPathEntry.pathIdToSend);
+    }
+    EXPECT_EQ(expected, announced);
+    EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
+  });
 }
 
 // Verify that after read only announcements are sent in chunks

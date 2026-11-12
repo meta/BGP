@@ -1006,6 +1006,14 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       uint64_t& currentRibVersion,
       RibOutAnnouncement& announcementAddPath,
       RibOutWithdrawal& withdrawalAddPath) noexcept;
+  void handleAddUpdatedMultipathDelta(
+      RibEntry& entry,
+      bool sendWithEoR,
+      bool newlyInstalledInLocalRib,
+      uint64_t& currentRibVersion,
+      RibOutAnnouncement& announcementAddPath,
+      RibOutWithdrawal& withdrawalAddPath) noexcept;
+
   void handleFibSyncReq(const Fib::FibSyncReq& req) noexcept;
 
  protected:

@@ -382,7 +382,7 @@ INSTANTIATE_TEST_SUITE_P(
  * receiver gets exactly the withdrawn path IDs, and the updated paths under
  * the path IDs they already had. Unchanged multipaths are never re-sent.
  */
-TEST_P(E2ERibAllocatedPathIdTest, DISABLED_ChurnSendsOnlyChangedPathIds) {
+TEST_P(E2ERibAllocatedPathIdTest, ChurnSendsOnlyChangedPathIds) {
   bringUpPeersWithEor();
   std::set<uint32_t> withdrawCommunities;
   std::set<uint32_t> updateCommunities;
@@ -455,7 +455,7 @@ TEST_P(E2ERibAllocatedPathIdTest, DISABLED_ChurnSendsOnlyChangedPathIds) {
  * path ID it already had, with the drain community. Clearing the policy
  * re-sends every multipath without it. Nothing is withdrawn.
  */
-TEST_P(E2ERibAllocatedPathIdTest, DISABLED_PartialDrainResendsAllPathIds) {
+TEST_P(E2ERibAllocatedPathIdTest, PartialDrainResendsAllPathIds) {
   bringUpPeersWithEor();
   for (uint32_t pathIdx = 0; pathIdx < kNumPaths; pathIdx++) {
     announcePathForAllPrefixes(
@@ -506,7 +506,7 @@ TEST_P(E2ERibAllocatedPathIdTest, DISABLED_PartialDrainResendsAllPathIds) {
  * Withdrawing 10% of the multipaths of every prefix at once withdraws exactly
  * those path IDs, and re-sends every remaining path with the new aggregate.
  */
-TEST_P(E2ERibAllocatedPathIdTest, DISABLED_AggregateLbwResendsAllPathIds) {
+TEST_P(E2ERibAllocatedPathIdTest, AggregateLbwResendsAllPathIds) {
   bringUpPeersWithEor();
   for (uint32_t pathIdx = 0; pathIdx < kNumPaths; pathIdx++) {
     announcePathForAllPrefixes(
@@ -664,9 +664,7 @@ INSTANTIATE_TEST_SUITE_P(
  * instead of the old one. Updated paths keep their path IDs, and only the
  * withdrawn path IDs are withdrawn.
  */
-TEST_P(
-    E2ERibAllocatedPathIdEgressPolicyTest,
-    DISABLED_PolicyChangeUpdatesAllPathIds) {
+TEST_P(E2ERibAllocatedPathIdEgressPolicyTest, PolicyChangeUpdatesAllPathIds) {
   constexpr uint32_t kNumPolicyWithdrawPaths = kNumPaths / 4;
   constexpr uint32_t kNumPolicyUpdatePaths = kNumPaths / 4;
   bringUpPeersWithEor();
@@ -872,9 +870,7 @@ INSTANTIATE_TEST_SUITE_P(
  * attributes) only evaluates the egress policy for the updated paths. The
  * unchanged multipaths are not processed again.
  */
-TEST_P(
-    E2ERibAllocatedPathIdPolicyCacheTest,
-    DISABLED_ChurnEvaluatesOnlyChangedPathIds) {
+TEST_P(E2ERibAllocatedPathIdPolicyCacheTest, ChurnEvaluatesOnlyChangedPathIds) {
   bringUpPeersWithEor();
   const auto lookupsBeforeAnnounce = policyCacheLookups();
   /*

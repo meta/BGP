@@ -256,6 +256,19 @@ class RibEntry {
   }
 
   /*
+   * True if a per-prefix field carried in every add-path entry (partial drain,
+   * UCMP weights) changed since it was last advertised. commitBestpath()
+   * commits these fields.
+   */
+  bool advertisedPrefixFieldsChanged() const {
+    return advertisedAggregateReceivedUcmpWeight_ !=
+        aggregateReceivedUcmpWeight_ ||
+        advertisedAggregateLocalUcmpWeight_ != aggregateLocalUcmpWeight_ ||
+        advertisedRibPolicyUcmpWeight_ != ribPolicyUcmpWeight_ ||
+        advertisedIsPartialDrain_ != isPartialDrain_;
+  }
+
+  /*
    * only used in add path feature to help determine if multipaths has
    * been changed.
    */

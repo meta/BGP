@@ -2442,13 +2442,23 @@ void RibBase::handleAddUpdatedUnicastRoute(
   const auto prevAdvertisedMultipathSize =
       entry.getAdvertisedMultipaths().size();
 
-  handleAddUpdatedMultipaths(
-      entry,
-      sendWithEoR,
-      newlyInstalledInLocalRib,
-      currentRibVersion,
-      announcementAddPath,
-      withdrawalAddPath);
+  if (enableRibAllocatedPathId_) {
+    handleAddUpdatedMultipathDelta(
+        entry,
+        sendWithEoR,
+        newlyInstalledInLocalRib,
+        currentRibVersion,
+        announcementAddPath,
+        withdrawalAddPath);
+  } else {
+    handleAddUpdatedMultipaths(
+        entry,
+        sendWithEoR,
+        newlyInstalledInLocalRib,
+        currentRibVersion,
+        announcementAddPath,
+        withdrawalAddPath);
+  }
 
   /*
    * Persist the final (highest) version reached for this prefix, so
@@ -2579,6 +2589,95 @@ void RibBase::handleAddUpdatedMultipaths(
             currentRibVersion);
       }
     }
+  }
+}
+
+/*
+ * Path ID based add-path processing, used when enableRibAllocatedPathId_ is
+ * set. Announces only the paths that are new or changed since the last
+ * advertisement, and withdraws the path IDs that are no longer advertised.
+ */
+void RibBase::handleAddUpdatedMultipathDelta(
+    RibEntry& entry,
+    bool sendWithEoR,
+    bool newlyInstalledInLocalRib,
+    uint64_t& currentRibVersion,
+    RibOutAnnouncement& announcementAddPath,
+    RibOutWithdrawal& withdrawalAddPath) noexcept {
+  entry.commitMultipathNexthops();
+
+  /*
+   * Every add-path entry carries the per-prefix fields, so if any changed,
+   * re-send every advertised path. commitBestpath() commits them afterwards.
+   */
+  const bool prefixFieldsChanged = entry.advertisedPrefixFieldsChanged();
+  if (!entry.multipathChanged() && !prefixFieldsChanged) {
+    return;
+  }
+
+  /*
+   * Multipaths can exist without a bestpath (RibDC failed CPS criteria).
+   * Nothing is announced and the multipaths are not committed, so they are
+   * announced once a bestpath returns.
+   */
+  if (!entry.bestpath_) {
+    return;
+  }
+
+  /*
+   * commitMultipaths() below overwrites the advertised multipaths. Keep the
+   * previous set to compute the delta.
+   */
+  auto oldAdvMultipaths = entry.getAdvertisedMultipaths();
+  entry.commitMultipaths();
+
+  /* Announce the updated/new multipaths. */
+  for (const auto& [pathId, advMultPath] : entry.getAdvertisedMultipaths()) {
+    bool unchanged = false;
+    oldAdvMultipaths.eraseInto(pathId, [&](auto&& /*key*/, auto&& oldPath) {
+      unchanged = oldPath == advMultPath;
+    });
+    /* Existing (old-advertised), unchanged multipaths are not announced.*/
+    if (unchanged && !prefixFieldsChanged) {
+      continue;
+    }
+    if (announcementAddPath.addPathEntries.size() == kRibChunkSize) {
+      flushAnnouncementChunk(
+          announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
+
+      currentRibVersion = incrementRibVersion();
+    }
+    announcementAddPath.addPathEntries.emplace_back(
+        entry.getPrefix(),
+        pathId,
+        advMultPath->peer,
+        advMultPath->attrs,
+        switchId_,
+        entry.getMultipaths().size(),
+        entry.getAggregateReceivedUcmpWeight(),
+        entry.getAggregateLocalUcmpWeight(),
+        entry.getRibPolicyUcmpWeight(),
+        newlyInstalledInLocalRib,
+        entry.installTimeStamp_,
+        currentRibVersion,
+        entry.getIsPartialDrain());
+  }
+
+  /* Withdraw the path IDs that weren't in advertised multipaths. */
+  for (const auto& [pathId, oldPath] : oldAdvMultipaths) {
+    if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
+      flushWithdrawalChunk(
+          withdrawalAddPath,
+          /*reserveAddPath=*/true,
+          /*logAsAddPath=*/false);
+
+      currentRibVersion = incrementRibVersion();
+    }
+    withdrawalAddPath.addPathEntries.emplace_back(
+        entry.getPrefix(),
+        pathId,
+        oldPath->attrs->getNexthop(),
+        currentRibVersion);
   }
 }
 

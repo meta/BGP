@@ -1337,7 +1337,14 @@ AdjRib::getPostPolicyAttributesPolicyTermAndInfo(
       std::move(postPolicyInfo)};
 }
 
-void AdjRib::tryIterateChangesToEnd() noexcept {
+void AdjRib::tryIterateChangesToEnd(bool processFullMultipaths) noexcept {
+  auto* consumer = changeListConsumer_.get();
+  if (processFullMultipaths) {
+    changeListConsumer_->setProcessChangeItemCallback(
+        [consumer](ChangeItem<ShadowRibEntry>* item) {
+          return consumer->processShadowRibEntryFullMultipaths(item);
+        });
+  }
   changeListConsumer_->iterateChangesToEnd();
   /*
    * The drain reached the end of the change list, so this peer has seen every
@@ -1347,12 +1354,19 @@ void AdjRib::tryIterateChangesToEnd() noexcept {
    * the peer trailing the RIB forever.
    *
    * Reaching the tail is guaranteed rather than checked: no boundary marker is
-   * passed, and AdjRibOutConsumer::processChangeItem() always returns
+   * passed, and both AdjRibOutConsumer::processShadowRibEntryDelta() and
+   * AdjRibOutConsumer::processShadowRibEntryFullMultipaths() always return
    * ProcessResult::CONTINUE, never YIELD -- the only other way the walk can
    * stop short. Nothing tracks the version per item, so introducing a YIELD on
    * this path would silently stall the peer's version at its pre-drain value.
    */
   setLastSeenRibVersion(adjRibOutGroup_->getShadowRibMaxVersion());
+  if (processFullMultipaths) {
+    changeListConsumer_->setProcessChangeItemCallback(
+        [consumer](ChangeItem<ShadowRibEntry>* item) {
+          return consumer->processShadowRibEntryDelta(item);
+        });
+  }
 }
 
 /*

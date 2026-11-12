@@ -431,9 +431,10 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
    * group has seen every item offered to it, so advance its cached version to
    * the Shadow RIB's current maximum. The last applicable change item's
    * version can be lower because not every RIB change is published or applies
-   * to this consumer.
+   * to this consumer. If processFullMultipaths is set, every multipath of each
+   * item is processed instead of only the delta.
    */
-  void tryIterateChangesToEnd() noexcept;
+  void tryIterateChangesToEnd(bool processFullMultipaths = false) noexcept;
 
   /*
    * Create the group's change list consume (MRAI) timer for the currently set
@@ -509,6 +510,12 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
    * Called by AdjRibOutGroupConsumer when consuming change items.
    */
   void processShadowRibEntryChange(ShadowRibEntry& srEntry) noexcept;
+
+  /*
+   * Announce every multipath of the entry, not only the ones in update, and
+   * withdraw the ones in withdraw.
+   */
+  void processShadowRibEntryFullMultipaths(ShadowRibEntry& srEntry) noexcept;
 
   /*
    * Process withdrawal for the group
@@ -1761,7 +1768,7 @@ class AdjRibOutGroupConsumer : public Consumer<ShadowRibEntry> {
         addPathConsumerBitmap_(addPathBitmap),
         nonAddPathConsumerBitmap_(nonAddPathBitmap) {
     setProcessChangeItemCallback([this](ChangeItem<ShadowRibEntry>* item) {
-      return this->processChangeItem(item);
+      return this->processShadowRibEntryDelta(item);
     });
   }
 
@@ -1787,13 +1794,25 @@ class AdjRibOutGroupConsumer : public Consumer<ShadowRibEntry> {
    */
   AdjRibOutGroupConsumer& operator=(AdjRibOutGroupConsumer&&) = delete;
 
-  ProcessResult processChangeItem(ChangeItem<ShadowRibEntry>* item) {
+  ProcessResult processShadowRibEntryDelta(ChangeItem<ShadowRibEntry>* item) {
     ShadowRibEntry& srEntry = item->getTypedObject();
 
     /* Transition to READY when receiving a new change tracker item. */
     adjRibOutGroup_->setState(UpdateGroupState::READY);
 
     adjRibOutGroup_->processShadowRibEntryChange(srEntry);
+
+    return ProcessResult::CONTINUE;
+  }
+
+  ProcessResult processShadowRibEntryFullMultipaths(
+      ChangeItem<ShadowRibEntry>* item) {
+    ShadowRibEntry& srEntry = item->getTypedObject();
+
+    /* Transition to READY when receiving a new change tracker item. */
+    adjRibOutGroup_->setState(UpdateGroupState::READY);
+
+    adjRibOutGroup_->processShadowRibEntryFullMultipaths(srEntry);
 
     return ProcessResult::CONTINUE;
   }

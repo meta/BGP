@@ -68,7 +68,10 @@
   FRIEND_TEST(                                                                \
       AdjRibOutboundFixture, ProcessRibOutWithdrawalRibAllocatedPathId);      \
   FRIEND_TEST(                                                                \
-      AdjRibOutboundFixture, HandleImplicitWithdrawalRibAllocatedPathId);
+      AdjRibOutboundFixture, HandleImplicitWithdrawalRibAllocatedPathId);     \
+  FRIEND_TEST(                                                                \
+      AdjRibOutboundFixture,                                                  \
+      ProcessShadowRibEntryFullMultipathsRibAllocatedPathId);
 
 #include <folly/coro/BlockingWait.h>
 #include <folly/logging/xlog.h>
@@ -2620,6 +2623,80 @@ TEST_F(
           withdrawnPathId),
       otherPrefixEntry);
   EXPECT_FALSE(adjRib_->pathIdGenerator_->findPathId(kV4Prefix1, kV4Nexthop1));
+}
+
+/*
+ * With RIB allocated path IDs, processShadowRibEntryFullMultipaths announces
+ * every multipath that is not being withdrawn, including one not flagged as
+ * updated, and withdraws the one being withdrawn, each by its pathIdToSend.
+ */
+TEST_F(
+    AdjRibOutboundFixture,
+    ProcessShadowRibEntryFullMultipathsRibAllocatedPathId) {
+  setupAdjRib(
+      setupAcceptAllPolicy(kEgressPolicyName),
+      kEgressPolicyName,
+      false /* sessionEstablished */,
+      true /* sendAddPath */);
+  adjRib_->pathIdGenerator_ = std::make_unique<PathIdGenerator>(true);
+  adjRib_->enableRibAllocatedPathId_ = true;
+  adjRib_->sendAddPath_ = true;
+  adjRib_->egressEoRsSent_ = true;
+  adjRib_->isAfiIpv4Negotiated_ = true;
+  adjRib_->isAfiIpv6Negotiated_ = true;
+
+  const uint32_t updatedPathId = 7;
+  const uint32_t unchangedPathId = 8;
+  const uint32_t withdrawnPathId = 9;
+  const std::map<uint32_t, folly::IPAddress> nexthops{
+      {updatedPathId, kV4Nexthop1},
+      {unchangedPathId, kV4Nexthop2},
+      {withdrawnPathId, kV4Nexthop3}};
+  ShadowRibRouteInfos multipaths;
+  for (const auto& [pathId, nexthop] : nexthops) {
+    auto attrs = std::make_shared<BgpPath>(*buildBgpPathFields(1, 1, 1, 1));
+    attrs->setNexthop(nexthop);
+    replaceZerosInAsPath(attrs, adjRib_->peeringParams_.localAs);
+    attrs->publish();
+    auto path = std::make_shared<ShadowRibRouteInfo>(eBgpPeer_, attrs, pathId);
+    if (pathId == updatedPathId) {
+      setShadowRibRouteState(path, SHADOWRIBROUTE_IN_UPDATE);
+    } else if (pathId == withdrawnPathId) {
+      setShadowRibRouteState(path, SHADOWRIBROUTE_IN_WITHDRAW);
+      auto* adjRibEntry = adjRib_->adjRibOutGroup_->addToPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          pathId);
+      ASSERT_NE(adjRibEntry, nullptr);
+      adjRibEntry->setPreOut(attrs);
+    }
+    multipaths.emplace(pathId, std::move(path));
+  }
+  ShadowRibOutAnnouncementEntry srEntry(
+      kV4Prefix1, /*bestpath=*/nullptr, std::move(multipaths));
+
+  adjRib_->processShadowRibEntryFullMultipaths(srEntry);
+
+  for (const auto pathId : {updatedPathId, unchangedPathId}) {
+    auto* adjRibEntry = adjRib_->adjRibOutGroup_->getFromPathTree(
+        adjRib_->adjRibOutGroup_->PathTree_,
+        kV4Prefix1,
+        adjRib_->getPeerOwnerKey(),
+        pathId);
+    ASSERT_NE(adjRibEntry, nullptr) << "pathId=" << pathId;
+    EXPECT_NE(adjRibEntry->getPostAttr(), nullptr) << "pathId=" << pathId;
+  }
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          withdrawnPathId),
+      nullptr);
+  for (const auto& [_, nexthop] : nexthops) {
+    EXPECT_FALSE(adjRib_->pathIdGenerator_->findPathId(kV4Prefix1, nexthop));
+  }
 }
 
 /*

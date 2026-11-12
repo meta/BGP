@@ -115,6 +115,9 @@ std::shared_ptr<Config> E2ETestFixture::getConfig(
   if (enableEiBgpMultipath_) {
     tBgpSettingConfig.enable_eibgp_multipath() = true;
   }
+  if (enableRibAllocatedPathId_) {
+    tBgpSettingConfig.enable_rib_allocated_path_id() = true;
+  }
   if (enableLegacyV4NlriEncoding_) {
     tBgpSettingConfig.enable_legacy_v4_nlri_encoding() = true;
   }
@@ -3463,6 +3466,10 @@ void E2ETestFixture::enableComputeUcmpFromLbw(bool enable) {
 
 void E2ETestFixture::enableEiBgpMultipath(bool enable) {
   enableEiBgpMultipath_ = enable;
+}
+
+void E2ETestFixture::enableRibAllocatedPathId(bool enable) {
+  enableRibAllocatedPathId_ = enable;
 }
 
 void E2ETestFixture::enableLegacyV4NlriEncoding(bool enable) {

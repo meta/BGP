@@ -174,6 +174,62 @@ void AdjRib::processShadowRibEntryChange(ShadowRibEntry& srEntry) noexcept {
   return;
 }
 
+void AdjRib::processShadowRibEntryFullMultipaths(
+    ShadowRibEntry& srEntry) noexcept {
+  if (!egressEoRsSent_) {
+    XLOGF(
+        DBG1,
+        "Ignoring changeList announcement for {} before sending initial dump",
+        getPeerName());
+    return;
+  }
+
+  setLastSeenRibVersion(srEntry.ribVersion);
+
+  for (const auto& [_, multipath] : srEntry.multipaths) {
+    if (!multipath) {
+      continue;
+    }
+    if (isShadowRibRouteInWithdraw(multipath->flags)) {
+      if (!multipath->attrs) {
+        XLOGF(
+            ERR,
+            "Unexpected null attr for multipath when processing "
+            "withdrawal for shadowrib entry. prefix {}, peer {}",
+            folly::IPAddress::networkToString(srEntry.prefix),
+            getPeerName());
+        continue;
+      }
+      RibOutWithdrawalEntry entry(
+          srEntry.prefix,
+          multipath->pathIdToSend,
+          multipath->attrs->getNexthop());
+      uint32_t pathId = resolvePathId(
+          entry.prefix,
+          entry.nh.value_or(folly::IPAddress()),
+          entry.pathIdToSend);
+      processRibWithdraw(entry.prefix, pathId);
+      continue;
+    }
+    /* Every multipath not in withdraw is announced, not only the updated. */
+    RibOutAnnouncementEntry entry(
+        srEntry.prefix,
+        multipath->pathIdToSend,
+        multipath->peer,
+        multipath->attrs,
+        srEntry.switchId,
+        srEntry.multiPathSize,
+        srEntry.aggregateReceivedUcmpWeight,
+        srEntry.aggregateLocalUcmpWeight,
+        srEntry.ribPolicyUcmpWeight);
+    entry.newlyInstalledInLocalRib = srEntry.newlyInstalledInLocalRib;
+    entry.installTimeStamp = srEntry.installTimeStamp;
+    entry.ribVersion = srEntry.ribVersion;
+    entry.isPartialDrain = multipath->isPartialDrain;
+    handleRibAnnouncedEntry(entry, false);
+  }
+}
+
 void AdjRib::processRibMessage(const RibOutMessage& ribMsg) noexcept {
   folly::variant_match(
       ribMsg,

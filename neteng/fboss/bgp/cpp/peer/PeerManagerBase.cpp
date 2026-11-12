@@ -5623,6 +5623,14 @@ folly::coro::Task<void> PeerManagerBase::processRibDumpReqForEgressPolicyUpdate(
     const nettools::bgplib::BgpPeerId& peerId,
     std::shared_ptr<AdjRib> adjRib) {
   co_await processRibDumpReqCoro(RibDumpReq(peerId, adjRib->sendAddPath()));
+  /*
+   * The dump skips entries pending on the change list, so consume those with
+   * every multipath under the new policy.
+   */
+  if (adjRib->getChangeListConsumer()) {
+    adjRib->tryIterateChangesToEnd(
+        adjRib->sendAddPath() /* processFullMultipaths */);
+  }
   adjRib->clearPendingEgressPolicyUpdate(); // Clear flag after completion
 }
 
@@ -5667,7 +5675,8 @@ void PeerManagerBase::processDetachedPeerEgressPolicyReEvaluation(
    * turn rather than leaving items for the async consume timer.
    */
   if (adjRib->getChangeListConsumer()) {
-    adjRib->tryIterateChangesToEnd();
+    adjRib->tryIterateChangesToEnd(
+        adjRib->sendAddPath() /* processFullMultipaths */);
   }
 }
 

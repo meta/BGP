@@ -3307,6 +3307,63 @@ TEST_F(AdjRibGroupAddPathFixture, AddPathEnabled_SendsAllMultipaths) {
 }
 
 /**
+ * Test: processShadowRibEntryFullMultipaths announces every multipath that is
+ * not being withdrawn, including one not flagged as updated, and withdraws the
+ * one being withdrawn, each by its pathIdToSend.
+ */
+TEST_F(
+    AdjRibGroupAddPathFixture,
+    ProcessShadowRibEntryFullMultipaths_AnnouncesAllAndWithdraws) {
+  createGroupWithAddPath(true /* sendAddPath */);
+
+  const auto prefix = folly::CIDRNetwork{folly::IPAddress("10.0.0.0"), 24};
+  const TinyPeerInfo peer(
+      folly::IPAddress("1.1.1.1"), 65000, 1, BgpSessionType::EBGP, false);
+  const auto groupOwnerKey =
+      AdjRibOutOwnerKey::forGroup(adjRibOutGroup_->getGroupId());
+  const uint32_t updatedPathId = 1;
+  const uint32_t unchangedPathId = 2;
+  const uint32_t withdrawnPathId = 3;
+
+  // The withdrawn path was announced before.
+  auto withdrawnAttrs = createPath(100);
+  adjRibOutGroup_->processRibAnnouncedEntryForGroup(RibOutAnnouncementEntry(
+      prefix, withdrawnPathId, peer, withdrawnAttrs, 0, 0, 0, 0, 0));
+  auto* withdrawnEntry = adjRibOutGroup_->getFromPathTree(
+      adjRibOutGroup_->PathTree_, prefix, groupOwnerKey, withdrawnPathId);
+  ASSERT_NE(withdrawnEntry, nullptr);
+  ASSERT_NE(withdrawnEntry->getPostAttr(), nullptr);
+
+  ShadowRibRouteInfos multipaths;
+  auto updated = std::make_shared<ShadowRibRouteInfo>(
+      peer, createPath(200), updatedPathId);
+  setShadowRibRouteState(updated, SHADOWRIBROUTE_IN_UPDATE);
+  multipaths.emplace(updatedPathId, std::move(updated));
+  multipaths.emplace(
+      unchangedPathId,
+      std::make_shared<ShadowRibRouteInfo>(
+          peer, createPath(150), unchangedPathId));
+  auto withdrawn = std::make_shared<ShadowRibRouteInfo>(
+      peer, withdrawnAttrs, withdrawnPathId);
+  setShadowRibRouteState(withdrawn, SHADOWRIBROUTE_IN_WITHDRAW);
+  multipaths.emplace(withdrawnPathId, std::move(withdrawn));
+  ShadowRibOutAnnouncementEntry srEntry(
+      prefix, /*bestpath=*/nullptr, std::move(multipaths));
+
+  adjRibOutGroup_->processShadowRibEntryFullMultipaths(srEntry);
+
+  for (const auto pathId : {updatedPathId, unchangedPathId}) {
+    auto* adjRibEntry = adjRibOutGroup_->getFromPathTree(
+        adjRibOutGroup_->PathTree_, prefix, groupOwnerKey, pathId);
+    ASSERT_NE(adjRibEntry, nullptr) << "pathId=" << pathId;
+    EXPECT_NE(adjRibEntry->getPostAttr(), nullptr) << "pathId=" << pathId;
+  }
+  withdrawnEntry = adjRibOutGroup_->getFromPathTree(
+      adjRibOutGroup_->PathTree_, prefix, groupOwnerKey, withdrawnPathId);
+  EXPECT_TRUE(withdrawnEntry == nullptr || !withdrawnEntry->getPostAttr());
+}
+
+/**
  * Test: Message cloning for nexthop handoff
  * Verifies tryPushToPeer() clones messages per peer
  * (Cannot fully test without mock peers, but ensures no crash)

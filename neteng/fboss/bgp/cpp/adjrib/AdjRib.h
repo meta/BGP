@@ -1119,9 +1119,10 @@ class AdjRib : boost::noncopyable,
   /*
    * Consume all available peer change-list items. If the consumer reaches the
    * tail, advance the peer's cached version to the Shadow RIB's current
-   * maximum.
+   * maximum. If processFullMultipaths is set, every multipath of each item is
+   * processed instead of only the delta.
    */
-  void tryIterateChangesToEnd() noexcept;
+  void tryIterateChangesToEnd(bool processFullMultipaths = false) noexcept;
 
   bool isEnhancedRouteRefreshNegotiated() const noexcept {
     return isEnhancedRouteRefreshNegotiated_;
@@ -1309,6 +1310,12 @@ class AdjRib : boost::noncopyable,
   }
 
   void processShadowRibEntryChange(ShadowRibEntry& srEntry) noexcept;
+
+  /*
+   * Announce every multipath of the entry, not only the ones in update, and
+   * withdraw the ones in withdraw.
+   */
+  void processShadowRibEntryFullMultipaths(ShadowRibEntry& srEntry) noexcept;
 
   /*
    * process a single Rib Update. virtual so tests can spy on rib-dump delivery
@@ -3171,7 +3178,7 @@ class AdjRibOutConsumer : public Consumer<ShadowRibEntry> {
         nonAddPathConsumerBitmap_(nonAddPathBitmap) {
     // Set up the callback to process change items
     setProcessChangeItemCallback([this](ChangeItem<ShadowRibEntry>* item) {
-      return this->processChangeItem(item);
+      return this->processShadowRibEntryDelta(item);
     });
   }
 
@@ -3197,9 +3204,16 @@ class AdjRibOutConsumer : public Consumer<ShadowRibEntry> {
    */
   AdjRibOutConsumer& operator=(AdjRibOutConsumer&&) = delete;
 
-  ProcessResult processChangeItem(ChangeItem<ShadowRibEntry>* item) {
+  ProcessResult processShadowRibEntryDelta(ChangeItem<ShadowRibEntry>* item) {
     ShadowRibEntry& srEntry = item->getTypedObject();
     adjRib_->processShadowRibEntryChange(srEntry);
+    return ProcessResult::CONTINUE;
+  }
+
+  ProcessResult processShadowRibEntryFullMultipaths(
+      ChangeItem<ShadowRibEntry>* item) {
+    ShadowRibEntry& srEntry = item->getTypedObject();
+    adjRib_->processShadowRibEntryFullMultipaths(srEntry);
     return ProcessResult::CONTINUE;
   }
 

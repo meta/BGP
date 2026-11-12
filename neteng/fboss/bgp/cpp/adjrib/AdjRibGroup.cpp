@@ -487,7 +487,15 @@ void AdjRibOutGroup::registerGroupConsumer() noexcept {
   createChangeListConsumeTimer();
 }
 
-void AdjRibOutGroup::tryIterateChangesToEnd() noexcept {
+void AdjRibOutGroup::tryIterateChangesToEnd(
+    bool processFullMultipaths) noexcept {
+  auto* consumer = changeListConsumer_.get();
+  if (processFullMultipaths) {
+    changeListConsumer_->setProcessChangeItemCallback(
+        [consumer](ChangeItem<ShadowRibEntry>* item) {
+          return consumer->processShadowRibEntryFullMultipaths(item);
+        });
+  }
   changeListConsumer_->iterateChangesToEnd();
   /*
    * iterateChangesToEnd() runs to the end of the changelist. It is important
@@ -498,7 +506,7 @@ void AdjRibOutGroup::tryIterateChangesToEnd() noexcept {
    *   1. Not all changes from RIB are published to the changelist
    *   2. Not all changes published to the changelist are for this consumer.
    *
-   * If we do not have the opportunity to run processChangeItem on
+   * If we do not have the opportunity to run processShadowRibEntryDelta on
    * an actual item, then we can only update to the RIB version of
    * a change item seen by this consumer. This means we do not
    * reflect that consuming to the end of the changelist will
@@ -506,12 +514,20 @@ void AdjRibOutGroup::tryIterateChangesToEnd() noexcept {
    * is undesired.
    *
    * Reaching the tail is guaranteed rather than checked: no boundary marker is
-   * passed, and AdjRibOutGroupConsumer::processChangeItem() always returns
-   * ProcessResult::CONTINUE, never YIELD -- the only other way the walk can
-   * stop short. Nothing tracks the version per item, so introducing a YIELD on
-   * this path would silently stall the group's version at its pre-drain value.
+   * passed, and both AdjRibOutGroupConsumer::processShadowRibEntryDelta() and
+   * AdjRibOutGroupConsumer::processShadowRibEntryFullMultipaths() always
+   * return ProcessResult::CONTINUE, never YIELD -- the only other way the walk
+   * can stop short. Nothing tracks the version per item, so introducing a
+   * YIELD on this path would silently stall the group's version at its
+   * pre-drain value.
    */
   setLastSeenRibVersion(getShadowRibMaxVersion());
+  if (processFullMultipaths) {
+    changeListConsumer_->setProcessChangeItemCallback(
+        [consumer](ChangeItem<ShadowRibEntry>* item) {
+          return consumer->processShadowRibEntryDelta(item);
+        });
+  }
 }
 
 void AdjRibOutGroup::createChangeListConsumeTimer() noexcept {
@@ -1011,7 +1027,7 @@ void AdjRibOutGroup::reEvaluateSyncPeersEgressPolicy() {
    * from that point on rather than only once a dump eventually runs.
    */
   if (changeListConsumer_) {
-    tryIterateChangesToEnd();
+    tryIterateChangesToEnd(groupKey_.sendAddPath /* processFullMultipaths */);
   } else {
     registerGroupConsumer();
   }
@@ -1042,8 +1058,8 @@ void AdjRibOutGroup::reEvaluateSyncPeersEgressPolicy() {
  *         Converts shadow RIB entries to announcements at group level
  *
  * Similar to AdjRib::processShadowRibEntryChange but operates at group level.
- * This is called by AdjRibOutGroupConsumer::processChangeItem() when consuming
- * changes from the tracker.
+ * This is called by AdjRibOutGroupConsumer::processShadowRibEntryDelta() when
+ * consuming changes from the tracker.
  *
  * @param  srEntry - shadow Rib entry consumed from the changeList
  *
@@ -1149,6 +1165,44 @@ void AdjRibOutGroup::processShadowRibEntryChange(
             groupDescriptor_);
       }
     }
+  }
+}
+
+void AdjRibOutGroup::processShadowRibEntryFullMultipaths(
+    ShadowRibEntry& srEntry) noexcept {
+  for (const auto& [_, multipath] : srEntry.multipaths) {
+    if (!multipath) {
+      continue;
+    }
+    if (isShadowRibRouteInWithdraw(multipath->flags)) {
+      if (!multipath->attrs) {
+        XLOGF(
+            ERR,
+            "Unexpected null attr for multipath when processing "
+            "withdrawal for shadowrib entry. prefix {}, group {}",
+            folly::IPAddress::networkToString(srEntry.prefix),
+            groupDescriptor_);
+        continue;
+      }
+      processGroupRibWithdraw(srEntry.prefix, multipath->pathIdToSend);
+      continue;
+    }
+    /* Every multipath not in withdraw is announced, not only the updated. */
+    RibOutAnnouncementEntry entry(
+        srEntry.prefix,
+        multipath->pathIdToSend,
+        multipath->peer,
+        multipath->attrs,
+        srEntry.switchId,
+        srEntry.multiPathSize,
+        srEntry.aggregateReceivedUcmpWeight,
+        srEntry.aggregateLocalUcmpWeight,
+        srEntry.ribPolicyUcmpWeight);
+    entry.newlyInstalledInLocalRib = srEntry.newlyInstalledInLocalRib;
+    entry.installTimeStamp = srEntry.installTimeStamp;
+    entry.ribVersion = srEntry.ribVersion;
+    entry.isPartialDrain = multipath->isPartialDrain;
+    processRibAnnouncedEntryForGroup(entry);
   }
 }
 

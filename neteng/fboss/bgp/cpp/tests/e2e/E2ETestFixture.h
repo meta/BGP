@@ -1437,6 +1437,11 @@ class E2ETestFixture : public ::testing::Test {
   void enableEiBgpMultipath(bool enable = true);
 
   /*
+   * Enable RIB allocated path IDs for add-path. Call before createRib().
+   */
+  void enableRibAllocatedPathId(bool enable = true);
+
+  /*
    * Enable legacy IPv4-unicast NLRI encoding for capability-less peers.
    * Call before createRib(). Pass true to set the thrift config
    * enable_legacy_v4_nlri_encoding = true so a capability-less peer receives
@@ -1514,6 +1519,9 @@ class E2ETestFixture : public ::testing::Test {
 
   // eiBGP configuration: equalize eBGP and iBGP paths
   bool enableEiBgpMultipath_ = false;
+
+  // RIB allocated path IDs for add-path
+  bool enableRibAllocatedPathId_ = false;
 
   // Legacy v4 NLRI encoding for capability-less peers (thrift config gate)
   bool enableLegacyV4NlriEncoding_ = false;

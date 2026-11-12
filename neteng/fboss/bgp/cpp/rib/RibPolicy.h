@@ -449,11 +449,26 @@ class RouteAttributeActions {
   };
 
   /**
-   * Update route attributes.
+   * Each nexthop's matching action (index and weight). If its paths match
+   * several actions, the lowest index wins.
+   */
+  using NexthopWeights = folly::F14FastMap<folly::IPAddress, MatchedWeight>;
+
+  /**
+   * Map each nexthop of `route` to its matching weight action (index and
+   * weight), over all its paths, selected or not. Nexthops with no matching
+   * action are left out. Does not change the route. updateAttribute() applies
+   * the result to the selected nexthops.
+   */
+  NexthopWeights computeNexthopWeights(const RibEntry& route) const;
+
+  /**
+   * Apply link bandwidth and UCMP weights from `nexthopWeights` to the route.
    *
    * @returns boolean indicating if route is updated or not.
    */
-  bool updateAttribute(RibEntry& route) const;
+  bool updateAttribute(RibEntry& route, const NexthopWeights& nexthopWeights)
+      const;
 
   void moveWeightIndex(const RouteAttributeActions& other) const {
     std::swap(weightIndex_, other.weightIndex_);
@@ -471,8 +486,8 @@ class RouteAttributeActions {
   /**
    * Checks the action cache (weightIndex_) for the matching action for this
    * path's attributes: returns it if present, otherwise calls
-   * findMatchingAction() and stores its result. Called by updateUcmpWeight()
-   * for each selected path.
+   * findMatchingAction() and stores its result. Called by
+   * computeNexthopWeights() for each path of the route.
    */
   std::optional<MatchedWeight> findMatchingActionCached(
       const std::shared_ptr<RouteInfo>& path) const;
@@ -485,11 +500,14 @@ class RouteAttributeActions {
   bool updateLinkBandwidth(RibEntry& route) const;
 
   /**
-   * Update the UCMP weight of the route
+   * Writes each selected nexthop's weight from `nexthopWeights`. When
+   * divide_weights_by_matching_path_count is set, the weight is divided by the
+   * number of selected nexthops with the same action.
    *
    * @returns boolean indicating if route is updated or not.
    */
-  bool updateUcmpWeight(RibEntry& route) const;
+  bool updateUcmpWeight(RibEntry& route, const NexthopWeights& nexthopWeights)
+      const;
 
   /**
    * Get the collection of next-hop weight actions.
@@ -615,12 +633,20 @@ class RouteAttributeStatement {
         std::chrono::seconds(std::time(nullptr)).count();
   }
 
+  // See RouteAttributeActions::computeNexthopWeights().
+  RouteAttributeActions::NexthopWeights computeNexthopWeights(
+      const RibEntry& route) const {
+    return actions_.computeNexthopWeights(route);
+  }
+
   /**
    * Transform route.
    *
    * @returns boolean indicating if route is transformed or not.
    */
-  bool updateAttribute(RibEntry& route) const;
+  bool updateAttribute(
+      RibEntry& route,
+      const RouteAttributeActions::NexthopWeights& nexthopWeights) const;
 
   bool hasCommunityMatch() const {
     return matcher_.hasCommunityMatch();

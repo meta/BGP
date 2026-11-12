@@ -3455,6 +3455,122 @@ TEST_F(RouteAttributeUcmpActionFixture, RibPolicyRouteAttributeUCMP) {
   }
 }
 
+/*
+ * Test computeNexthopWeights gives every matched nexthop its action and weight,
+ * before any path is selected, and skips unmatched nexthops.
+ */
+TEST_F(RouteAttributeUcmpActionFixture, ComputeNexthopWeightsCoversAllPaths) {
+  const auto tPolicy =
+      createTRibPolicyUcmp({kV4Prefix1}, tRouteAttributeUcmpAction);
+  const RouteAttributeStatement stmt{
+      tPolicy.route_attribute_policy()->statements()->begin()->second};
+  RibEntry ribEntry(kV4Prefix1);
+  ASSERT_TRUE(ribEntry.updatePath(
+      TinyPeerInfo(
+          kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false),
+      attrs1,
+      false));
+  ASSERT_TRUE(ribEntry.updatePath(
+      TinyPeerInfo(
+          kPeerAddr2, kPeerAsn2, kPeerRouterId2, BgpSessionType::EBGP, false),
+      attrs2,
+      false));
+  // Matches no action.
+  ASSERT_TRUE(ribEntry.updatePath(
+      TinyPeerInfo(
+          kPeerAddr3, kPeerAsn3, kPeerRouterId3, BgpSessionType::EBGP, false),
+      attrs3,
+      false));
+
+  const auto nexthopWeights = stmt.computeNexthopWeights(ribEntry);
+
+  WeightedNexthopMap weights;
+  for (const auto& [nh, matched] : nexthopWeights) {
+    weights.emplace(nh, matched.weight);
+  }
+  const WeightedNexthopMap expected{{kV4Nexthop1, nhWt1}, {kV4Nexthop2, nhWt2}};
+  EXPECT_EQ(expected, weights);
+  EXPECT_EQ(nullptr, ribEntry.getMultipathWeightedNexthops());
+}
+
+/*
+ * Test UCMP weights are not applied, and the route is unchanged, when a
+ * selected nexthop matches no action.
+ */
+TEST_F(
+    RouteAttributeUcmpActionFixture,
+    UpdateAttributeSkipsRouteWithUnmatchedSelectedNexthop) {
+  const auto tPolicy =
+      createTRibPolicyUcmp({kV4Prefix1}, tRouteAttributeUcmpAction);
+  const RouteAttributeStatement stmt{
+      tPolicy.route_attribute_policy()->statements()->begin()->second};
+  RibEntry ribEntry(kV4Prefix1);
+  ASSERT_TRUE(ribEntry.updatePath(
+      TinyPeerInfo(
+          kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false),
+      attrs1,
+      false));
+  ASSERT_TRUE(ribEntry.updatePath(
+      TinyPeerInfo(
+          kPeerAddr2, kPeerAsn2, kPeerRouterId2, BgpSessionType::EBGP, false),
+      attrs2,
+      false));
+  // Matches no action.
+  ASSERT_TRUE(ribEntry.updatePath(
+      TinyPeerInfo(
+          kPeerAddr3, kPeerAsn3, kPeerRouterId3, BgpSessionType::EBGP, false),
+      attrs3,
+      false));
+  RibBase::selectBestPath(
+      ribEntry, multipathSelector, bestpathSelector, false, 0);
+  ASSERT_EQ(3, ribEntry.getMultipathWeightedNexthops()->size());
+  const auto selectedBefore = *ribEntry.getMultipathWeightedNexthops();
+
+  EXPECT_FALSE(
+      stmt.updateAttribute(ribEntry, stmt.computeNexthopWeights(ribEntry)));
+
+  EXPECT_EQ(selectedBefore, *ribEntry.getMultipathWeightedNexthops());
+}
+
+/*
+ * Test a nexthop whose paths match different actions gets the lower action
+ * index, whichever path is added first.
+ */
+TEST_F(
+    RouteAttributeUcmpActionFixture,
+    ComputeNexthopWeightsKeepsLowestActionIndex) {
+  const auto tPolicy =
+      createTRibPolicyUcmp({kV4Prefix1}, tRouteAttributeUcmpAction);
+  const RouteAttributeStatement stmt{
+      tPolicy.route_attribute_policy()->statements()->begin()->second};
+  // Same nexthop as attrs1, but matches action 1 instead of action 0.
+  nettools::bgplib::BgpAttrCommunitiesC communities;
+  communities.emplace_back(200, 200);
+  auto attrsAction1 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(4, 4, 4, 4));
+  attrsAction1->setCommunities(communities);
+  attrsAction1->publish();
+  ASSERT_EQ(attrs1->getNexthop(), attrsAction1->getNexthop());
+  const auto peer1 = TinyPeerInfo(
+      kPeerAddr1, kPeerAsn1, kPeerRouterId1, BgpSessionType::EBGP, false);
+  const auto peer2 = TinyPeerInfo(
+      kPeerAddr2, kPeerAsn2, kPeerRouterId2, BgpSessionType::EBGP, false);
+  RibEntry action0First(kV4Prefix1);
+  ASSERT_TRUE(action0First.updatePath(peer1, attrs1, false));
+  ASSERT_TRUE(action0First.updatePath(peer2, attrsAction1, false));
+  RibEntry action1First(kV4Prefix1);
+  ASSERT_TRUE(action1First.updatePath(peer1, attrsAction1, false));
+  ASSERT_TRUE(action1First.updatePath(peer2, attrs1, false));
+
+  for (const auto* ribEntry : {&action0First, &action1First}) {
+    const auto nexthopWeights = stmt.computeNexthopWeights(*ribEntry);
+    ASSERT_EQ(1, nexthopWeights.size());
+    const auto& matched = nexthopWeights.at(attrs1->getNexthop());
+    EXPECT_EQ(0, matched.actionIndex);
+    EXPECT_EQ(nhWt1, matched.weight);
+  }
+}
+
 /**
  * Test Route attribute UCMP action in strict mode.
  *
@@ -3539,7 +3655,8 @@ TEST_F(RouteAttributeUcmpActionFixture, RouteAttributeUcmpActionStrict) {
     EXPECT_EQ(stmt.toThrift(), tStmt);
 
     // Weights for the first route's next-hops should not be present.
-    EXPECT_FALSE(stmt.updateAttribute(ribEntry1));
+    EXPECT_FALSE(
+        stmt.updateAttribute(ribEntry1, stmt.computeNexthopWeights(ribEntry1)));
     EXPECT_EQ(ribEntry1.getMultipathWeightedNexthops()->size(), 1);
     for (auto& nhwt : *ribEntry1.getMultipathWeightedNexthops()) {
       EXPECT_EQ(nhwt.first, kV4Nexthop1);
@@ -3547,7 +3664,8 @@ TEST_F(RouteAttributeUcmpActionFixture, RouteAttributeUcmpActionStrict) {
     }
 
     // Weights for the second route's next-hops shoudl be overrridden.
-    EXPECT_TRUE(stmt.updateAttribute(ribEntry2));
+    EXPECT_TRUE(
+        stmt.updateAttribute(ribEntry2, stmt.computeNexthopWeights(ribEntry2)));
     EXPECT_EQ(ribEntry2.getMultipathWeightedNexthops()->size(), 2);
     for (auto& nhwt : *ribEntry2.getMultipathWeightedNexthops()) {
       if (nhwt.first == kV4Nexthop1) {
@@ -3557,10 +3675,12 @@ TEST_F(RouteAttributeUcmpActionFixture, RouteAttributeUcmpActionStrict) {
       }
     }
     // Verify re-applying the same policy will not change anything.
-    EXPECT_FALSE(stmt.updateAttribute(ribEntry2));
+    EXPECT_FALSE(
+        stmt.updateAttribute(ribEntry2, stmt.computeNexthopWeights(ribEntry2)));
 
     // Weights for the third route's next-hops should not be present.
-    EXPECT_FALSE(stmt.updateAttribute(ribEntry3));
+    EXPECT_FALSE(
+        stmt.updateAttribute(ribEntry3, stmt.computeNexthopWeights(ribEntry3)));
     EXPECT_EQ(ribEntry3.getMultipathWeightedNexthops()->size(), 3);
     for (auto& nhwt : *ribEntry3.getMultipathWeightedNexthops()) {
       if (nhwt.first == kV4Nexthop1) {
@@ -3656,17 +3776,20 @@ TEST_F(RouteAttributeUcmpActionFixture, RouteAttributeUcmpActionRelaxed) {
     EXPECT_EQ(stmt.toThrift(), tStmt);
 
     // Weights for the first route's next-hops shoudl be overridden.
-    EXPECT_TRUE(stmt.updateAttribute(ribEntry1));
+    EXPECT_TRUE(
+        stmt.updateAttribute(ribEntry1, stmt.computeNexthopWeights(ribEntry1)));
     EXPECT_EQ(ribEntry1.getMultipathWeightedNexthops()->size(), 1);
     for (auto& nhwt : *ribEntry1.getMultipathWeightedNexthops()) {
       EXPECT_EQ(nhwt.first, kV4Nexthop1);
       EXPECT_EQ(nhwt.second, nhWt1);
     }
     // Verify re-applying the same policy will not change anything.
-    EXPECT_FALSE(stmt.updateAttribute(ribEntry1));
+    EXPECT_FALSE(
+        stmt.updateAttribute(ribEntry1, stmt.computeNexthopWeights(ribEntry1)));
 
     // Weights for the second route's next-hops shoudl be overrridden.
-    EXPECT_TRUE(stmt.updateAttribute(ribEntry2));
+    EXPECT_TRUE(
+        stmt.updateAttribute(ribEntry2, stmt.computeNexthopWeights(ribEntry2)));
     EXPECT_EQ(ribEntry2.getMultipathWeightedNexthops()->size(), 2);
     for (auto& nhwt : *ribEntry2.getMultipathWeightedNexthops()) {
       if (nhwt.first == kV4Nexthop1) {
@@ -3676,10 +3799,12 @@ TEST_F(RouteAttributeUcmpActionFixture, RouteAttributeUcmpActionRelaxed) {
       }
     }
     // Verify re-applying the same policy will not change anything.
-    EXPECT_FALSE(stmt.updateAttribute(ribEntry2));
+    EXPECT_FALSE(
+        stmt.updateAttribute(ribEntry2, stmt.computeNexthopWeights(ribEntry2)));
 
     // Weights for the third route's next-hops should not be present.
-    EXPECT_FALSE(stmt.updateAttribute(ribEntry3));
+    EXPECT_FALSE(
+        stmt.updateAttribute(ribEntry3, stmt.computeNexthopWeights(ribEntry3)));
     EXPECT_EQ(ribEntry3.getMultipathWeightedNexthops()->size(), 3);
     for (auto& nhwt : *ribEntry3.getMultipathWeightedNexthops()) {
       if (nhwt.first == kV4Nexthop1) {

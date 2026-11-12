@@ -459,12 +459,14 @@ RouteAttributeActions::getNexthopWeightActions(
   return nextHopWeightActions;
 }
 
-bool RouteAttributeActions::updateAttribute(RibEntry& route) const {
+bool RouteAttributeActions::updateAttribute(
+    RibEntry& route,
+    const NexthopWeights& nexthopWeights) const {
   // A route is updated if any of the updates changes the route
   bool updated = false;
   // Update link bandwidth
   updated |= updateLinkBandwidth(route);
-  updated |= updateUcmpWeight(route);
+  updated |= updateUcmpWeight(route, nexthopWeights);
   return updated;
 }
 
@@ -520,15 +522,51 @@ RouteAttributeActions::findMatchingActionCached(
   return matched;
 }
 
+RouteAttributeActions::NexthopWeights
+RouteAttributeActions::computeNexthopWeights(const RibEntry& route) const {
+  NexthopWeights nexthopWeights;
+  if (nextHopWeightActions_.empty()) {
+    return nexthopWeights;
+  }
+  for (const auto& path : route.getAllPaths()) {
+    auto matched = findMatchingActionCached(path);
+    if (!matched.has_value()) {
+      continue;
+    }
+    const auto& nh = path->attrs->getNexthop();
+    auto [it, inserted] = nexthopWeights.emplace(nh, *matched);
+    if (inserted || matched->actionIndex == it->second.actionIndex) {
+      continue;
+    }
+    /*
+     * This nexthop's paths match different actions, which is a policy
+     * misconfiguration: actions should not overlap. Keep the lower action
+     * index, so the result does not depend on the order of the paths.
+     */
+    XLOGF(
+        WARN,
+        "NH {} for route {} matches multiple actions ({} and {})",
+        nh.str(),
+        route.getPrefix().first.str(),
+        it->second.actionIndex,
+        matched->actionIndex);
+    if (matched->actionIndex < it->second.actionIndex) {
+      it->second = *matched;
+    }
+  }
+  return nexthopWeights;
+}
+
 /**
- * Evaluate and apply the next-hop weights for this prefix.
- *
  * @param route The route/prefix under consideration.
+ * @param nexthopWeights Weights from computeNexthopWeights().
  *
  * @return Boolean representing whether next-hops are overridden by policy
  * or not.
  */
-bool RouteAttributeActions::updateUcmpWeight(RibEntry& route) const {
+bool RouteAttributeActions::updateUcmpWeight(
+    RibEntry& route,
+    const NexthopWeights& nexthopWeights) const {
   const auto& routeNexthops = route.getMultipathWeightedNexthops();
   if (!routeNexthops) {
     return false;
@@ -544,97 +582,38 @@ bool RouteAttributeActions::updateUcmpWeight(RibEntry& route) const {
   }
 
   /*
-   * Only paths whose nexthop is in the multipath-selected set should be
-   * considered: those are the only nexthops that will receive a weight, and
-   * counting non-selected paths in matchingPathCount inflates the divisor for
-   * divide_weights_by_matching_path_count, producing smaller-than-intended
-   * per-nexthop weights for the selected paths.
+   * All selected nexthops must have a weight. If one is not matched by the
+   * policy, abort ucmp for the route.
    */
-  std::vector<std::shared_ptr<RouteInfo>> selectedPaths;
-  for (const auto& path : route.getAllPaths()) {
-    if (routeNexthops->contains(path->attrs->getNexthop())) {
-      selectedPaths.emplace_back(path);
-    }
-  }
-
-  // Build nexthop -> (actionIdx, weight) map, enforcing "lowest actionIdx wins"
-  folly::F14NodeMap<
-      folly::IPAddress /* nexthop */,
-      std::pair<size_t /* action index */, int32_t /* weight */>>
-      policyNexthopAction;
-
-  for (const auto& path : selectedPaths) {
-    auto weightResult = findMatchingActionCached(path);
-    if (!weightResult.has_value()) {
-      continue;
-    }
-    const auto& nh = path->attrs->getNexthop();
-    const auto [actionIdx, weight] = *weightResult;
-
-    auto it = policyNexthopAction.find(nh);
-    if (it == policyNexthopAction.end()) {
-      // First path to claim this nexthop
-      policyNexthopAction.emplace(nh, std::make_pair(actionIdx, weight));
-    } else {
-      // Nexthop already claimed. Keep the one with lower actionIdx.
-      const auto [existingIdx, existingWeight] = it->second;
-      if (actionIdx != existingIdx) {
-        /*
-         * A nexthop matched by two different actions is a policy
-         * misconfiguration (actions are expected to be mutually exclusive).
-         * Warn regardless of selectedPaths iteration order; the lowest action
-         * index wins.
-         */
-        XLOGF(
-            WARN,
-            "NH {} for route {} matches multiple actions ({} and {})",
-            nh.str(),
-            route.getPrefix().first.str(),
-            existingIdx,
-            actionIdx);
-        if (actionIdx < existingIdx) {
-          it->second = std::make_pair(actionIdx, weight);
-        }
-      }
-    }
+  if (!std::ranges::all_of(*routeNexthops, [&](const auto& entry) {
+        return nexthopWeights.contains(entry.first);
+      })) {
+    return false;
   }
 
   /*
-   * Compute matchingPathCount[actionIdx] = number of nexthops whose WINNING
-   * action is actionIdx. This must be computed AFTER resolving winners.
+   * matchingPathCount[actionIdx] = number of SELECTED nexthops whose winning
+   * action is actionIdx. Counting non-selected nexthops would inflate the
+   * divisor for divide_weights_by_matching_path_count.
    */
   std::vector<int> matchingPathCount(nextHopWeightActions_.size(), 0);
-  for (const auto& [nh, actionWeightPair] : policyNexthopAction) {
-    const auto [actionIdx, _] = actionWeightPair;
-    matchingPathCount.at(actionIdx)++;
+  for (const auto& [nh, _] : *routeNexthops) {
+    matchingPathCount.at(nexthopWeights.at(nh).actionIndex)++;
   }
 
   // Assign the policy weights to the route.
   WeightedNexthopMap updatedRouteNexthops;
-  for (auto& [nh, _] : *routeNexthops) {
-    if (const auto& it = policyNexthopAction.find(nh);
-        it != policyNexthopAction.end()) {
-      const auto [actionIdx, policyWeight] = it->second;
-      if (divideWeightsByMatchingPathCount_.value_or(false)) {
-        /*
-         * matchingPathCount[actionIdx] is guaranteed to be >= 1 here: it was
-         * computed above (in the loop over policyNexthopAction) as the number
-         * of nexthops whose winning action is actionIdx, so finding `nh` in
-         * policyNexthopAction means its winning action contributed at least one
-         * such increment. std::max with a floor of 1 is for small-numerator
-         * rounding, not divide-by-zero.
-         */
-        updatedRouteNexthops.emplace(
-            nh, std::max(policyWeight / matchingPathCount.at(actionIdx), 1));
-      } else {
-        updatedRouteNexthops.emplace(nh, policyWeight);
-      }
-    } else {
+  for (const auto& [nh, _] : *routeNexthops) {
+    const auto [actionIdx, policyWeight] = nexthopWeights.at(nh);
+    if (divideWeightsByMatchingPathCount_.value_or(false)) {
       /*
-       * All next-hops must have a weight. If a next-hop is not matched by the
-       * policy, abort ucmp for the route.
+       * Integer division rounds down to 0 when the weight is smaller than the
+       * nexthop count; keep at least 1.
        */
-      return false;
+      updatedRouteNexthops.emplace(
+          nh, std::max(policyWeight / matchingPathCount.at(actionIdx), 1));
+    } else {
+      updatedRouteNexthops.emplace(nh, policyWeight);
     }
   }
   if (*routeNexthops != updatedRouteNexthops) {
@@ -661,8 +640,10 @@ TRouteAttributeStatement RouteAttributeStatement::toThrift() const {
   return tStmt;
 }
 
-bool RouteAttributeStatement::updateAttribute(RibEntry& route) const {
-  return actions_.updateAttribute(route);
+bool RouteAttributeStatement::updateAttribute(
+    RibEntry& route,
+    const RouteAttributeActions::NexthopWeights& nexthopWeights) const {
+  return actions_.updateAttribute(route, nexthopWeights);
 }
 
 /*
@@ -801,7 +782,7 @@ bool RouteAttributePolicy::overwriteRouteAttributes(
         return false;
       }
       const auto& stmt = stmtIt->second;
-      if (stmt.updateAttribute(route)) {
+      if (stmt.updateAttribute(route, stmt.computeNexthopWeights(route))) {
         change.updatedRoutes.emplace(prefix);
         XLOGF(
             DBG2,
@@ -821,7 +802,7 @@ bool RouteAttributePolicy::overwriteRouteAttributes(
     matchCache_->emplace(prefix, *matchedStmtName);
 
     const auto& stmt = statements_.at(*matchedStmtName);
-    if (stmt.updateAttribute(route)) {
+    if (stmt.updateAttribute(route, stmt.computeNexthopWeights(route))) {
       change.updatedRoutes.emplace(prefix);
       XLOGF(
           DBG2,

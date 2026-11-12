@@ -18,6 +18,8 @@
 
 #include "neteng/fboss/bgp/cpp/rib/RibEntry.h"
 
+#include <folly/CppAttributes.h>
+
 #include "configerator/structs/neteng/bgp_policy/thrift/gen-cpp2/rib_policy_types.h"
 #include "neteng/fboss/bgp/cpp/policy/PolicyMatch.h"
 
@@ -817,6 +819,15 @@ class RouteAttributePolicy {
 
  private:
   std::optional<std::string> matchStatement(const RibEntry& route) const;
+
+  /**
+   * Find the active statement matching `route`: from matchCache_, or from
+   * matchStatement() on a cache miss, caching the result.
+   *
+   * @returns nullptr if no statement matches or the matching one expired.
+   */
+  const RouteAttributeStatement* FOLLY_NULLABLE
+  findMatchingStatement(const RibEntry& route) const;
 
   // unordered maps: statement name -> statement
   folly::F14NodeMap<std::string, RouteAttributeStatement> statements_{};

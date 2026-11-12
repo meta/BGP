@@ -752,9 +752,8 @@ std::optional<std::string> RouteAttributePolicy::matchStatement(
   return std::nullopt;
 }
 
-bool RouteAttributePolicy::overwriteRouteAttributes(
-    RibEntry& route,
-    RouteAttributePolicy::RibChange& change) const {
+const RouteAttributeStatement* FOLLY_NULLABLE
+RouteAttributePolicy::findMatchingStatement(const RibEntry& route) const {
   const auto& prefix = route.getPrefix();
 
   // 1. Check cache first (O(1) lookup)
@@ -768,53 +767,49 @@ bool RouteAttributePolicy::overwriteRouteAttributes(
        * valid (affected prefixes have their cache entries invalidated during
        * migration).
        */
-      return false;
-    } else {
-      // Positive cache hit - use cached statement
-      auto stmtIt = statements_.find(cachedItem->second->getStatementName());
-      if (stmtIt == statements_.end() || !stmtIt->second.isActive()) {
-        /*
-         * Statement missing or expired - treat as no match. A missing statement
-         * can only arise if moveCache() migrated this entry into a policy whose
-         * statement-name set differs (contract violation); degrade gracefully
-         * instead of throwing std::out_of_range.
-         */
-        return false;
-      }
-      const auto& stmt = stmtIt->second;
-      if (stmt.updateAttribute(route, stmt.computeNexthopWeights(route))) {
-        change.updatedRoutes.emplace(prefix);
-        XLOGF(
-            DBG2,
-            "RibPolicy updated the route (cache hit) {}",
-            folly::IPAddress::networkToString(prefix));
-      }
-      return true;
+      return nullptr;
     }
+    auto stmtIt = statements_.find(cachedItem->second->getStatementName());
+    if (stmtIt == statements_.end() || !stmtIt->second.isActive()) {
+      /*
+       * Statement missing or expired - treat as no match. A missing statement
+       * can only arise if moveCache() migrated this entry into a policy whose
+       * statement-name set differs (contract violation); degrade gracefully
+       * instead of throwing std::out_of_range.
+       */
+      return nullptr;
+    }
+    return &stmtIt->second;
   }
 
   // 2. Cache miss - use inverted index to find matched statement
   RibStats::STATS_raPolicyCacheMiss.add(1);
   auto matchedStmtName = matchStatement(route);
-
-  if (matchedStmtName.has_value()) {
-    // Found match - cache it
-    matchCache_->emplace(prefix, *matchedStmtName);
-
-    const auto& stmt = statements_.at(*matchedStmtName);
-    if (stmt.updateAttribute(route, stmt.computeNexthopWeights(route))) {
-      change.updatedRoutes.emplace(prefix);
-      XLOGF(
-          DBG2,
-          "RibPolicy updated the route {}",
-          folly::IPAddress::networkToString(prefix));
-    }
-    return true;
+  if (!matchedStmtName.has_value()) {
+    // 3. No match - cache negative result
+    matchCache_->emplace(prefix, std::nullopt);
+    return nullptr;
   }
+  matchCache_->emplace(prefix, *matchedStmtName);
+  return &statements_.at(*matchedStmtName);
+}
 
-  // 3. No match - cache negative result
-  matchCache_->emplace(prefix, std::nullopt);
-  return false;
+bool RouteAttributePolicy::overwriteRouteAttributes(
+    RibEntry& route,
+    RouteAttributePolicy::RibChange& change) const {
+  const auto* stmt = findMatchingStatement(route);
+  if (stmt == nullptr) {
+    return false;
+  }
+  if (stmt->updateAttribute(route, stmt->computeNexthopWeights(route))) {
+    const auto& prefix = route.getPrefix();
+    change.updatedRoutes.emplace(prefix);
+    XLOGF(
+        DBG2,
+        "RibPolicy updated the route {}",
+        folly::IPAddress::networkToString(prefix));
+  }
+  return true;
 }
 
 std::optional<rib_policy::TRouteAttributeUcmpAction>

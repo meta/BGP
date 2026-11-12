@@ -115,7 +115,9 @@
       PeerManagerTestFixture, SelectiveMultipathNotificationAddPathTest);       \
   FRIEND_TEST(PeerManagerTestFixture, SelectiveMultipathNotificationMixTest);   \
   FRIEND_TEST(PeerManagerTestFixture, MaxRibVersionCountsPrefixChunks);         \
-  FRIEND_TEST(PeerManagerTestFixture, MaxRibVersionNeverMovesBackwards);
+  FRIEND_TEST(PeerManagerTestFixture, MaxRibVersionNeverMovesBackwards);        \
+  FRIEND_TEST(PeerManagerTestFixture, ShadowRibEntryMultipathKeyedByPathId);    \
+  FRIEND_TEST(PeerManagerTestFixture, ShadowRibEntryWithdrawalByPathId);
 
 #define AdjRib_TEST_FRIENDS                                                     \
   FRIEND_TEST(PeerManagerTestFixture, RibDumpReqNegativeTest);                  \
@@ -552,6 +554,73 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathTest) {
     EXPECT_EQ(1, srEntry.multipaths.size());
     EXPECT_TRUE(srEntry.multipaths.contains(pathId));
   }
+}
+
+/*
+ * With RIB allocated path IDs, shadow RIB multipaths are keyed by path ID, so
+ * paths that share a nexthop keep separate entries.
+ */
+TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathKeyedByPathId) {
+  auto config = enableRibAllocatedPathId(getConfig(
+      true /* includeStaticPeer */, true /* includeDynamicShivPeer */));
+  auto peerMgr = std::make_shared<PeerManagerBase>(
+      std::make_shared<ConfigManager>(config),
+      nullptr,
+      ribInQ_,
+      ribOutQ_,
+      nbrRouteChangeQ_);
+
+  for (const uint32_t pathIdToSend : {0u, 1u}) {
+    auto msg = createRibSingleAnnounce(
+        kV4Prefix1, /* prefix */
+        kV4Nexthop1, /* nexthop */
+        kLocalRouteAs, /* peer */
+        false, /* sendWithEoR */
+        true, /* addPath */
+        pathIdToSend);
+    peerMgr->handleShadowRibEntryAnnouncement(
+        std::get<RibOutAnnouncement>(msg));
+  }
+
+  const auto& srEntry = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+  EXPECT_EQ(2, srEntry.multipaths.size());
+  EXPECT_TRUE(srEntry.multipaths.contains(PathId{uint32_t{0}}));
+  EXPECT_TRUE(srEntry.multipaths.contains(PathId{uint32_t{1}}));
+}
+
+/*
+ * With RIB allocated path IDs, an add-path withdrawal removes only the path
+ * with its path ID, even when another path shares the nexthop.
+ */
+TEST_F(PeerManagerTestFixture, ShadowRibEntryWithdrawalByPathId) {
+  auto config = enableRibAllocatedPathId(getConfig(
+      true /* includeStaticPeer */, true /* includeDynamicShivPeer */));
+  auto peerMgr = std::make_shared<PeerManagerBase>(
+      std::make_shared<ConfigManager>(config),
+      nullptr,
+      ribInQ_,
+      ribOutQ_,
+      nbrRouteChangeQ_);
+
+  for (const uint32_t pathIdToSend : {0u, 1u}) {
+    auto msg = createRibSingleAnnounce(
+        kV4Prefix1, /* prefix */
+        kV4Nexthop1, /* nexthop */
+        kLocalRouteAs, /* peer */
+        false, /* sendWithEoR */
+        true, /* addPath */
+        pathIdToSend);
+    peerMgr->handleShadowRibEntryAnnouncement(
+        std::get<RibOutAnnouncement>(msg));
+  }
+
+  RibOutWithdrawal withdrawal{};
+  withdrawal.addPathEntries.emplace_back(kV4Prefix1, 1, kV4Nexthop1);
+  peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
+
+  const auto& srEntry = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+  EXPECT_EQ(1, srEntry.multipaths.size());
+  EXPECT_TRUE(srEntry.multipaths.contains(PathId{uint32_t{0}}));
 }
 
 TEST_F(PeerManagerTestFixture, ShadowRibEntryEmptyAttrTest) {

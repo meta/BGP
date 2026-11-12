@@ -489,6 +489,16 @@ std::shared_ptr<Config> PeerManagerTestFixture::getConfig(
   return std::make_shared<Config>(thriftConfig);
 }
 
+std::shared_ptr<Config> PeerManagerTestFixture::enableRibAllocatedPathId(
+    const std::shared_ptr<Config>& config) {
+  thrift::BgpConfig thriftConfig = config->getConfig();
+  thriftConfig.bgp_setting_config()->enable_rib_allocated_path_id() = true;
+  if (*thriftConfig.enable_vip_service()) {
+    return std::make_shared<ConfigDC>(thriftConfig);
+  }
+  return std::make_shared<Config>(thriftConfig);
+}
+
 std::shared_ptr<Config> PeerManagerTestFixture::addPeerToConfig(
     const std::shared_ptr<Config>& config,
     thrift::BgpPeer& peer,

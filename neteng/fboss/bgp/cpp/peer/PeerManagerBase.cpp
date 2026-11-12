@@ -225,6 +225,7 @@ PeerManagerBase::PeerManagerBase(
     enableDynamicPolicyEvaluation_ =
         globalConfig->enableDynamicPolicyEvaluation;
     enableUpdateGroup_ = globalConfig->enableUpdateGroup;
+    enableRibAllocatedPathId_ = globalConfig->enableRibAllocatedPathId;
     enableSerializeGroupPdu_ =
         globalConfig->updateGroupConfig.enableSerializeGroupPdu;
     updateGroupConfig = globalConfig->updateGroupConfig;
@@ -2417,11 +2418,17 @@ void PeerManagerBase::handleShadowRibEntryWithdrawal(
 }
 
 PathId PeerManagerBase::getPathId(const RibOutAnnouncementEntry& entry) {
+  if (enableRibAllocatedPathId_) {
+    return entry.pathIdToSend;
+  }
   return folly::IPAddress(entry.attrs->getNexthop());
 }
 
 std::optional<PathId> PeerManagerBase::getPathId(
     const RibOutWithdrawalEntry& entry) {
+  if (enableRibAllocatedPathId_) {
+    return entry.pathIdToSend;
+  }
   if (entry.nh.has_value()) {
     return folly::IPAddress(*entry.nh);
   } else {

@@ -169,6 +169,10 @@ class PeerManagerTestFixture : public ::testing::Test {
       bool enableUpdateGroup = false,
       int32_t streamSubscriberLimit = 1);
 
+  // Returns a copy of config with enable_rib_allocated_path_id set.
+  std::shared_ptr<Config> enableRibAllocatedPathId(
+      const std::shared_ptr<Config>& config);
+
   std::shared_ptr<Config> addPeerToConfig(
       const std::shared_ptr<Config>& config,
       thrift::BgpPeer& peer,

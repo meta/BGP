@@ -1700,6 +1700,12 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   bool enableUpdateGroup_{false};
 
   /*
+   * Use the path IDs allocated by Rib (pathIdToSend) to key the shadow RIB
+   * multipaths instead of nexthops
+   */
+  bool enableRibAllocatedPathId_{false};
+
+  /*
    * Enable group PDU serialization for zero-copy distribution
    * Checked globally at PeerManagerBase level
    */

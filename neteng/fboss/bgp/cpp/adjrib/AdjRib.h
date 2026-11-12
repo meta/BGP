@@ -2491,6 +2491,26 @@ class AdjRib : boost::noncopyable,
   void processRibAnnouncedEntry(const RibOutAnnouncementEntry& update) noexcept;
 
   /*
+   * Path ID for a path of prefix with nexthop. With RIB allocated path IDs or
+   * update groups, this is the path ID allocated by the RIB (pathIdToSend).
+   * Otherwise it is the per-nexthop ID from PathIdGenerator, which is
+   * allocated on a miss.
+   */
+  uint32_t resolvePathId(
+      const folly::CIDRNetwork& prefix,
+      const folly::IPAddress& nexthop,
+      uint32_t pathIdToSend) noexcept;
+
+  /*
+   * Same as resolvePathId, but never allocates a PathIdGenerator ID.
+   * std::nullopt when PathIdGenerator has not issued one for (prefix, nexthop).
+   */
+  std::optional<uint32_t> findResolvedPathId(
+      const folly::CIDRNetwork& prefix,
+      const folly::IPAddress& nexthop,
+      uint32_t pathIdToSend) const noexcept;
+
+  /*
    * Try inserting a ribOutEntry for the update's prefix and next hop.
    * Return the existing one if the entry already exists; Otherwise,
    * create a new one and return it.
@@ -2547,9 +2567,7 @@ class AdjRib : boost::noncopyable,
    * which cannot be announced. This may lead to implicit withdrawal of prefix
    * without any explicit withdrawal from RIB
    */
-  void handleImplicitWithdrawal(
-      const folly::CIDRNetwork& prefix,
-      const folly::IPAddress& nextHop) noexcept;
+  void handleImplicitWithdrawal(const RibOutAnnouncementEntry& entry) noexcept;
 
   // Process single prefix best path withdrawal
   void processRibWithdraw(

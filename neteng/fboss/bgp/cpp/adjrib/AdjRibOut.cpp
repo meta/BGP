@@ -103,8 +103,10 @@ void AdjRib::processShadowRibEntryChange(ShadowRibEntry& srEntry) noexcept {
               srEntry.prefix,
               multipath->pathIdToSend,
               multipath->attrs->getNexthop());
-          uint32_t pathId = pathIdGenerator_->getPathId(
-              entry.prefix, entry.nh.value_or(folly::IPAddress()));
+          uint32_t pathId = resolvePathId(
+              entry.prefix,
+              entry.nh.value_or(folly::IPAddress()),
+              entry.pathIdToSend);
           processRibWithdraw(entry.prefix, pathId);
         } else {
           XLOGF(
@@ -153,8 +155,10 @@ void AdjRib::processShadowRibEntryChange(ShadowRibEntry& srEntry) noexcept {
             srEntry.prefix,
             kDefaultPathID,
             srEntry.bestpath->attrs->getNexthop());
-        uint32_t pathId = pathIdGenerator_->getPathId(
-            entry.prefix, entry.nh.value_or(folly::IPAddress()));
+        uint32_t pathId = resolvePathId(
+            entry.prefix,
+            entry.nh.value_or(folly::IPAddress()),
+            entry.pathIdToSend);
         processRibWithdraw(entry.prefix, pathId);
       } else {
         XLOGF(
@@ -838,7 +842,7 @@ void AdjRib::handleRibAnnouncedEntry(
   }
   // sanity check
   if (!canAnnounceEntry(entry)) {
-    handleImplicitWithdrawal(entry.prefix, entry.attrs->getNexthop());
+    handleImplicitWithdrawal(entry);
     return;
   }
 
@@ -1187,6 +1191,24 @@ void AdjRib::processRibAnnouncedEntry(
       postPolicyInfo.isNexthopSetByPolicy);
 }
 
+uint32_t AdjRib::resolvePathId(
+    const folly::CIDRNetwork& prefix,
+    const folly::IPAddress& nexthop,
+    uint32_t pathIdToSend) noexcept {
+  return (enableRibAllocatedPathId_ || enableUpdateGroup_)
+      ? pathIdToSend
+      : pathIdGenerator_->getPathId(prefix, nexthop);
+}
+
+std::optional<uint32_t> AdjRib::findResolvedPathId(
+    const folly::CIDRNetwork& prefix,
+    const folly::IPAddress& nexthop,
+    uint32_t pathIdToSend) const noexcept {
+  return (enableRibAllocatedPathId_ || enableUpdateGroup_)
+      ? std::optional<uint32_t>(pathIdToSend)
+      : pathIdGenerator_->findPathId(prefix, nexthop);
+}
+
 /*
  * Try inserting a ribOutEntry for the update's prefix and next hop.
  * Return the existing one if the entry already exists; Otherwise,
@@ -1202,13 +1224,11 @@ AdjRib::tryInsertRibOutEntry(const RibOutAnnouncementEntry& update) noexcept {
    * behind for a route it goes on to refuse. A (prefix, nexthop) the generator
    * has never issued an id for cannot have a peer-owned entry.
    *
-   * getRibEntryWithUpdateGroup() can also match group-owned entries, which the
-   * group keys by pathIdToSend rather than by this generator, so the
-   * update-group path keeps allocating up front as before.
+   * With RIB allocated path IDs, and with update groups (which key group-owned
+   * entries by pathIdToSend), the path ID comes from the update instead.
    */
-  const auto resolvedPathId = enableUpdateGroup_
-      ? std::optional<uint32_t>(pathIdGenerator_->getPathId(prefix, nexthop))
-      : pathIdGenerator_->findPathId(prefix, nexthop);
+  const auto resolvedPathId =
+      findResolvedPathId(prefix, nexthop, update.pathIdToSend);
 
   auto adjRibEntry = resolvedPathId
       ? (enableUpdateGroup_
@@ -1593,7 +1613,7 @@ void AdjRib::processRibOutWithdrawal(
 
     auto nh = entry.nh.has_value() ? entry.nh.value() : folly::IPAddress();
     processRibWithdraw(
-        entry.prefix, pathIdGenerator_->getPathId(entry.prefix, nh));
+        entry.prefix, resolvePathId(entry.prefix, nh, entry.pathIdToSend));
 
     // Update cached RIB version to track how caught up this peer is
     setLastSeenRibVersion(entry.ribVersion);
@@ -1605,9 +1625,10 @@ void AdjRib::processRibOutWithdrawal(
  * bestpath change and latest prefix/path no longer qualifies for announcing
  */
 void AdjRib::handleImplicitWithdrawal(
-    const folly::CIDRNetwork& prefix,
-    const folly::IPAddress& nextHop) noexcept {
-  auto pathId = pathIdGenerator_->getPathId(prefix, nextHop);
+    const RibOutAnnouncementEntry& entry) noexcept {
+  const auto& prefix = entry.prefix;
+  auto pathId =
+      resolvePathId(prefix, entry.attrs->getNexthop(), entry.pathIdToSend);
 
   XLOGF(
       DBG3,

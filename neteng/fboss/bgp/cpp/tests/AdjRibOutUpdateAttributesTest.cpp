@@ -57,7 +57,18 @@
       PartialDrainCacheCollisionLiveThenDrainAcceptAllPolicy);                \
   FRIEND_TEST(                                                                \
       AdjRibOutboundFixture, ProcessShadowRibEntryChangeWithdrawAddPath);     \
-  FRIEND_TEST(AdjRibOutboundFixture, ProcessRibOutWithdrawal);
+  FRIEND_TEST(AdjRibOutboundFixture, ProcessRibOutWithdrawal);                \
+  FRIEND_TEST(AdjRibOutboundFixture, TryInsertRibOutEntryRibAllocatedPathId); \
+  FRIEND_TEST(                                                                \
+      AdjRibOutboundFixture,                                                  \
+      ProcessShadowRibEntryChangeWithdrawAddPathRibAllocatedPathId);          \
+  FRIEND_TEST(                                                                \
+      AdjRibOutboundFixture,                                                  \
+      ProcessShadowRibEntryChangeWithdrawBestpathRibAllocatedPathId);         \
+  FRIEND_TEST(                                                                \
+      AdjRibOutboundFixture, ProcessRibOutWithdrawalRibAllocatedPathId);      \
+  FRIEND_TEST(                                                                \
+      AdjRibOutboundFixture, HandleImplicitWithdrawalRibAllocatedPathId);
 
 #include <folly/coro/BlockingWait.h>
 #include <folly/logging/xlog.h>
@@ -2469,6 +2480,335 @@ TEST_F(AdjRibOutboundFixture, ProcessRibOutWithdrawal) {
       adjRib_->adjRibOutGroup_->getPeerEntriesCountFromLiteTree(
           adjRib_->adjRibOutGroup_->LiteTree_, adjRib_->getPeerOwnerKey()),
       0);
+}
+
+/*
+ * With RIB allocated path IDs, tryInsertRibOutEntry keys entries by
+ * pathIdToSend. Two paths sharing a nexthop get two entries.
+ */
+TEST_F(AdjRibOutboundFixture, TryInsertRibOutEntryRibAllocatedPathId) {
+  setupAdjRib(
+      kLocalAs1, /* globalAs */
+      kLocalAs1, /* localAs */
+      kRemoteAs2, /* remoteAs */
+      false, /* isRrClient */
+      false, /* isConfedPeer */
+      false, /* nexthopSelf */
+      kV4Nexthop1, /* v4Nexthop */
+      kV6Nexthop1, /* v6Nexthop */
+      false /* call sessionEstablished */);
+  adjRib_->pathIdGenerator_ = std::make_unique<PathIdGenerator>(true);
+  adjRib_->enableRibAllocatedPathId_ = true;
+  adjRib_->sendAddPath_ = true;
+  auto attrs1 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(1, 4, 4, 4));
+  attrs1->publish();
+  const uint32_t pathId1 = 7;
+  const uint32_t pathId2 = 8;
+  RibOutAnnouncementEntry update1(kV4Prefix1, pathId1, localPeerV4_, attrs1);
+  RibOutAnnouncementEntry update2(kV4Prefix1, pathId2, localPeerV4_, attrs1);
+  // Another prefix with the same path ID.
+  RibOutAnnouncementEntry update3(kV4Prefix2, pathId1, localPeerV4_, attrs1);
+
+  auto* entry1 = adjRib_->tryInsertRibOutEntry(update1);
+  auto* entry2 = adjRib_->tryInsertRibOutEntry(update2);
+  auto* entry3 = adjRib_->tryInsertRibOutEntry(update3);
+
+  ASSERT_NE(entry1, nullptr);
+  ASSERT_NE(entry2, nullptr);
+  ASSERT_NE(entry3, nullptr);
+  EXPECT_NE(entry1, entry2);
+  EXPECT_NE(entry1, entry3);
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          pathId1),
+      entry1);
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          pathId2),
+      entry2);
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix2,
+          adjRib_->getPeerOwnerKey(),
+          pathId1),
+      entry3);
+  // Inserting the same path again returns the existing entry.
+  EXPECT_EQ(adjRib_->tryInsertRibOutEntry(update1), entry1);
+  EXPECT_FALSE(adjRib_->pathIdGenerator_->findPathId(kV4Prefix1, kV4Nexthop1));
+}
+
+/*
+ * With RIB allocated path IDs, a shadow RIB add-path withdrawal removes only
+ * the entry keyed by the multipath's pathIdToSend.
+ */
+TEST_F(
+    AdjRibOutboundFixture,
+    ProcessShadowRibEntryChangeWithdrawAddPathRibAllocatedPathId) {
+  setupAdjRib(
+      kLocalAs1, /* globalAs */
+      kLocalAs1, /* localAs */
+      kRemoteAs2, /* remoteAs */
+      false, /* isRrClient */
+      false, /* isConfedPeer */
+      false, /* nexthopSelf */
+      kV4Nexthop1, /* v4Nexthop */
+      kV6Nexthop1, /* v6Nexthop */
+      false /* call sessionEstablished */);
+  adjRib_->pathIdGenerator_ = std::make_unique<PathIdGenerator>(true);
+  adjRib_->enableRibAllocatedPathId_ = true;
+  adjRib_->sendAddPath_ = true;
+  adjRib_->egressEoRsSent_ = true;
+  adjRib_->isAfiIpv4Negotiated_ = true;
+  adjRib_->isAfiIpv6Negotiated_ = true;
+  auto attrs1 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(1, 4, 4, 4));
+  attrs1->publish();
+  const uint32_t withdrawnPathId = 7;
+  const uint32_t keptPathId = 8;
+  auto path = std::make_shared<ShadowRibRouteInfo>(
+      localPeerV4_, attrs1, withdrawnPathId);
+  setShadowRibRouteState(path, SHADOWRIBROUTE_IN_WITHDRAW);
+  ShadowRibRouteInfos mp{{withdrawnPathId, path}};
+  ShadowRibOutAnnouncementEntry srEntry(kV4Prefix1, nullptr, mp);
+  for (const auto pathId : {withdrawnPathId, keptPathId}) {
+    auto* adjRibEntry = adjRib_->adjRibOutGroup_->addToPathTree(
+        adjRib_->adjRibOutGroup_->PathTree_,
+        kV4Prefix1,
+        adjRib_->getPeerOwnerKey(),
+        pathId);
+    ASSERT_NE(adjRibEntry, nullptr);
+    adjRibEntry->setPreOut(attrs1);
+  }
+  // Another prefix with the same path ID.
+  auto* otherPrefixEntry = adjRib_->adjRibOutGroup_->addToPathTree(
+      adjRib_->adjRibOutGroup_->PathTree_,
+      kV4Prefix2,
+      adjRib_->getPeerOwnerKey(),
+      withdrawnPathId);
+  ASSERT_NE(otherPrefixEntry, nullptr);
+  otherPrefixEntry->setPreOut(attrs1);
+
+  adjRib_->processShadowRibEntryChange(srEntry);
+
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          withdrawnPathId),
+      nullptr);
+  EXPECT_NE(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          keptPathId),
+      nullptr);
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix2,
+          adjRib_->getPeerOwnerKey(),
+          withdrawnPathId),
+      otherPrefixEntry);
+  EXPECT_FALSE(adjRib_->pathIdGenerator_->findPathId(kV4Prefix1, kV4Nexthop1));
+}
+
+/*
+ * With RIB allocated path IDs, a shadow RIB best path withdrawal uses
+ * kDefaultPathID and does not consult PathIdGenerator.
+ */
+TEST_F(
+    AdjRibOutboundFixture,
+    ProcessShadowRibEntryChangeWithdrawBestpathRibAllocatedPathId) {
+  setupAdjRib(
+      kLocalAs1, /* globalAs */
+      kLocalAs1, /* localAs */
+      kRemoteAs2, /* remoteAs */
+      false, /* isRrClient */
+      false, /* isConfedPeer */
+      false, /* nexthopSelf */
+      kV4Nexthop1, /* v4Nexthop */
+      kV6Nexthop1, /* v6Nexthop */
+      false /* call sessionEstablished */);
+  adjRib_->pathIdGenerator_ = std::make_unique<PathIdGenerator>(true);
+  adjRib_->enableRibAllocatedPathId_ = true;
+  adjRib_->egressEoRsSent_ = true;
+  adjRib_->isAfiIpv4Negotiated_ = true;
+  adjRib_->isAfiIpv6Negotiated_ = true;
+  auto attrs1 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(1, 4, 4, 4));
+  attrs1->publish();
+  auto bestpath = std::make_shared<ShadowRibRouteInfo>(
+      localPeerV4_, attrs1, kDefaultPathID);
+  setShadowRibRouteState(bestpath, SHADOWRIBROUTE_IN_WITHDRAW);
+  ShadowRibOutAnnouncementEntry srEntry(kV4Prefix1, bestpath, {});
+  auto* adjRibEntry = adjRib_->adjRibOutGroup_->addToLiteTree(
+      adjRib_->adjRibOutGroup_->LiteTree_,
+      kV4Prefix1,
+      adjRib_->getPeerOwnerKey(),
+      kDefaultPathID);
+  ASSERT_NE(adjRibEntry, nullptr);
+  adjRibEntry->setPreOut(attrs1);
+
+  adjRib_->processShadowRibEntryChange(srEntry);
+
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getPeerEntriesCountFromLiteTree(
+          adjRib_->adjRibOutGroup_->LiteTree_, adjRib_->getPeerOwnerKey()),
+      0);
+  EXPECT_FALSE(adjRib_->pathIdGenerator_->findPathId(kV4Prefix1, kV4Nexthop1));
+}
+
+/*
+ * With RIB allocated path IDs, an add-path RibOut withdrawal removes only the
+ * entry keyed by the withdrawal's pathIdToSend.
+ */
+TEST_F(AdjRibOutboundFixture, ProcessRibOutWithdrawalRibAllocatedPathId) {
+  setupAdjRib(
+      kLocalAs1, /* globalAs */
+      kLocalAs1, /* localAs */
+      kRemoteAs2, /* remoteAs */
+      false, /* isRrClient */
+      false, /* isConfedPeer */
+      false, /* nexthopSelf */
+      kV4Nexthop1, /* v4Nexthop */
+      kV6Nexthop1, /* v6Nexthop */
+      false /* call sessionEstablished */);
+  adjRib_->pathIdGenerator_ = std::make_unique<PathIdGenerator>(true);
+  adjRib_->enableRibAllocatedPathId_ = true;
+  adjRib_->sendAddPath_ = true;
+  adjRib_->egressEoRsSent_ = true;
+  adjRib_->isAfiIpv4Negotiated_ = true;
+  adjRib_->isAfiIpv6Negotiated_ = true;
+  auto attrs1 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(1, 4, 4, 4));
+  attrs1->publish();
+  const uint32_t withdrawnPathId = 7;
+  const uint32_t keptPathId = 8;
+  RibOutWithdrawalEntry withEntry(kV4Prefix1, withdrawnPathId, kV4Nexthop1);
+  RibOutWithdrawal with({}, {withEntry});
+  for (const auto pathId : {withdrawnPathId, keptPathId}) {
+    auto* adjRibEntry = adjRib_->adjRibOutGroup_->addToPathTree(
+        adjRib_->adjRibOutGroup_->PathTree_,
+        kV4Prefix1,
+        adjRib_->getPeerOwnerKey(),
+        pathId);
+    ASSERT_NE(adjRibEntry, nullptr);
+    adjRibEntry->setPreOut(attrs1);
+  }
+  // Another prefix with the same path ID.
+  auto* otherPrefixEntry = adjRib_->adjRibOutGroup_->addToPathTree(
+      adjRib_->adjRibOutGroup_->PathTree_,
+      kV4Prefix2,
+      adjRib_->getPeerOwnerKey(),
+      withdrawnPathId);
+  ASSERT_NE(otherPrefixEntry, nullptr);
+  otherPrefixEntry->setPreOut(attrs1);
+
+  adjRib_->processRibOutWithdrawal(with);
+
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          withdrawnPathId),
+      nullptr);
+  EXPECT_NE(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          keptPathId),
+      nullptr);
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix2,
+          adjRib_->getPeerOwnerKey(),
+          withdrawnPathId),
+      otherPrefixEntry);
+  EXPECT_FALSE(adjRib_->pathIdGenerator_->findPathId(kV4Prefix1, kV4Nexthop1));
+}
+
+/*
+ * With RIB allocated path IDs, an implicit withdrawal removes only the entry
+ * keyed by the announcement's pathIdToSend.
+ */
+TEST_F(AdjRibOutboundFixture, HandleImplicitWithdrawalRibAllocatedPathId) {
+  setupAdjRib(
+      kLocalAs1, /* globalAs */
+      kLocalAs1, /* localAs */
+      kRemoteAs2, /* remoteAs */
+      false, /* isRrClient */
+      false, /* isConfedPeer */
+      false, /* nexthopSelf */
+      kV4Nexthop1, /* v4Nexthop */
+      kV6Nexthop1, /* v6Nexthop */
+      false /* call sessionEstablished */);
+  adjRib_->pathIdGenerator_ = std::make_unique<PathIdGenerator>(true);
+  adjRib_->enableRibAllocatedPathId_ = true;
+  adjRib_->sendAddPath_ = true;
+  adjRib_->isAfiIpv4Negotiated_ = true;
+  adjRib_->isAfiIpv6Negotiated_ = true;
+  auto attrs1 =
+      std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(1, 4, 4, 4));
+  attrs1->publish();
+  const uint32_t withdrawnPathId = 7;
+  const uint32_t keptPathId = 8;
+  RibOutAnnouncementEntry update(
+      kV4Prefix1, withdrawnPathId, localPeerV4_, attrs1);
+  for (const auto pathId : {withdrawnPathId, keptPathId}) {
+    auto* adjRibEntry = adjRib_->adjRibOutGroup_->addToPathTree(
+        adjRib_->adjRibOutGroup_->PathTree_,
+        kV4Prefix1,
+        adjRib_->getPeerOwnerKey(),
+        pathId);
+    ASSERT_NE(adjRibEntry, nullptr);
+    adjRibEntry->setPreOut(attrs1);
+  }
+  // Another prefix with the same path ID.
+  auto* otherPrefixEntry = adjRib_->adjRibOutGroup_->addToPathTree(
+      adjRib_->adjRibOutGroup_->PathTree_,
+      kV4Prefix2,
+      adjRib_->getPeerOwnerKey(),
+      withdrawnPathId);
+  ASSERT_NE(otherPrefixEntry, nullptr);
+  otherPrefixEntry->setPreOut(attrs1);
+
+  adjRib_->handleImplicitWithdrawal(update);
+
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          withdrawnPathId),
+      nullptr);
+  EXPECT_NE(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix1,
+          adjRib_->getPeerOwnerKey(),
+          keptPathId),
+      nullptr);
+  EXPECT_EQ(
+      adjRib_->adjRibOutGroup_->getFromPathTree(
+          adjRib_->adjRibOutGroup_->PathTree_,
+          kV4Prefix2,
+          adjRib_->getPeerOwnerKey(),
+          withdrawnPathId),
+      otherPrefixEntry);
+  EXPECT_FALSE(adjRib_->pathIdGenerator_->findPathId(kV4Prefix1, kV4Nexthop1));
 }
 
 } // namespace facebook::bgp

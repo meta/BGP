@@ -32,7 +32,6 @@
 #include "neteng/fboss/bgp/cpp/common/BgpError.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/FeatureFlags.h"
-#include "neteng/fboss/bgp/cpp/common/Structs.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigStructs.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigUtils.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpStructs.h"

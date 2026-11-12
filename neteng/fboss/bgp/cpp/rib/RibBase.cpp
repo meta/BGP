@@ -2120,9 +2120,38 @@ void RibBase::flushWithdrawalChunk(
 }
 
 void RibBase::handleFullAddPathWithdrawal(
-    const RibEntry& ribEntry,
+    RibEntry& ribEntry,
     RibOutWithdrawal& withdrawalAddPath,
     uint64_t& currentRibVersion) {
+  /*
+   * Withdraw every advertised path by the path ID it was announced with. The
+   * nexthop is still filled for consumers that key paths by nexthop. The
+   * advertised multipaths are then cleared, so paths kept in the entry are
+   * announced again when a bestpath returns.
+   */
+  if (enableRibAllocatedPathId_) {
+    for (const auto& [pathId, path] : ribEntry.getAdvertisedMultipaths()) {
+      if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
+        flushWithdrawalChunk(
+            withdrawalAddPath, /*reserveAddPath=*/true, /*logAsAddPath=*/true);
+
+        /*
+         * rule 2: this prefix's remaining add-path withdrawals land in a new
+         * chunk, so bump the version (see prepareFibProgramming for the
+         * reasoning).
+         */
+        currentRibVersion = incrementRibVersion();
+      }
+      withdrawalAddPath.addPathEntries.emplace_back(
+          ribEntry.getPrefix(),
+          pathId,
+          path->attrs->getNexthop(),
+          currentRibVersion);
+    }
+    ribEntry.advertisedMultipaths_.clear();
+    return;
+  }
+
   if (ribEntry.getAdvertisedMultipathWeightedNexthops()) {
     for (const auto& advWeightedNhIter :
          *ribEntry.getAdvertisedMultipathWeightedNexthops()) {

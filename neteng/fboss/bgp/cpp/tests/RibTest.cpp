@@ -21,6 +21,9 @@
   FRIEND_TEST(RibFixture, EorSentInitializationEvent);                         \
   FRIEND_TEST(RibFixture, GetRibEntries);                                      \
   FRIEND_TEST(RibFixture, LocalRouteIgpCostSerialization);                     \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture,                                               \
+      FullAddPathWithdrawalClearsAdvertisedMultipaths);                        \
   FRIEND_TEST(RibFixture, GetRibEntriesCanonical);                             \
   FRIEND_TEST(RibFixture, GetRibPrefixCanonical);                              \
   FRIEND_TEST(RibFixture, GetRibEntriesForCommunitiesCanonical);               \
@@ -149,7 +152,12 @@
   FRIEND_TEST(RibFixture, CreateTRibEntryBestGroupReflectsBestPathPresence);   \
   FRIEND_TEST(RibFibNexthopDatabaseFixture, KeepsCompleteNexthopSetsDistinct); \
   FRIEND_TEST(RibFibNexthopDatabaseFixture, PropagatesConversionFailure);      \
-  FRIEND_TEST(RibFibNexthopDatabaseFixture, TracksEmptySubmittedNexthopSet);
+  FRIEND_TEST(RibFibNexthopDatabaseFixture, TracksEmptySubmittedNexthopSet);   \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture, FullAddPathWithdrawalUsesAdvertisedPathIds);  \
+  FRIEND_TEST(                                                                 \
+      RibAllocatedPathIdFixture,                                               \
+      FullAddPathWithdrawalSharedNexthopWithdrawsEachPathId);
 
 #define RibEntry_TEST_FRIENDS
 
@@ -161,6 +169,8 @@
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#include <set>
+#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
@@ -2932,6 +2942,114 @@ TEST_F(RibFixture, RibVersionAddPathWithdrawalsSpanningChunksBumpAcrossChunks) {
   EXPECT_EQ(kNumPaths, addPathTotal);
   ASSERT_EQ(2, chunkVersions.size());
   EXPECT_LT(chunkVersions[0], chunkVersions[1]);
+}
+
+/*
+ * With RIB allocated path IDs, a full add-path withdrawal sends one withdrawal
+ * per advertised path, carrying the path ID and nexthop it was announced with.
+ */
+TEST_F(RibAllocatedPathIdFixture, FullAddPathWithdrawalUsesAdvertisedPathIds) {
+  EXPECT_CALL(*rib_, prepareFibProgramming_()).Times(testing::AnyNumber());
+  EXPECT_CALL(*fib_, program_(_)).Times(testing::AnyNumber());
+  EXPECT_CALL(*fib_, updateUnicastRoute_(_, _, _, _, _, _))
+      .Times(testing::AnyNumber());
+
+  const std::vector<folly::IPAddress> nexthops{
+      kV4Nexthop1, kV4Nexthop2, kV4Nexthop3};
+  std::set<std::pair<uint32_t, folly::IPAddress>> expected;
+
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      auto attr = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attr->setNexthop(nexthops[i]);
+      attr->publish();
+      entry.updatePath(eBgpPeer1_, attr, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(nexthops.size(), entry.getMultipaths().size());
+
+    // Commit as advertised, then fully withdraw every path.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    for (const auto& [pathId, path] : entry.getAdvertisedMultipaths()) {
+      expected.emplace(pathId, path->attrs->getNexthop());
+    }
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      entry.updatePath(eBgpPeer1_, nullptr, true, i + 1);
+    }
+    entry.requirePathSelection();
+    rib_->prepareFibProgramming();
+  });
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
+  std::set<std::pair<uint32_t, folly::IPAddress>> withdrawn;
+  for (const auto& wd : std::get<RibOutWithdrawal>(msg).addPathEntries) {
+    EXPECT_EQ(kV4Prefix1, wd.prefix);
+    ASSERT_TRUE(wd.nh.has_value());
+    withdrawn.emplace(wd.pathIdToSend, *wd.nh);
+  }
+  EXPECT_EQ(expected, withdrawn);
+}
+
+/*
+ * With RIB allocated path IDs, advertised paths that share a nexthop are each
+ * withdrawn by their own path ID, instead of once per nexthop.
+ */
+TEST_F(
+    RibAllocatedPathIdFixture,
+    FullAddPathWithdrawalSharedNexthopWithdrawsEachPathId) {
+  EXPECT_CALL(*rib_, prepareFibProgramming_()).Times(testing::AnyNumber());
+  EXPECT_CALL(*fib_, program_(_)).Times(testing::AnyNumber());
+  EXPECT_CALL(*fib_, updateUnicastRoute_(_, _, _, _, _, _))
+      .Times(testing::AnyNumber());
+
+  constexpr uint32_t kNumPaths = 2;
+  std::set<std::pair<uint32_t, folly::IPAddress>> expected;
+
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    // Same peer and nexthop, different received path IDs
+    for (uint32_t i = 0; i < kNumPaths; i++) {
+      auto attr = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attr->setNexthop(kV4Nexthop1);
+      attr->publish();
+      entry.updatePath(eBgpPeer1_, attr, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    ASSERT_EQ(kNumPaths, entry.getMultipaths().size());
+
+    // Commit as advertised, then fully withdraw every path.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    for (const auto& [pathId, path] : entry.getAdvertisedMultipaths()) {
+      expected.emplace(pathId, path->attrs->getNexthop());
+    }
+    for (uint32_t i = 0; i < kNumPaths; i++) {
+      entry.updatePath(eBgpPeer1_, nullptr, true, i + 1);
+    }
+    entry.requirePathSelection();
+    rib_->prepareFibProgramming();
+  });
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
+  std::set<std::pair<uint32_t, folly::IPAddress>> withdrawn;
+  for (const auto& wd : std::get<RibOutWithdrawal>(msg).addPathEntries) {
+    ASSERT_TRUE(wd.nh.has_value());
+    withdrawn.emplace(wd.pathIdToSend, *wd.nh);
+  }
+  ASSERT_EQ(kNumPaths, expected.size());
+  EXPECT_EQ(expected, withdrawn);
 }
 
 // Verify that after read only announcements are sent in chunks
@@ -10341,6 +10459,53 @@ TEST_F(RibFixture, FsdbSyncerStartsOnlyAfterInitialFullRibComputation) {
 
   completeFibProgrammingPass(/*fullSync=*/true);
   EXPECT_TRUE(isFsdbSyncerStarted());
+}
+
+/*
+ * With RIB allocated path IDs, a full add-path withdrawal clears the advertised
+ * multipath snapshot. The RibEntry itself is kept until the FIB ack.
+ */
+TEST_F(
+    RibAllocatedPathIdFixture,
+    FullAddPathWithdrawalClearsAdvertisedMultipaths) {
+  EXPECT_CALL(*rib_, prepareFibProgramming_()).Times(testing::AnyNumber());
+  EXPECT_CALL(*fib_, program_(_)).Times(testing::AnyNumber());
+  EXPECT_CALL(*fib_, updateUnicastRoute_(_, _, _, _, _, _))
+      .Times(testing::AnyNumber());
+
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    const std::vector<folly::IPAddress> nexthops{kV4Nexthop1, kV4Nexthop2};
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      auto attrs = std::make_shared<facebook::bgp::BgpPath>(
+          *buildBgpPathFields(4, 4, 4, 4));
+      attrs->setNexthop(nexthops[i]);
+      attrs->publish();
+      entry.updatePath(eBgpPeer1_, attrs, true, i + 1);
+    }
+    RibBase::selectBestPath(
+        entry, multipathSelector, bestpathSelector, false, 0);
+    // Commit as advertised, then fully withdraw every path.
+    entry.commitMultipaths();
+    entry.commitMultipathNexthops();
+    entry.commitBestpath();
+    ASSERT_EQ(nexthops.size(), entry.getAdvertisedMultipaths().size());
+    for (uint32_t i = 0; i < nexthops.size(); i++) {
+      entry.updatePath(eBgpPeer1_, nullptr, true, i + 1);
+    }
+    entry.requirePathSelection();
+
+    rib_->prepareFibProgramming();
+
+    ASSERT_TRUE(rib_->ribEntries_.contains(kV4Prefix1));
+    EXPECT_TRUE(
+        rib_->ribEntries_.at(kV4Prefix1).getAdvertisedMultipaths().empty());
+  });
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
+  EXPECT_EQ(2, std::get<RibOutWithdrawal>(msg).addPathEntries.size());
 }
 
 } // namespace bgp

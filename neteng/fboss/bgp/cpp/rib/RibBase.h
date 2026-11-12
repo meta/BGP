@@ -538,7 +538,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   virtual void createFib();
   virtual void prepareFibProgramming(bool fullSync = false) noexcept;
   void handleFullAddPathWithdrawal(
-      const RibEntry& ribEntry,
+      RibEntry& ribEntry,
       RibOutWithdrawal& withdrawalAddPath,
       uint64_t& currentRibVersion);
 

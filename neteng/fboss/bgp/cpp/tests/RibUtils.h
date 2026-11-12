@@ -374,7 +374,8 @@ class RibFixture : public testing::Test {
           CountConfedsInAsPathLen{false},
       EnableNexthopTracking enableNexthopTracking =
           EnableNexthopTracking{false},
-      bool enableFibOutTracking = false);
+      bool enableFibOutTracking = false,
+      bool enableRibAllocatedPathId = false);
 
   /** Create the standard peer, RIB, FIB, and service test dependencies. */
   void ribFixtureDefaultSetup(
@@ -385,7 +386,8 @@ class RibFixture : public testing::Test {
       EnableNexthopTracking enableNexthopTracking =
           EnableNexthopTracking{false},
       std::shared_ptr<NexthopCache> nexthopCache = nullptr,
-      bool enableFibOutTracking = false);
+      bool enableFibOutTracking = false,
+      bool enableRibAllocatedPathId = false);
 
   void SetUp() override;
   void TearDown() override;
@@ -646,6 +648,12 @@ class RibFixtureAddPathTestSuite : public RibFixture,
                                    public testing::WithParamInterface<bool> {};
 
 class RibNexthopTrackingFixture : public RibFixture {
+ public:
+  void SetUp() override;
+};
+
+// RibFixture with BgpGlobalConfig::enableRibAllocatedPathId set.
+class RibAllocatedPathIdFixture : public RibFixture {
  public:
   void SetUp() override;
 };

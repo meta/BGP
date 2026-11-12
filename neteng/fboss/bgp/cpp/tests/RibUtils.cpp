@@ -684,7 +684,8 @@ void RibFixture::createGlobalConfig(
     ComputeUcmpFromLbwComm computeUcmpFromLbwComm,
     CountConfedsInAsPathLen countConfedsInAsPathLen,
     EnableNexthopTracking enableNexthopTracking,
-    bool enableFibOutTracking) {
+    bool enableFibOutTracking,
+    bool enableRibAllocatedPathId) {
   bgpGlobalConfig1_ = std::make_shared<facebook::bgp::BgpGlobalConfig>(
       kPeerAsn3, // localAsn
       kPeerAddr3, // routerId
@@ -718,7 +719,7 @@ void RibFixture::createGlobalConfig(
       false, // enableEgressQueueBackpressure
       false, // enableUpdateGroup
       UpdateGroupConfig{}, // updateGroupConfig
-      false, // enableRibAllocatedPathId
+      enableRibAllocatedPathId, // enableRibAllocatedPathId
       false, // enableOptimizedGR
       false, // enablePolicyDefaultAction
       false, // enableAddPathGrReconcile
@@ -764,12 +765,14 @@ void RibFixture::ribFixtureDefaultSetup(
     CountConfedsInAsPathLen countConfedsInAsPathLen,
     EnableNexthopTracking enableNexthopTracking,
     std::shared_ptr<NexthopCache> nexthopCache,
-    bool enableFibOutTracking) {
+    bool enableFibOutTracking,
+    bool enableRibAllocatedPathId) {
   createGlobalConfig(
       computeUcmpFromLbwComm,
       countConfedsInAsPathLen,
       enableNexthopTracking,
-      enableFibOutTracking);
+      enableFibOutTracking,
+      enableRibAllocatedPathId);
   createPeerManager();
   // create attributes
   attr_ =
@@ -1342,6 +1345,16 @@ void RibNexthopTrackingFixture::SetUp() {
       ComputeUcmpFromLbwComm{false} /*default*/,
       EnableNexthopTracking{true} /*enableNexthopTracking*/,
       std::make_shared<NexthopCache>());
+}
+
+void RibAllocatedPathIdFixture::SetUp() {
+  ribFixtureDefaultSetup(
+      ComputeUcmpFromLbwComm{true},
+      CountConfedsInAsPathLen{false},
+      EnableNexthopTracking{false},
+      /*nexthopCache=*/nullptr,
+      /*enableFibOutTracking=*/false,
+      /*enableRibAllocatedPathId=*/true);
 }
 
 } // namespace bgp

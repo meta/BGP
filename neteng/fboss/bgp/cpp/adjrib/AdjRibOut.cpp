@@ -1584,6 +1584,9 @@ std::pair<bool, bool> AdjRib::processOutDelay(
 }
 
 void AdjRib::programOutDelayTimer() noexcept {
+  if (isDaemonShutdown_) {
+    return;
+  }
   XLOGF(DBG2, "Out-Delay timer expired for {}.", getPeerName());
 
   /*

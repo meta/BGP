@@ -324,4 +324,45 @@ TEST_F(E2EAdjRibOutDelayTest, RouteFlapHandling) {
   EXPECT_TRUE(verifyRouteAdd("v4", "10.0.0.0", 8, kPeerAddr5, "127.5.0.4"));
 }
 
+/*
+ * Test: Daemon shutdown drops deferred out-delay updates
+ *
+ * Shutdown waits on the PeerManager EventBase, and each peer's out-delay
+ * timer sends its deferred updates on that EventBase. At scale those callbacks
+ * delayed shutdown past the systemd stop timeout (T288806537).
+ *
+ * Scenario:
+ * - Route from Peer3 is deferred for Peer5 (1s out-delay)
+ * - markDaemonShutdown()
+ * - VERIFY: Peer5 has no deferred update, out-delay timer or change list
+ *   consumer left, so nothing can send the deferred route later
+ * - VERIFY: The deferred route was not sent
+ */
+TEST_F(E2EAdjRibOutDelayTest, DaemonShutdownDropsDeferredUpdates) {
+  bringUpAllPeersWithEor();
+  const BgpPeerId peerId5{kPeerAddr5, kPeerAddr5.asV4().toLongHBO()};
+  drainPeerQueueCompletely(peerId5);
+
+  addRoute("v4", "10.0.0.0", 8, kPeerAddr3, "11.0.0.1", "65001");
+  ASSERT_TRUE(
+      waitForRouteInShadowRib(folly::IPAddress::createNetwork("10.0.0.0/8")));
+  const EgressWorkState deferred{
+      .deferredUpdateCount = 1,
+      .outDelayTimerScheduled = true,
+      .changeListConsumerActive = true,
+  };
+  /* Consumed on the next MRAI tick; stay well inside the 1s out-delay. */
+  test::checkWithRetry(
+      [&] { return getEgressWorkState(peerId5) == deferred; },
+      50,
+      std::chrono::milliseconds(10),
+      "Route was not deferred by Peer5's out-delay");
+
+  peerManager_->markDaemonShutdown();
+
+  EXPECT_EQ(EgressWorkState{}, getEgressWorkState(peerId5));
+  EXPECT_TRUE(isPeerEgressQueueEmpty(kPeerAddr5))
+      << "Deferred route was sent after daemon shutdown was marked";
+}
+
 } // namespace facebook::bgp

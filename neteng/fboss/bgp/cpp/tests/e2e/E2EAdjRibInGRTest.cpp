@@ -445,4 +445,51 @@ TEST_F(E2EAdjRibInGrTimerCleanupTest, ConcurrentTimerExpiry_BothPeersDrained) {
   EXPECT_TRUE(verifyRouteWithdraws("v4", kPeerAddr5, expectedWithdraws));
 }
 
+/*
+ * Same peers as E2EAdjRibInGrTimerCleanupTest, with a remote GR restart time
+ * long enough that the timer is still armed when the test marks daemon
+ * shutdown.
+ */
+class E2EAdjRibInGrDaemonShutdownTest : public E2EAdjRibInGrTimerCleanupTest {
+ protected:
+  void SetUp() override {
+    setPeerGrRestartTimeSeconds(120);
+    addPeer(kDefaultPeerSpec3);
+    addPeer(kDefaultPeerSpec5);
+    createRib();
+    createPeerManager(/*enableUpdateGroup=*/false);
+  }
+};
+
+/*
+ * Peer3 goes down with GR and its AdjRib arms the remote GR restart timer.
+ * markDaemonShutdown() must cancel that timer, so no stale path purge runs on
+ * the PeerManager EventBase during the shutdown.
+ */
+TEST_F(
+    E2EAdjRibInGrDaemonShutdownTest,
+    DaemonShutdownCancelsRemoteGrRestartTimer) {
+  bringUpPeer(kPeerAddr3);
+  bringUpPeer(kPeerAddr5);
+  const BgpPeerId peerId3{kPeerAddr3, kPeerAddr3.asV4().toLongHBO()};
+  const BgpPeerId peerId5{kPeerAddr5, kPeerAddr5.asV4().toLongHBO()};
+  sendEoRToPeer(peerId3);
+  sendEoRToPeer(peerId5);
+  ASSERT_TRUE(waitForEoR(peerId3));
+  ASSERT_TRUE(waitForEoR(peerId5));
+
+  addRoute("v4", "10.0.0.0", 8, kPeerAddr3, "11.0.0.1", "65001");
+  ASSERT_TRUE(
+      waitForRouteInShadowRib(folly::IPAddress::createNetwork("10.0.0.0/8")));
+
+  bringDownPeerWithGr(kPeerAddr3);
+  const auto adjRib3 = getAdjRibByAddr(kPeerAddr3);
+  ASSERT_NE(adjRib3, nullptr);
+  ASSERT_TRUE(isPeerGrOnEvb(adjRib3));
+
+  peerManager_->markDaemonShutdown();
+
+  EXPECT_FALSE(isPeerGrOnEvb(adjRib3));
+}
+
 } // namespace facebook::bgp

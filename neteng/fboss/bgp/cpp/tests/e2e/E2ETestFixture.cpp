@@ -2830,6 +2830,26 @@ std::optional<bool> E2ETestFixture::isSubscriberChangeListTimerScheduled(
   return scheduled;
 }
 
+std::optional<E2ETestFixture::EgressWorkState>
+E2ETestFixture::getEgressWorkState(const BgpPeerId& peerId) {
+  return folly::via(
+             &peerManager_->getEventBase(),
+             [this, peerId]() -> std::optional<EgressWorkState> {
+               const auto adjRib = peerManager_->findAdjRib(peerId);
+               if (!adjRib) {
+                 return std::nullopt;
+               }
+               return EgressWorkState{
+                   .deferredUpdateCount = adjRib->deferredUpdates_.size(),
+                   .outDelayTimerScheduled = adjRib->outDelayTimer_ &&
+                       adjRib->outDelayTimer_->isScheduled(),
+                   .changeListConsumerActive =
+                       adjRib->changeListConsumeTimer_ != nullptr,
+               };
+             })
+      .get();
+}
+
 bool E2ETestFixture::waitForSubscriberChangeListTimer(
     const std::string& subscriberName,
     bool scheduled,

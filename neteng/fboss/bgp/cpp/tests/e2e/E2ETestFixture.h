@@ -1046,6 +1046,18 @@ class E2ETestFixture : public ::testing::Test {
   std::optional<bool> isSubscriberChangeListTimerScheduled(
       const std::string& subscriberName);
 
+  /* Egress work queued on one peer's AdjRib. Requires AdjRib_TEST_FRIENDS. */
+  struct EgressWorkState {
+    size_t deferredUpdateCount{0};
+    bool outDelayTimerScheduled{false};
+    bool changeListConsumerActive{false};
+
+    bool operator==(const EgressWorkState&) const = default;
+  };
+
+  // std::nullopt if the peer has no AdjRib.
+  std::optional<EgressWorkState> getEgressWorkState(const BgpPeerId& peerId);
+
   // Wait for the subscriber's change-list consume timer to reach `scheduled`.
   bool waitForSubscriberChangeListTimer(
       const std::string& subscriberName,

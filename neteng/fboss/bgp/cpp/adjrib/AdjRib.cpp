@@ -799,6 +799,26 @@ void AdjRib::cleanUpOutDelay() {
   deferredUpdates_.clear();
 }
 
+void AdjRib::setDaemonShutdown() noexcept {
+  isDaemonShutdown_ = true;
+
+  /*
+   * PeerManagerBase::sessionTerminated() skips the session cleanup of the
+   * AdjRib during daemon shutdown, so the AdjRib timers would otherwise keep
+   * running on the PeerManager EventBase until stop(). The egress callbacks
+   * run O(prefixes), the GR callbacks walk the stale paths and the slow peer
+   * callback detaches the peer from its update group. They delay the shutdown
+   * tasks that wait on that EventBase, and nothing they produce reaches a peer
+   * or the RIB before the process exits. stop() also drops the GR timers
+   * without the stale path cleanup during daemon shutdown.
+   */
+  deactivateChangeListConsumer();
+  cleanUpOutDelay();
+  remoteGrRestartTimer_.reset();
+  stalePathTimer_.reset();
+  resetSlowPeerDurationTimer();
+}
+
 // Called when a session terminated with a peer
 folly::coro::Task<void> AdjRib::sessionTerminated(
     const FiberBgpPeer::BgpSessionStop& sessionStop) noexcept {
@@ -1390,6 +1410,9 @@ void AdjRib::tryIterateChangesToEnd(bool processFullMultipaths) noexcept {
  * @return void
  */
 void AdjRib::activateChangeListConsumer() noexcept {
+  if (isDaemonShutdown_) {
+    return;
+  }
   scheduleSendBgpUpdates(false /* tryPullNewChangeItems */);
   if (!changeListConsumer_) {
     XLOGF(
@@ -1419,6 +1442,9 @@ void AdjRib::activateChangeListConsumer() noexcept {
      */
     co_withExecutor(
         &evb_, folly::coro::co_invoke([this]() -> folly::coro::Task<void> {
+          if (isDaemonShutdown_) {
+            co_return;
+          }
           /*
            * Guard against use-after-reset: the MRAI timer fires and
            * enqueues this coroutine, but between scheduling and execution,
@@ -1582,6 +1608,9 @@ bool AdjRib::registerDetachedConsumer(
    * cancellable coroutine on packing timer expiry instead.
    */
   changeListConsumeTimer_ = folly::AsyncTimeout::make(evb_, [this]() noexcept {
+    if (isDaemonShutdown_) {
+      return;
+    }
     /*
      * Guard against use-after-reset: DETACHED_INIT_DUMP peers call
      * activateChangeListConsumer() which schedules this timer,
@@ -1774,6 +1803,9 @@ void AdjRib::scheduleSlowPeerDurationTimer(
     folly::EventBase& evb,
     std::chrono::milliseconds timeout,
     const std::shared_ptr<AdjRib>& self) {
+  if (isDaemonShutdown_) {
+    return;
+  }
   if (!slowPeerDurationTimer_) {
     slowPeerDurationTimer_ = folly::AsyncTimeout::make(evb, [self]() noexcept {
       uint64_t bit = self->getGroupBitPosition();

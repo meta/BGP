@@ -1046,12 +1046,13 @@ class AdjRib : boost::noncopyable,
    *
    * @details When set, expensive O(n) cleanup operations in
    * sessionTerminated() are skipped to prevent systemd timeout during shutdown.
-   * Called by PeerManagerBase::stop() before initiating shutdown sequence.
-   * This is a one-time flag that is not expected to be reset to false.
+   * Also cancels every AdjRib timer: the change list consumer, the out-delay
+   * timer and its deferred updates, the remote GR restart and stale path
+   * timers, and the slow peer duration timer. Called by
+   * PeerManagerBase::markDaemonShutdown() on the PeerManager EventBase. This
+   * is a one-time flag that is not expected to be reset to false.
    */
-  void setDaemonShutdown() noexcept {
-    isDaemonShutdown_ = true;
-  }
+  void setDaemonShutdown() noexcept;
 
   void clearPackingList() {
     attrToPrefixMap_.clear();

@@ -40,7 +40,7 @@ namespace facebook::bgp {
  *
  * Subscribes to per-peer host-route paths in FSDB (e.g.,
  * agent/switchState/fibsInfoMap["0"]/fibsMap[0]/fibV4["10.0.0.1/32"]) for
- * all switch IDs on the device (fetched from the agent), kDefaultVrfId=0.
+ * all switch IDs on the device (fetched from the agent), fboss::kDefaultVrf=0.
  * Only static peers (those with exact IP peer_addr from
  * getPeerToConfig()) are subscribed — dynamic peers (CIDR peer_addr from
  * getDynamicPeerToConfig()) are NOT tracked here.

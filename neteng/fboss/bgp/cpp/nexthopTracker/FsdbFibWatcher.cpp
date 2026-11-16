@@ -22,6 +22,7 @@
 #include <folly/CancellationToken.h>
 #include <folly/coro/Task.h>
 #include <folly/logging/xlog.h>
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/ThriftClientUtils.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsDC.h"
@@ -140,7 +141,7 @@ void FsdbFibWatcher::addFsdbPathsForNexthop(
     auto basePath = fsdbStateRootPath_.agent()
                         .switchState()
                         .fibsInfoMap()[switchId]
-                        .fibsMap()[kDefaultVrfId];
+                        .fibsMap()[fboss::kDefaultVrf];
     if (isV4) {
       addOne(basePath.fibV4()[hostPrefix]);
     } else {
@@ -424,7 +425,7 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
           switchId);
       continue;
     }
-    if (!fibsMapNode->count(kDefaultVrfId)) {
+    if (!fibsMapNode->count(fboss::kDefaultVrf)) {
       XLOGF(
           INFO,
           "[FsdbFibWatcher] routeExists({}): switchId={} vrfId=0 not in"
@@ -433,7 +434,7 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
           switchId);
       continue;
     }
-    const auto& fibContainerNode = fibsMapNode->cref(kDefaultVrfId);
+    const auto& fibContainerNode = fibsMapNode->cref(fboss::kDefaultVrf);
     auto mapNode = isV4
         ? fibContainerNode->template safe_cref<thrift_tags::fibV4>()
         : fibContainerNode->template safe_cref<thrift_tags::fibV6>();

@@ -28,7 +28,6 @@ namespace facebook::bgp {
 
 using namespace std::chrono_literals;
 
-constexpr uint16_t kDefaultVrfId = 0;
 constexpr uint32_t kDefaultLocalPref = 100;
 constexpr auto kDefaultHoldTime = std::chrono::seconds(30);
 constexpr auto kDefaultGrRestartTime = std::chrono::seconds(60);

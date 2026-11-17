@@ -18,6 +18,8 @@
 
 #include <fmt/format.h>
 
+#include "fboss/agent/Constants.h"
+
 namespace facebook::bgp {
 
 using GracefulRestartFlag = bool;
@@ -50,6 +52,8 @@ using RouteRefreshNegotiated = bool;
 using EnableNexthopTracking = bool;
 using EnableNetlinkDampening = bool;
 using EnableDynamicPolicyEvaluation = bool;
+
+using fboss::VrfId;
 
 enum class BgpSessionType { EBGP, IBGP, ConfedEBGP };
 

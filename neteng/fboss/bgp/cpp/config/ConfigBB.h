@@ -31,6 +31,13 @@ class ConfigBB : public Config {
 
   const std::shared_ptr<thrift::BgpNetServiceThriftConfig> getNetServiceConfig()
       const;
+
+  /*
+   * Return true only when net_service_config sets
+   * enable_agentic_caller_enforcement to true. A missing net_service_config or
+   * an unset field returns false.
+   */
+  bool isAgenticCallerEnforcementEnabled() const;
 };
 
 } // namespace facebook::bgp

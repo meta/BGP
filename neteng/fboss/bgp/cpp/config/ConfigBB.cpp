@@ -40,4 +40,10 @@ ConfigBB::getNetServiceConfig() const {
       *config_.net_service_config());
 }
 
+bool ConfigBB::isAgenticCallerEnforcementEnabled() const {
+  auto netServiceConfig = config_.net_service_config();
+  return netServiceConfig.has_value() &&
+      netServiceConfig->enable_agentic_caller_enforcement().value_or(false);
+}
+
 } // namespace facebook::bgp

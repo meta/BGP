@@ -575,6 +575,46 @@ TEST_F(ConfigTestFixture, NetServiceConfigTest) {
 }
 
 /*
+ * Agentic caller enforcement is on only when net_service_config explicitly
+ * sets enable_agentic_caller_enforcement to true. A missing net_service_config,
+ * an unset field and a false value all keep enforcement off.
+ */
+TEST_F(ConfigTestFixture, AgenticCallerEnforcementConfigTest) {
+  thrift::BgpConfig bgpConfig;
+  bgpConfig.router_id() = kLocalAddr1.str();
+
+  {
+    ConfigBB config(bgpConfig);
+    EXPECT_THAT(
+        config.isAgenticCallerEnforcementEnabled(), ::testing::IsFalse());
+  }
+
+  thrift::BgpNetServiceThriftConfig netServiceConfig;
+  {
+    bgpConfig.net_service_config() = netServiceConfig;
+    ConfigBB config(bgpConfig);
+    EXPECT_THAT(
+        config.isAgenticCallerEnforcementEnabled(), ::testing::IsFalse());
+  }
+
+  {
+    netServiceConfig.enable_agentic_caller_enforcement() = false;
+    bgpConfig.net_service_config() = netServiceConfig;
+    ConfigBB config(bgpConfig);
+    EXPECT_THAT(
+        config.isAgenticCallerEnforcementEnabled(), ::testing::IsFalse());
+  }
+
+  {
+    netServiceConfig.enable_agentic_caller_enforcement() = true;
+    bgpConfig.net_service_config() = netServiceConfig;
+    ConfigBB config(bgpConfig);
+    EXPECT_THAT(
+        config.isAgenticCallerEnforcementEnabled(), ::testing::IsTrue());
+  }
+}
+
+/*
  * Test isThriftServerTlsEnabled() function.
  */
 TEST_F(ConfigTestFixture, IsThriftServerTlsEnabledTest) {

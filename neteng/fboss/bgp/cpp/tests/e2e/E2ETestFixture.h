@@ -1276,7 +1276,16 @@ class E2ETestFixture : public ::testing::Test {
   void injectNexthopStatuses(const std::vector<NexthopStatus>& nexthopStatuses);
 
   /*
-   * Verify nexthop route count in RIB's nexthopInfoMap_
+   * Get the number of routes that use a nexthop in RIB's nexthopInfoMap_.
+   * Thread-safe: runs check on RIB's event base
+   *
+   * @param nexthopIp IP address of the nexthop to check
+   * @return Route count, or std::nullopt if the nexthop is not in the map
+   */
+  std::optional<size_t> getNexthopRouteCount(const folly::IPAddress& nexthopIp);
+
+  /*
+   * Wait for the nexthop route count in RIB's nexthopInfoMap_ to match.
    * Thread-safe: runs check on RIB's event base
    *
    * @param nexthopIp IP address of the nexthop to check
@@ -1284,11 +1293,13 @@ class E2ETestFixture : public ::testing::Test {
    *                           If std::nullopt, verifies nexthop does NOT exist.
    *                           If has_value(), verifies nexthop exists with
    *                           exactly that many routes.
-   * @return true if verification passes, false otherwise
+   * @param maxRetries Number of checks, 100ms apart (default 50)
+   * @return true if verification passes within maxRetries, false otherwise
    */
   bool verifyNexthopRouteCount(
       const folly::IPAddress& nexthopIp,
-      std::optional<size_t> expectedRouteCount = std::nullopt);
+      std::optional<size_t> expectedRouteCount = std::nullopt,
+      int maxRetries = 50);
 
   /*
    * Get the bestpath for a prefix from RIB

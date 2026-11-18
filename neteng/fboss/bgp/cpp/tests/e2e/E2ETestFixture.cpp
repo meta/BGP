@@ -3531,74 +3531,56 @@ void E2ETestFixture::injectNexthopStatuses(
   }
 }
 
+std::optional<size_t> E2ETestFixture::getNexthopRouteCount(
+    const folly::IPAddress& nexthopIp) {
+  std::optional<size_t> routeCount;
+  rib_->getEventBase().runInEventBaseThreadAndWait([&] {
+    auto it = rib_->nexthopInfoMap_.find(nexthopIp);
+    if (it != rib_->nexthopInfoMap_.end()) {
+      routeCount = it->second.getRouteInfoListSize();
+    }
+  });
+  return routeCount;
+}
+
 bool E2ETestFixture::verifyNexthopRouteCount(
     const folly::IPAddress& nexthopIp,
-    std::optional<size_t> expectedRouteCount) {
+    std::optional<size_t> expectedRouteCount,
+    int maxRetries) {
   if (rib_ == nullptr) {
     XLOG(ERR, "verifyNexthopRouteCount FAILED: RIB must be created first");
     return false;
   }
 
-  // Run verification on RIB's event base thread for thread safety
-  bool found = false;
-  size_t actualRouteCount = 0;
-
-  rib_->getEventBase().runInEventBaseThreadAndWait([&] {
-    auto it = rib_->nexthopInfoMap_.find(nexthopIp);
-    if (it != rib_->nexthopInfoMap_.end()) {
-      found = true;
-      actualRouteCount = it->second.getRouteInfoListSize();
-      XLOGF(
-          INFO,
-          "Nexthop {} found in nexthopInfoMap_ with {} routes",
-          nexthopIp.str(),
-          actualRouteCount);
-    } else {
-      XLOGF(INFO, "Nexthop {} NOT found in nexthopInfoMap_", nexthopIp.str());
-    }
+  /*
+   * Routes reach nexthopInfoMap_ through the async AdjRibIn -> RIB pipeline.
+   * Poll on the RIB event base until the map matches the expected state.
+   */
+  std::optional<size_t> routeCount;
+  WITH_RETRIES_N_TIMED(maxRetries, std::chrono::milliseconds(100), {
+    routeCount = getNexthopRouteCount(nexthopIp);
+    EXPECT_EVENTUALLY_EQ(expectedRouteCount, routeCount);
   });
 
-  // If expectedRouteCount is nullopt, verify nexthop does NOT exist
-  if (!expectedRouteCount.has_value()) {
-    if (found) {
-      XLOGF(
-          ERR,
-          "verifyNexthopRouteCount FAILED: Nexthop {} found in nexthopInfoMap_ "
-          "(expected NOT to be found)",
-          nexthopIp.str());
-      return false;
-    }
-    XLOGF(
-        INFO,
-        "verifyNexthopRouteCount SUCCESS: Nexthop {} not in nexthopInfoMap_",
-        nexthopIp.str());
-    return true;
-  }
-
-  // If expectedRouteCount has a value, verify nexthop exists with that count
-  if (!found) {
+  const auto toString = [](const std::optional<size_t>& count) {
+    return count ? std::to_string(*count) : std::string("absent");
+  };
+  if (routeCount != expectedRouteCount) {
     XLOGF(
         ERR,
-        "verifyNexthopRouteCount FAILED: Nexthop {} not found in nexthopInfoMap_",
-        nexthopIp.str());
-    return false;
-  }
-
-  if (actualRouteCount != expectedRouteCount.value()) {
-    XLOGF(
-        ERR,
-        "verifyNexthopRouteCount FAILED: Nexthop {} has {} routes, expected {}",
+        "verifyNexthopRouteCount FAILED: Nexthop {} route count is {}, "
+        "expected {}",
         nexthopIp.str(),
-        actualRouteCount,
-        expectedRouteCount.value());
+        toString(routeCount),
+        toString(expectedRouteCount));
     return false;
   }
 
   XLOGF(
       INFO,
-      "verifyNexthopRouteCount SUCCESS: Nexthop {} has {} routes",
+      "verifyNexthopRouteCount SUCCESS: Nexthop {} route count is {}",
       nexthopIp.str(),
-      actualRouteCount);
+      toString(routeCount));
   return true;
 }
 

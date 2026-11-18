@@ -1365,20 +1365,18 @@ TEST_F(FiberBgpPeerManagerFixture, PeeringStateResetOnStopWithGRTest) {
 
     fm.addTask([this, peer1] {
       /*
-       * stopPeer(withGR=true) tears the sessions down and then lets them
-       * reconnect, so the managers' isPeerUp state can flap back up and race
-       * the assertions below. Gate on the MONOTONIC terminated callback count
-       * instead: it only ever increases, so reaching 1 proves the session
-       * terminated, and breaking synchronously here (no fiber yield before the
-       * assertions) means a reconnect cannot re-establish in between. The
-       * generous timeout absorbs scheduling latency under parallel load, which
-       * the helper's silent 5s default did not.
+       * Wait only for this end to report the termination. stopPeer(withGR)
+       * sends no NOTIFICATION, so peerMgr2 sees the end of the session only
+       * when the TCP FIN arrives. On a loaded host that can take longer than
+       * peerMgr1's reconnect timer (kDefaultConnRetryTimeoutMs). peerMgr2
+       * then keeps its old session and closes each reconnect as a collision,
+       * after peerMgr1 has already counted it as established. Waiting for
+       * peerMgr2 here lets those extra sessions change the counts below.
        */
       auto downStart = std::chrono::steady_clock::now();
       while (std::chrono::steady_clock::now() - downStart <
              std::chrono::seconds(30)) {
-        if (callback1.getTerminatedCallbackCount(peerId1) >= 1 &&
-            callback2.getTerminatedCallbackCount(peerId2) >= 1) {
+        if (callback1.getTerminatedCallbackCount(peerId1) >= 1) {
           break;
         }
         fiberSleepFor(1ms);
@@ -1423,7 +1421,23 @@ TEST_F(FiberBgpPeerManagerFixture, StopPeerWithGracefulRestartAtOneEndTest) {
     // addPeer() is called by both peerMgrs
     const auto peerPort1 = peerMgr1->getListenAddress()->getPort();
     const auto peerPort2 = peerMgr2->getListenAddress()->getPort();
-    peerMgr1->addPeer(peerAddr1, 100, 100, {kR1Lo1, 0}, peerPort2);
+    /*
+     * peerMgr1 (the end that stops with GR) is PASSIVE_ONLY, so only peerMgr2
+     * can open the next session. peerMgr2 starts its reconnect timer only
+     * after it sees the old TCP connection close. If peerMgr1 also connects
+     * actively, its reconnect can arrive while peerMgr2 still keeps the old
+     * session (the FIN can be late on a loaded host). peerMgr2 then closes
+     * the new session as a collision, after peerMgr1 has already counted it
+     * as established.
+     */
+    peerMgr1->addPeer(
+        peerAddr1,
+        100,
+        100,
+        {kR1Lo1, 0},
+        peerPort2,
+        ConnTimeParams(kDefaultStartAfterDelayMs, kDefaultConnRetryTimeoutMs),
+        TBgpSessionConnectMode::PASSIVE_ONLY);
     peerMgr2->addPeer(peerAddr2, 100, 100, {kR2Lo1, 0}, peerPort1);
 
     waitTillSessionsComeUp(fm, peerMgr1, {peerId1});
@@ -1441,13 +1455,9 @@ TEST_F(FiberBgpPeerManagerFixture, StopPeerWithGracefulRestartAtOneEndTest) {
 
     fm.addTask([this] {
       /*
-       * Gate the GR down phase on the MONOTONIC terminated callback count
-       * rather than the manager's flapping isPeerUp state. stopPeer(withGR)
-       * lets the session reconnect, so a plain isPeerUp wait can miss the
-       * transient down window (or the helper's silent 5s default can expire
-       * under load), racing the down assertions below. Breaking synchronously
-       * once both peers report a termination keeps established at 1 (a TCP+BGP
-       * reconnect cannot complete before the assertions run).
+       * Gate the down phase on the monotonic terminated counts. No session
+       * can come up again before both ends report the termination, because
+       * peerMgr2 reconnects only after its own termination.
        */
       auto downStart = std::chrono::steady_clock::now();
       while (std::chrono::steady_clock::now() - downStart <
@@ -1467,11 +1477,7 @@ TEST_F(FiberBgpPeerManagerFixture, StopPeerWithGracefulRestartAtOneEndTest) {
       EXPECT_EQ(1, callback2.getTerminatedCallbackCount(peerId2));
       EXPECT_FALSE(callback2.isSessionUp(peerId2));
 
-      /*
-       * Gate the GR reconnect (up) phase on the MONOTONIC established count
-       * reaching 2 for both peers, again with a generous timeout in place of
-       * the helper's silent 5s default which expired under parallel load.
-       */
+      // Gate the GR reconnect (up) phase on the monotonic established counts.
       auto upStart = std::chrono::steady_clock::now();
       while (std::chrono::steady_clock::now() - upStart <
              std::chrono::seconds(30)) {

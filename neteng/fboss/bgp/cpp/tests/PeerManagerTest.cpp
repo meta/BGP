@@ -2154,7 +2154,15 @@ TEST_F(PeerManagerTestFixture, MultipleFlapTest) {
     // verify adjRib ptr is still valid
     EXPECT_NE(nullptr, adjRib);
 
-    auto& messages = subscribeToLogMessages("", folly::LogLevel::DBG1);
+    /*
+     * Subscribe to the PeerManagerBase category, not the root category.
+     * TestLogHandler is not thread-safe, and with a root handler at DBG1 the
+     * thrift and configerator client threads also log into it while this
+     * thread does. The expected message comes from PeerManagerBase, which runs
+     * on this thread only.
+     */
+    const std::string logCategory{"neteng.fboss.bgp.cpp.peer.PeerManagerBase"};
+    auto& messages = subscribeToLogMessages(logCategory, folly::LogLevel::DBG1);
     folly::coro::blockingWait(mockPeerMgr->sessionEstablished(stateEvent));
     fiberSleepFor(10ms);
 
@@ -2186,7 +2194,7 @@ TEST_F(PeerManagerTestFixture, MultipleFlapTest) {
     ASSERT_TRUE(getRunningSessions());
     EXPECT_EQ(0, *getRunningSessions());
 
-    folly::LoggerDB::get().getCategory("")->clearHandlers();
+    folly::LoggerDB::get().getCategory(logCategory)->clearHandlers();
 
     // Explicitly stop the peer manager to cancel all coro tasks
     mockPeerMgr->stop();

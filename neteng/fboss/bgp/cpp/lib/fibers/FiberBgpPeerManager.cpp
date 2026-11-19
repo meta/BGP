@@ -20,6 +20,7 @@
 #include <atomic>
 
 #include <fb303/ThreadCachedServiceData.h>
+#include "fboss/agent/Constants.h"
 #include "magic_enum/magic_enum.hpp"
 #include "neteng/fboss/bgp/cpp/common/Utils.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberBgpPeerManager.h"
@@ -675,6 +676,7 @@ Expected<Unit, FiberBgpPeerManager::ErrorCode> FiberBgpPeerManager::addPeer(
 
   // TODO: will be integrated to config inheritance
   bgp::PeeringParams params{
+      fboss::kDefaultVrf,
       peerAddr,
       std::nullopt, // peerPrefix
       myAsn, // globalAs
@@ -771,6 +773,7 @@ FiberBgpPeerManager::addDynamicPeer(
   XLOGF(DBG1, "Add dynamic peer {}", IPAddress::networkToString(peerPrefix));
   // TODO: will be integrated to config inheritance
   bgp::PeeringParams params{
+      fboss::kDefaultVrf,
       IPAddress(), // dummy
       peerPrefix, // peerPrefix
       myAsn, // localAs

@@ -524,9 +524,12 @@ struct BgpDynamicPeerConfig {
 
 // Configuration needed to establish and maintain peering session
 struct PeeringParams {
-  PeeringParams() = default;
+  PeeringParams() = delete;
+
+  explicit PeeringParams(VrfId vrfId) : vrfId(vrfId) {}
 
   PeeringParams(
+      VrfId vrfId,
       const folly::IPAddress& peerAddr,
       const std::optional<folly::CIDRNetwork>& peerPrefix,
       const uint32_t globalAs,
@@ -540,7 +543,8 @@ struct PeeringParams {
       const std::optional<ReceiveLinkBandwidth>& receiveLinkBandwidth =
           std::nullopt,
       ValidateRemoteAs validateRemoteAs = ValidateRemoteAs{true})
-      : peerAddr(peerAddr),
+      : vrfId(vrfId),
+        peerAddr(peerAddr),
         peerPrefix(peerPrefix),
         globalAs(globalAs),
         localAs(localAs),
@@ -554,6 +558,7 @@ struct PeeringParams {
         addPath(addPath) {}
 
   PeeringParams(
+      VrfId vrfId,
       const folly::IPAddress& peerAddr,
       const std::optional<folly::CIDRNetwork>& peerPrefix,
       const uint32_t globalAs,
@@ -568,7 +573,8 @@ struct PeeringParams {
           std::nullopt,
       const std::optional<float> linkBandwidthBps = std::nullopt,
       ValidateRemoteAs validateRemoteAs = ValidateRemoteAs{true})
-      : peerAddr(peerAddr),
+      : vrfId(vrfId),
+        peerAddr(peerAddr),
         peerPrefix(peerPrefix),
         globalAs(globalAs),
         localAs(localAs),
@@ -583,6 +589,7 @@ struct PeeringParams {
         validateRemoteAs(validateRemoteAs) {}
 
   PeeringParams(
+      VrfId vrfId,
       const folly::IPAddress& peerAddr,
       const std::optional<folly::CIDRNetwork>& peerPrefix,
       const uint32_t globalAs,
@@ -599,7 +606,8 @@ struct PeeringParams {
           std::nullopt,
       const std::optional<float> linkBandwidthBps = std::nullopt,
       ValidateRemoteAs validateRemoteAs = ValidateRemoteAs{true})
-      : peerAddr(peerAddr),
+      : vrfId(vrfId),
+        peerAddr(peerAddr),
         peerPrefix(peerPrefix),
         globalAs(globalAs),
         localAs(localAs),
@@ -616,6 +624,7 @@ struct PeeringParams {
         validateRemoteAs(validateRemoteAs) {}
 
   PeeringParams(
+      VrfId vrfId,
       const folly::IPAddress& peerAddr,
       const std::optional<folly::CIDRNetwork>& peerPrefix,
       const uint32_t globalAs,
@@ -634,7 +643,8 @@ struct PeeringParams {
           std::nullopt,
       const std::optional<float> linkBandwidthBps = std::nullopt,
       ValidateRemoteAs validateRemoteAs = ValidateRemoteAs{true})
-      : peerAddr(peerAddr),
+      : vrfId(vrfId),
+        peerAddr(peerAddr),
         peerPrefix(peerPrefix),
         globalAs(globalAs),
         localAs(localAs),
@@ -652,6 +662,7 @@ struct PeeringParams {
         validateRemoteAs(validateRemoteAs) {}
 
   PeeringParams(
+      VrfId vrfId,
       const folly::IPAddress& peerAddr,
       const std::optional<folly::CIDRNetwork>& peerPrefix,
       const uint32_t globalAs,
@@ -693,7 +704,8 @@ struct PeeringParams {
       const bool enforceFirstAs = false,
       const RouteRefreshConfigured& isRouteRefreshConfigured =
           RouteRefreshConfigured{false})
-      : peerAddr(peerAddr),
+      : vrfId(vrfId),
+        peerAddr(peerAddr),
         peerPrefix(peerPrefix),
         globalAs(globalAs),
         localAs(localAs),
@@ -729,6 +741,9 @@ struct PeeringParams {
         isEnhancedRouteRefreshConfigured(isEnhancedRouteRefreshConfigured),
         enforceFirstAs(enforceFirstAs),
         isRouteRefreshConfigured(isRouteRefreshConfigured) {}
+
+  // Routing table in which this peer's session is admitted.
+  VrfId vrfId;
 
   folly::IPAddress peerAddr;
   std::optional<folly::CIDRNetwork> peerPrefix; // set if dynamic peer
@@ -819,9 +834,9 @@ struct PeeringParams {
   std::optional<int32_t> ttlSecurityHops;
 
   inline bool operator==(const PeeringParams& other) const {
-    return (peerAddr == other.peerAddr) && (peerPrefix == other.peerPrefix) &&
-        (globalAs == other.globalAs) && (localAs == other.localAs) &&
-        (remoteAs == other.remoteAs) &&
+    return (vrfId == other.vrfId) && (peerAddr == other.peerAddr) &&
+        (peerPrefix == other.peerPrefix) && (globalAs == other.globalAs) &&
+        (localAs == other.localAs) && (remoteAs == other.remoteAs) &&
         (additionalRemoteAs == other.additionalRemoteAs) &&
         (localBgpId == other.localBgpId) &&
         (localClusterId == other.localClusterId) &&

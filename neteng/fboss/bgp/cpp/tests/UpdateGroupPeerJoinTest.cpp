@@ -63,6 +63,7 @@
 
 #include <folly/io/async/EventBase.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRib.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibGroup.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibStructs.h"
@@ -98,7 +99,7 @@ class UpdateGroupPeerJoinTest : public ::testing::Test {
         folly::IPAddressV4("255.0.0.1").toLongHBO());
     auto adjRib = std::make_shared<AdjRib>(
         peerId,
-        PeeringParams(),
+        PeeringParams(fboss::kDefaultVrf),
         *evb_,
         ribInQ_,
         observerQ_,

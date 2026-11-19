@@ -74,6 +74,7 @@
 #include <folly/logging/xlog.h>
 
 #include "configerator/structs/neteng/fboss/bgp/gen-cpp2/bgp_config_types.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/config/Config.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigStructs.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberBgpPeerManager.h"
@@ -88,6 +89,7 @@ using facebook::bgp::Config;
 using facebook::bgp::PeeringParams;
 using facebook::bgp::thrift::BgpConfig;
 using facebook::bgp::thrift::BgpPeer;
+using facebook::fboss::kDefaultVrf;
 
 namespace {
 
@@ -244,7 +246,7 @@ TEST(PassiveConnectConfigE2ETest, Config_CrossSubnetReject) {
      * On peerMgr1's accepted socket: remote=127.1.0.1, local=127.2.0.1
      * configuredLocalAddr for peer 127.1.0.1 = 127.2.0.1 → MATCH → accept
      */
-    PeeringParams remotePeerParams2;
+    PeeringParams remotePeerParams2{kDefaultVrf};
     remotePeerParams2.localAs = kLocalAsn;
     remotePeerParams2.remoteAs = kLocalAsn;
     remotePeerParams2.localBgpId = kPeer1Addr.asV4();
@@ -266,7 +268,7 @@ TEST(PassiveConnectConfigE2ETest, Config_CrossSubnetReject) {
      * configuredLocalAddr for peer 127.3.0.2 = 127.3.0.1
      *   → 127.2.0.1 != 127.3.0.1 → REJECT
      */
-    PeeringParams remotePeerParams3;
+    PeeringParams remotePeerParams3{kDefaultVrf};
     remotePeerParams3.localAs = kLocalAsn;
     remotePeerParams3.remoteAs = kLocalAsn;
     remotePeerParams3.localBgpId = kPeer2Addr.asV4();

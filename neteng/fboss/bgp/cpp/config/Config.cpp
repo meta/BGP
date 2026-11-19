@@ -29,6 +29,7 @@
 #include <fb303/ThreadCachedServiceData.h>
 #include "configerator/structs/neteng/fboss/bgp/gen-cpp2/bgp_config_types.h"
 #include "configerator/structs/neteng/netwhoami/gen-cpp2/netwhoami_types.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/common/BgpError.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/FeatureFlags.h"
@@ -1203,7 +1204,7 @@ std::optional<const BgpCommonPeerGroupConfig> Config::getConfigOfAPeer(
 
 PeeringParams Config::getPeeringParamsHelper(
     const BgpCommonPeerGroupConfig& config) const {
-  PeeringParams params;
+  PeeringParams params{fboss::kDefaultVrf};
   params.globalAs = globalConfig_->localAsn;
   params.localAs =
       static_cast<uint32_t>(config.localAsn.value_or(globalConfig_->localAsn));

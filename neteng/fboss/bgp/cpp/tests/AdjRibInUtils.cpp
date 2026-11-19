@@ -20,6 +20,7 @@
 
 #include <folly/container/small_vector.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpStructs.h"
 
 namespace facebook::bgp {
@@ -558,6 +559,7 @@ void AdjRibInboundFixture::setupAdjRib(
   adjRib_ = std::make_shared<AdjRib>(
       *peerId,
       PeeringParams(
+          fboss::kDefaultVrf,
           kPeerAddr1,
           std::nullopt, // peerPrefix
           globalAs,

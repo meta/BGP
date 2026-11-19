@@ -32,6 +32,7 @@
 #include <fmt/core.h>
 #include <folly/coro/BlockingWait.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRib.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibStats.h"
 #include "neteng/fboss/bgp/cpp/rib/RibPolicy.h"
@@ -313,7 +314,7 @@ TEST_F(AdjRibOutboundFixture, EgressSafeModeBlocksAllAdjRibs) {
       BgpPeerId(
           folly::IPAddress("10.0.0.2"),
           folly::IPAddressV4("255.0.0.2").toLongHBO()),
-      PeeringParams{},
+      PeeringParams{fboss::kDefaultVrf},
       evb_,
       ribInQ_,
       observerQ_,

@@ -74,6 +74,7 @@
 #include <folly/coro/GtestHelpers.h>
 #include <gtest/gtest.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/changeTracker/ChangeTracker.h"
 #include "neteng/fboss/bgp/cpp/changeTracker/TrackableObject.h"
 #include "neteng/fboss/bgp/cpp/common/RibMessage.h"
@@ -109,6 +110,7 @@ class UpdateGroupDynamicPolicyReEvaluationTest : public PeerManagerTestFixture {
     auto adjRib = std::make_shared<AdjRib>(
         peerId,
         PeeringParams(
+            fboss::kDefaultVrf,
             peerId.peerAddr,
             std::nullopt,
             kAsn1,
@@ -758,7 +760,7 @@ class SinglePeerPolicyReEvaluation : public ::testing::Test {
         folly::IPAddressV4("255.0.0.1").toLongHBO());
     adjRib_ = std::make_shared<AdjRib>(
         peerId,
-        PeeringParams(),
+        PeeringParams(fboss::kDefaultVrf),
         *evb_,
         ribInQ_,
         observerQ_,
@@ -1302,7 +1304,7 @@ TEST_F(
       folly::IPAddressV4("255.0.0.2").toLongHBO());
   auto existingAdjRib = std::make_shared<AdjRib>(
       existingPeerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       *evb_,
       ribInQ_,
       observerQ_,
@@ -1363,7 +1365,7 @@ TEST_F(
       folly::IPAddressV4("255.0.0.2").toLongHBO());
   auto existingAdjRib = std::make_shared<AdjRib>(
       existingPeerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       *evb_,
       ribInQ_,
       observerQ_,
@@ -1414,7 +1416,7 @@ TEST_F(
       folly::IPAddressV4("255.0.0.2").toLongHBO());
   auto existingAdjRib = std::make_shared<AdjRib>(
       existingPeerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       *evb_,
       ribInQ_,
       observerQ_,
@@ -1465,7 +1467,7 @@ TEST_F(
       folly::IPAddressV4("255.0.0.2").toLongHBO());
   auto existingAdjRib = std::make_shared<AdjRib>(
       existingPeerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       *evb_,
       ribInQ_,
       observerQ_,
@@ -1582,7 +1584,7 @@ CO_TEST_F(
         folly::IPAddressV4("255.0.0.2").toLongHBO());
     adjRib2 = std::make_shared<AdjRib>(
         peerId2,
-        PeeringParams(),
+        PeeringParams(fboss::kDefaultVrf),
         *evb_,
         ribInQ_,
         observerQ_,
@@ -1657,7 +1659,7 @@ TEST_F(SinglePeerPolicyReEvaluation, MovePeersMultiPeerLiteTree) {
         folly::IPAddress(ip), folly::IPAddressV4("255.0.0.1").toLongHBO());
     auto p = std::make_shared<AdjRib>(
         pid,
-        PeeringParams(),
+        PeeringParams(fboss::kDefaultVrf),
         *evb_,
         ribInQ_,
         observerQ_,
@@ -1764,7 +1766,7 @@ TEST_F(SinglePeerPolicyReEvaluation, MovePeersMultiPeerPathTree) {
         folly::IPAddress(ip), folly::IPAddressV4("255.0.0.1").toLongHBO());
     auto p = std::make_shared<AdjRib>(
         pid,
-        PeeringParams(),
+        PeeringParams(fboss::kDefaultVrf),
         *evb_,
         ribInQ_,
         observerQ_,
@@ -1861,7 +1863,7 @@ TEST_F(SinglePeerPolicyReEvaluation, MovePeersSharedRibOutLiteTree) {
         folly::IPAddress(ip), folly::IPAddressV4("255.0.0.1").toLongHBO());
     auto p = std::make_shared<AdjRib>(
         pid,
-        PeeringParams(),
+        PeeringParams(fboss::kDefaultVrf),
         *evb_,
         ribInQ_,
         observerQ_,
@@ -2001,7 +2003,7 @@ TEST_F(SinglePeerPolicyReEvaluation, MovePeersSharedRibOutPathTree) {
         folly::IPAddress(ip), folly::IPAddressV4("255.0.0.1").toLongHBO());
     auto p = std::make_shared<AdjRib>(
         pid,
-        PeeringParams(),
+        PeeringParams(fboss::kDefaultVrf),
         *evb_,
         ribInQ_,
         observerQ_,

@@ -20,6 +20,7 @@
 
 #include <folly/coro/AsyncScope.h>
 
+#include "fboss/agent/Constants.h"
 #include "fboss/lib/ExponentialBackoff.h"
 #include "neteng/fboss/bgp/cpp/common/BgpModuleBase.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigStructs.h"
@@ -399,7 +400,7 @@ struct BgpSessionInfo {
  * Created for each configured static peer or dynamic peer.
  */
 struct BgpPeerInfoInternal {
-  bgp::PeeringParams peeringParams;
+  bgp::PeeringParams peeringParams{fboss::kDefaultVrf};
 
   /*
    * BgpConnectionInfo per port, each created when the static peer is added or
@@ -426,7 +427,8 @@ struct BgpPeerInfoInternal {
  * related to a dynamic bgp peer group.
  */
 struct BgpDynamicPeerGroupInfo {
-  bgp::PeeringParams peeringParams; // peerAddr and peerPort are incomplete
+  bgp::PeeringParams peeringParams{
+      fboss::kDefaultVrf}; // peerAddr and peerPort are incomplete
   std::set<folly::IPAddress> activePeers;
 };
 

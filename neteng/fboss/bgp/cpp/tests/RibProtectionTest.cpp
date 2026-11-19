@@ -59,6 +59,7 @@
 #include <folly/io/async/EventBase.h>
 
 #include "common/network/AddressUtil.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRib.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/RibMessage.h"
@@ -819,6 +820,7 @@ TEST_F(AdjRibInboundFixture, SafeModeSubnetLimitAppliesToNewPrefixUpdates) {
  */
 TEST_F(AdjRibInboundFixture, PrefixLimitSetSingletonTest) {
   PeeringParams params1{
+      fboss::kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       4200000001, // globalAs
@@ -829,6 +831,7 @@ TEST_F(AdjRibInboundFixture, PrefixLimitSetSingletonTest) {
       std::chrono::seconds(120) // grRestartTime
   };
   PeeringParams params2{
+      fboss::kDefaultVrf,
       folly::IPAddress("2.2.2.2"), // peerAddr
       std::nullopt, // peerPrefix
       4200000002, // globalAs

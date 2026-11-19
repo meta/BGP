@@ -36,6 +36,7 @@ class GtsmRealSocketTest;
 
 #include <folly/logging/xlog.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/lib/tests/FiberBgpPeerManagerTestUtils.h"
 
 extern "C" {
@@ -127,7 +128,7 @@ class GtsmRealSocketTest : public ::testing::Test {
       const folly::IPAddress& localId,
       uint16_t peerPort,
       std::optional<int32_t> ttlSecurityHops = std::nullopt) {
-    PeeringParams params;
+    PeeringParams params{fboss::kDefaultVrf};
     params.peerAddr = peerAddr;
     params.globalAs = kTestAsn;
     params.localAs = kTestAsn;

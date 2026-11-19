@@ -83,6 +83,7 @@
 #include <folly/coro/BlockingWait.h>
 #include <folly/logging/xlog.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibCommon.h"
 #include "neteng/fboss/bgp/cpp/adjrib/facebook/RouteFilterLogger.h"
 #include "neteng/fboss/bgp/cpp/tests/AdjRibOutUtils.h"
@@ -117,7 +118,7 @@ TEST_F(AdjRibOutboundFixture, VipInjectorAdditionalRemoteAsPeerIdTest) {
   bgpPeerId.peerAddr = folly::IPAddress("169.254.0.1");
   bgpPeerId.remoteBgpId = folly::IPAddressV4("255.0.0.1").toLongHBO();
 
-  PeeringParams peeringParams;
+  PeeringParams peeringParams{fboss::kDefaultVrf};
   peeringParams.peerAddr = bgpPeerId.peerAddr;
   peeringParams.remoteAs = kRemoteAs1;
   peeringParams.additionalRemoteAs = kVipAsn;
@@ -1900,7 +1901,7 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
   BgpPeerId outPeerId6(outPeer6.addr, outPeer6.routerId);
 
   // Create Peer-1 with advertiseLinkBandwidth set to DISABLE
-  PeeringParams peeringParamsOutPeer1{};
+  PeeringParams peeringParamsOutPeer1{fboss::kDefaultVrf};
   peeringParamsOutPeer1.advertiseLinkBandwidth =
       AdvertiseLinkBandwidth::DISABLE;
   peeringParamsOutPeer1.peerAddr = outPeer1.addr;
@@ -1922,7 +1923,7 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
   adjRibOutPeer1.pathIdGenerator_ = std::make_unique<PathIdGenerator>(false);
 
   // Create Peer-2 with advertiseLinkBandwidth set to BEST_PATH
-  PeeringParams peeringParamsOutPeer2{};
+  PeeringParams peeringParamsOutPeer2{fboss::kDefaultVrf};
   peeringParamsOutPeer2.advertiseLinkBandwidth =
       AdvertiseLinkBandwidth::BEST_PATH;
   peeringParamsOutPeer2.peerAddr = outPeer2.addr;
@@ -1944,7 +1945,7 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
   adjRibOutPeer2.pathIdGenerator_ = std::make_unique<PathIdGenerator>(false);
 
   // Create Peer-3 with fwdLBW with SET_LINK_BPS of 5Gbps
-  PeeringParams peeringParamsOutPeer3{};
+  PeeringParams peeringParamsOutPeer3{fboss::kDefaultVrf};
   peeringParamsOutPeer3.advertiseLinkBandwidth =
       AdvertiseLinkBandwidth::SET_LINK_BPS;
   peeringParamsOutPeer3.linkBandwidthBps = kLbw5G;
@@ -1967,7 +1968,7 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
   adjRibOutPeer3.pathIdGenerator_ = std::make_unique<PathIdGenerator>(false);
 
   // Create Peer-4 with advertiseLinkBandwidth set to AGGREGATE_RECEIVED
-  PeeringParams peeringParamsOutPeer4{};
+  PeeringParams peeringParamsOutPeer4{fboss::kDefaultVrf};
   peeringParamsOutPeer4.advertiseLinkBandwidth =
       AdvertiseLinkBandwidth::AGGREGATE_RECEIVED;
   peeringParamsOutPeer4.peerAddr = outPeer4.addr;
@@ -1989,7 +1990,7 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
   adjRibOutPeer4.pathIdGenerator_ = std::make_unique<PathIdGenerator>(false);
 
   // Create Peer-5 with advertiseLinkBandwidth set to AGGREGATE_LOCAL
-  PeeringParams peeringParamsOutPeer5{};
+  PeeringParams peeringParamsOutPeer5{fboss::kDefaultVrf};
   peeringParamsOutPeer5.advertiseLinkBandwidth =
       AdvertiseLinkBandwidth::AGGREGATE_LOCAL;
   peeringParamsOutPeer5.peerAddr = outPeer5.addr;
@@ -2011,7 +2012,7 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
   adjRibOutPeer5.pathIdGenerator_ = std::make_unique<PathIdGenerator>(false);
 
   // Create Peer-6 with advertiseLinkBandwidth set to RIB_POLICY_LBW
-  PeeringParams peeringParamsOutPeer6{};
+  PeeringParams peeringParamsOutPeer6{fboss::kDefaultVrf};
   peeringParamsOutPeer6.advertiseLinkBandwidth =
       AdvertiseLinkBandwidth::RIB_POLICY_LBW;
   peeringParamsOutPeer6.peerAddr = outPeer6.addr;
@@ -2591,7 +2592,7 @@ TEST_P(EgressUcmpPolicyFixture, EgressUcmpPolicy) {
     TinyPeerInfo outPeer{
         folly::IPAddress("30.1.1.1"), 1, 2, BgpSessionType::EBGP, false};
     BgpPeerId outPeerId(outPeer.addr, outPeer.routerId);
-    PeeringParams peeringParamsOutPeer{};
+    PeeringParams peeringParamsOutPeer{fboss::kDefaultVrf};
     peeringParamsOutPeer.advertiseLinkBandwidth = advertiseLinkBandwidth;
     peeringParamsOutPeer.linkBandwidthBps = kLbw5G;
     peeringParamsOutPeer.peerAddr = outPeer.addr;
@@ -5480,7 +5481,7 @@ class UpdateExtCommunitiesCommonTest : public ::testing::Test {
 
   // Create EBGP PeeringParams: localAs != remoteAs && !isConfedPeer
   static PeeringParams buildEBgpPeeringParams() {
-    PeeringParams params;
+    PeeringParams params{fboss::kDefaultVrf};
     params.localAs = 65001;
     params.remoteAs = 65002;
     params.isConfedPeer = ConfedPeerConfigured{false};
@@ -5489,7 +5490,7 @@ class UpdateExtCommunitiesCommonTest : public ::testing::Test {
 
   // Create IBGP PeeringParams: localAs == remoteAs
   static PeeringParams buildIBgpPeeringParams() {
-    PeeringParams params;
+    PeeringParams params{fboss::kDefaultVrf};
     params.localAs = 65001;
     params.remoteAs = 65001;
     params.isConfedPeer = ConfedPeerConfigured{false};
@@ -5498,7 +5499,7 @@ class UpdateExtCommunitiesCommonTest : public ::testing::Test {
 
   // Create ConfedEBGP PeeringParams: isConfedPeer && localAs != remoteAs
   static PeeringParams buildConfedEBgpPeeringParams() {
-    PeeringParams params;
+    PeeringParams params{fboss::kDefaultVrf};
     params.localAs = 65001;
     params.remoteAs = 65002;
     params.isConfedPeer = ConfedPeerConfigured{true};
@@ -5836,7 +5837,7 @@ TEST_F(AdjRibOutboundFixture, EgressPolicyLinkBandwidthPropagationEBGPTest) {
       folly::IPAddress("30.1.1.1"), 1, 2, BgpSessionType::EBGP, false};
   BgpPeerId outPeerId(outPeer.addr, outPeer.routerId);
 
-  PeeringParams peeringParamsOutPeer{};
+  PeeringParams peeringParamsOutPeer{fboss::kDefaultVrf};
   peeringParamsOutPeer.peerAddr = outPeer.addr;
   peeringParamsOutPeer.localAs = kLocalAs1;
   peeringParamsOutPeer.remoteAs = kRemoteAs2; // Different AS for EBGP
@@ -5955,7 +5956,7 @@ TEST_F(AdjRibOutboundFixture, EgressPolicyLinkBandwidthPropagationIBGPTest) {
       folly::IPAddress("30.1.1.1"), 1, 2, BgpSessionType::IBGP, false};
   BgpPeerId outPeerId(outPeer.addr, outPeer.routerId);
 
-  PeeringParams peeringParamsOutPeer{};
+  PeeringParams peeringParamsOutPeer{fboss::kDefaultVrf};
   peeringParamsOutPeer.peerAddr = outPeer.addr;
   peeringParamsOutPeer.localAs = kLocalAs1;
   peeringParamsOutPeer.remoteAs = kLocalAs1; // Same AS for IBGP

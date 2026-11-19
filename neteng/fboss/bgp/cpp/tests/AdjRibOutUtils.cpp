@@ -16,6 +16,7 @@
 
 #define AdjRib_TEST_FRIENDS friend class AdjRibOutboundFixture;
 #include "AdjRibOutUtils.h"
+#include "fboss/agent/Constants.h"
 #undef AdjRib_TEST_FRIENDS
 
 #include <folly/container/small_vector.h>
@@ -112,6 +113,7 @@ void AdjRibOutboundFixture::setupAdjRib(
   adjRib_ = std::make_shared<AdjRib>(
       peerId,
       PeeringParams(
+          fboss::kDefaultVrf,
           peerId.peerAddr,
           std::nullopt, // peerPrefix
           globalAs,

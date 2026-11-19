@@ -37,6 +37,7 @@
 #include <folly/hash/Hash.h>
 #include <gtest/gtest.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/BgpServiceBase.h"
 #include "neteng/fboss/bgp/cpp/BgpServiceUtil.h"
 #include "neteng/fboss/bgp/cpp/changeTracker/ChangeTracker.h"
@@ -201,6 +202,7 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
     auto adjRib = std::make_shared<AdjRib>(
         peerId,
         PeeringParams(
+            fboss::kDefaultVrf,
             peerId.peerAddr,
             std::nullopt,
             kAsn1,

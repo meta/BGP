@@ -22,6 +22,7 @@
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibGroup.h"
 #include "neteng/fboss/bgp/cpp/adjrib/UpdateGroupManager.h"
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibStructs.h"
 #include "neteng/fboss/bgp/cpp/common/Types.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
@@ -322,7 +323,7 @@ TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsSkipsNonEmptyGroups) {
       folly::IPAddressV4("255.0.0.1").toLongHBO());
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       evb,
       ribInQ,
       observerQ,
@@ -356,7 +357,7 @@ TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsFreesPinnedRibOut) {
       folly::IPAddressV4("255.0.0.1").toLongHBO());
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       evb,
       ribInQ,
       observerQ,
@@ -427,7 +428,7 @@ TEST_F(
       folly::IPAddressV4("255.0.0.1").toLongHBO());
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       evb,
       ribInQ,
       observerQ,
@@ -487,7 +488,7 @@ TEST_F(
       folly::IPAddressV4("255.0.0.1").toLongHBO());
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       evb,
       ribInQ,
       observerQ,
@@ -713,7 +714,7 @@ TEST_F(UpdateGroupManagerTest, RekeyGroupUpdatesMapKey) {
       folly::IPAddressV4("255.0.0.1").toLongHBO());
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       evb,
       ribInQ,
       observerQ,
@@ -757,7 +758,7 @@ TEST_F(UpdateGroupManagerTest, RekeyGroupNoOpWhenKeyUnchanged) {
       folly::IPAddressV4("255.0.0.1").toLongHBO());
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       evb,
       ribInQ,
       observerQ,
@@ -792,7 +793,7 @@ TEST_F(UpdateGroupManagerTest, RekeyGroupUpdatesAllPeerKeys) {
       folly::IPAddressV4("255.0.0.1").toLongHBO());
   auto adjRib1 = std::make_shared<AdjRib>(
       peerId1,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       evb,
       ribInQ,
       observerQ,
@@ -805,7 +806,7 @@ TEST_F(UpdateGroupManagerTest, RekeyGroupUpdatesAllPeerKeys) {
       folly::IPAddressV4("255.0.0.2").toLongHBO());
   auto adjRib2 = std::make_shared<AdjRib>(
       peerId2,
-      PeeringParams(),
+      PeeringParams(fboss::kDefaultVrf),
       evb,
       ribInQ,
       observerQ,

@@ -28,6 +28,7 @@
 
 #include <fmt/core.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/config/facebook/ConfigDC.h"
 #include "neteng/fboss/bgp/cpp/tests/BoundedWaitUtils.h"
 
@@ -557,6 +558,7 @@ std::shared_ptr<AdjRib> PeerManagerTestFixture::setupAdjRib(
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
       PeeringParams(
+          fboss::kDefaultVrf,
           peerId.peerAddr,
           std::nullopt, // peerPrefix
           kAsn1,
@@ -633,6 +635,7 @@ std::shared_ptr<AdjRib> PeerManagerTestFixture::setupAdjRib(
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
       PeeringParams(
+          fboss::kDefaultVrf,
           peerId.peerAddr,
           std::nullopt, // peerPrefix
           kAsn1,
@@ -700,6 +703,7 @@ std::shared_ptr<MockAdjRib> PeerManagerTestFixture::setupMockAdjRib(
   auto adjRib = std::make_shared<MockAdjRib>(
       peerId,
       PeeringParams(
+          fboss::kDefaultVrf,
           peerId.peerAddr,
           std::nullopt, // peerPrefix
           kAsn1,
@@ -761,7 +765,7 @@ std::shared_ptr<MockPeerManager> PeerManagerTestFixture::setupMockPeerManager(
    * Setup values returned to sessionEstablishement
    * getEstablishedPeerDisplayInfo
    */
-  auto peeringParams = bgp::PeeringParams();
+  auto peeringParams = bgp::PeeringParams(fboss::kDefaultVrf);
   peeringParams.peerAddr = kPeerAddr1;
   peeringParams.peerPrefix = kV4Prefix3;
   peeringParams.localBgpId = kLocalAddr1.asV4();

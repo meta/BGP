@@ -19,6 +19,7 @@
 
 #include <folly/coro/BlockingWait.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberBgpPeerManager.h"
 #include "neteng/fboss/bgp/cpp/lib/tests/FiberBgpPeerManagerTestUtils.h"
 
@@ -155,7 +156,7 @@ TEST_F(CoroTestFixture, CoShutdownPeerTest) {
 
 TEST_F(CoroTestFixture, CoAddPeerTest) {
   const folly::IPAddress peerAddr{kR2Lo1}; // 127.2.0.1
-  bgp::PeeringParams params;
+  bgp::PeeringParams params{fboss::kDefaultVrf};
   params.peerAddr = peerAddr;
   params.remoteAs = 200;
   params.localAs = 100;
@@ -176,7 +177,7 @@ TEST_F(CoroTestFixture, CoAddPeerTest) {
 
 TEST_F(CoroTestFixture, CoAddPeerDuplicateTest) {
   const folly::IPAddress peerAddr{kR2Lo1}; // 127.2.0.1
-  bgp::PeeringParams params;
+  bgp::PeeringParams params{fboss::kDefaultVrf};
   params.peerAddr = peerAddr;
   params.remoteAs = 200;
   params.localAs = 100;

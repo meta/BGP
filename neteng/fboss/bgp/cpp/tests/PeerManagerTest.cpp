@@ -307,7 +307,7 @@ std::vector<TBgpSession> getSessionsViaSessionMgr(PeerManagerBase& peerMgr) {
  *         name should be created based on peer's address
  */
 TEST_F(PeerManagerTestFixture, buildGroupNameWithoutPeerGroupTest) {
-  const PeeringParams peeringParams = {};
+  const PeeringParams peeringParams{fboss::kDefaultVrf};
 
   auto mockPeerMgr = setupMockPeerManager(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
@@ -322,7 +322,7 @@ TEST_F(PeerManagerTestFixture, buildGroupNameWithoutPeerGroupTest) {
  *         name should be created based on peer group name
  */
 TEST_F(PeerManagerTestFixture, buildGroupNameWithPeerGroupNameTest) {
-  auto peeringParams = bgp::PeeringParams();
+  auto peeringParams = bgp::PeeringParams(fboss::kDefaultVrf);
   std::string testGroupName = "Test";
   peeringParams.peerGroupName = testGroupName;
 
@@ -6238,7 +6238,7 @@ TEST_F(StreamSubscriberFixture, StreamSubscriberIdleTimeoutNotifiesClient) {
 }
 
 TEST_F(PeerManagerTestFixture, GetSessionManagerTest) {
-  const PeeringParams peeringParams = {};
+  const PeeringParams peeringParams{fboss::kDefaultVrf};
 
   auto mockPeerMgr = setupMockPeerManager(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);

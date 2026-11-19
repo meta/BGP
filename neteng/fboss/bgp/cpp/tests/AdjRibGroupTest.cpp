@@ -60,6 +60,7 @@
 #include <folly/io/async/EventBase.h>
 #include <folly/logging/xlog.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRib.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibCommon.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRibGroup.h"
@@ -144,7 +145,7 @@ class AdjRibGroupTest : public ::testing::Test {
 
   std::shared_ptr<AdjRib> createMinimalAdjRib(
       uint8_t id = 1,
-      PeeringParams peeringParams = PeeringParams{}) {
+      PeeringParams peeringParams = PeeringParams{fboss::kDefaultVrf}) {
     auto peerId = nettools::bgplib::BgpPeerId(
         folly::IPAddress(fmt::format("10.0.0.{}", id)),
         folly::IPAddressV4("255.0.0.1").toLongHBO());
@@ -164,7 +165,7 @@ class AdjRibGroupTest : public ::testing::Test {
    * (the group only queues when it has an in-sync peer).
    */
   std::shared_ptr<AdjRib> addInSyncPeer(
-      PeeringParams peeringParams = PeeringParams{}) {
+      PeeringParams peeringParams = PeeringParams{fboss::kDefaultVrf}) {
     auto adjRib = createMinimalAdjRib(1, std::move(peeringParams));
     adjRibOutGroup_->registerPeer(adjRib);
     registeredInSyncPeers_.emplace_back(adjRibOutGroup_, adjRib);
@@ -1386,7 +1387,7 @@ TEST_F(
   groupKey.linkBandwidthBps = kLinkBandwidth;
   AdjRibGroupTest::createAdjRibOutGroup("test_group", 42, groupKey);
 
-  PeeringParams peeringParams;
+  PeeringParams peeringParams{fboss::kDefaultVrf};
   peeringParams.localAs = kLocalAs;
   peeringParams.advertiseLinkBandwidth = AdvertiseLinkBandwidth::SET_LINK_BPS;
   peeringParams.linkBandwidthBps = kLinkBandwidth;
@@ -1594,7 +1595,7 @@ TEST_F(
    * non-null policy manager so the egress-policy branch is entered. An empty
    * BgpPolicies yields a policy DB with no entry for "" (mask lookup -> null).
    */
-  adjRibOutGroup_->peeringParams_ = PeeringParams{};
+  adjRibOutGroup_->peeringParams_ = PeeringParams{fboss::kDefaultVrf};
   adjRibOutGroup_->policyManager_ =
       std::make_shared<PolicyManager>(bgp_policy::BgpPolicies{});
 
@@ -2229,7 +2230,7 @@ TEST_F(
       createBgpPolicies(kPolicyName, {}, {lbwAction}),
       createTestBgpGlobalConfig());
 
-  PeeringParams peeringParams;
+  PeeringParams peeringParams{fboss::kDefaultVrf};
   peeringParams.localAs = kLocalAs;
   peeringParams.linkBandwidthBps = kLinkBandwidthBps;
   adjRibOutGroup_->peeringParams_ = peeringParams;
@@ -2287,7 +2288,7 @@ TEST_F(AdjRibGroupPolicyFixture, PostOutPolicyAgreesWithPerPeerProducer) {
       createBgpPolicies(kPolicyName, {}, {lbwAction}),
       createTestBgpGlobalConfig());
 
-  PeeringParams peeringParams;
+  PeeringParams peeringParams{fboss::kDefaultVrf};
   peeringParams.localAs = kLocalAs;
   peeringParams.linkBandwidthBps = kLinkBandwidthBps;
 

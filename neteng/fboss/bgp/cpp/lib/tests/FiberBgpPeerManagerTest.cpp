@@ -70,6 +70,7 @@
 
 #include <fb303/ThreadCachedServiceData.h>
 #include "common/network/AddressUtil.h"
+#include "fboss/agent/Constants.h"
 #include "magic_enum/magic_enum.hpp"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpMessageSerializer.h"
@@ -92,6 +93,7 @@ using namespace std::chrono_literals;
 using facebook::bgp::BgpGlobalConfig;
 using facebook::bgp::PeeringParams;
 using facebook::bgp::thrift::BgpNetwork;
+using facebook::fboss::kDefaultVrf;
 using facebook::neteng::fboss::bgp::thrift::TBgpSessionConnectMode;
 using facebook::network::toBinaryAddress;
 using facebook::network::toCIDRNetwork;
@@ -662,6 +664,7 @@ TEST_F(
     constexpr uint64_t kTerminatedVersion = 7;
     const auto peerPrefix = folly::IPAddress::createNetwork("127.0.0.0/8");
     auto params = PeeringParams(
+        kDefaultVrf,
         peerAddr1,
         peerPrefix,
         100,
@@ -2051,6 +2054,7 @@ TEST_P(BasicAddPeerTest, DynamicPeerTest) {
     } else {
       // addDynamicPeer(127.2.0.0/30) on peerMgr1
       auto params1 = PeeringParams(
+          kDefaultVrf,
           IPAddress(), // dummy
           peerPrefix,
           100, // globalAs
@@ -2067,6 +2071,7 @@ TEST_P(BasicAddPeerTest, DynamicPeerTest) {
 
       // addPeer(127.1.0.1) to peerMrg2, peerMrg3, peerMrg4
       auto params2 = PeeringParams(
+          kDefaultVrf,
           peerAddr2, // dummy
           std::nullopt, // peerPrefix
           100, // globalAs
@@ -2082,6 +2087,7 @@ TEST_P(BasicAddPeerTest, DynamicPeerTest) {
       peerMgr2->addPeer(peerAddr2, params2);
 
       auto params3 = PeeringParams(
+          kDefaultVrf,
           peerAddr2, // dummy
           std::nullopt, // peerPrefix
           100, // globalAs
@@ -2097,6 +2103,7 @@ TEST_P(BasicAddPeerTest, DynamicPeerTest) {
       peerMgr3->addPeer(peerAddr2, params3);
 
       auto params4 = PeeringParams(
+          kDefaultVrf,
           peerAddr2, // dummy
           std::nullopt, // peerPrefix
           100, // globalAs
@@ -2331,6 +2338,7 @@ TEST_P(BasicAddPeerTest, DynamicPeerTest) {
           } else {
             // Reconfigure for peerMgr1: addPeer 127.2.0.2, 127.2.0.4
             auto params = PeeringParams(
+                kDefaultVrf,
                 IPAddress(), // dummy
                 peerPrefix,
                 100, // globalAs

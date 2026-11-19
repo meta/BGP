@@ -32,6 +32,7 @@
 #include <folly/logging/xlog.h>
 
 #include "common/network/AddressUtil.h"
+#include "fboss/agent/Constants.h"
 #include "fboss/lib/AlertLogger.h"
 #include "magic_enum/magic_enum.hpp"
 #include "neteng/fboss/bgp/cpp/BgpProfiler.h"
@@ -3644,7 +3645,7 @@ std::pair<folly::IPAddress, std::unique_ptr<PeeringParams>>
 PeerManagerBase::getStreamPeeringParams() {
   // Use localhost as the peer address for stream subscribers
   auto peerAddr = folly::IPAddress("::1");
-  auto peeringParams = std::make_unique<PeeringParams>();
+  auto peeringParams = std::make_unique<PeeringParams>(fboss::kDefaultVrf);
 
   peeringParams->peerAddr = peerAddr;
 

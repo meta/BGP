@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigStructs.h"
 #include "neteng/fboss/bgp/if/gen-cpp2/BgpStructs_types.h"
 
@@ -78,7 +79,7 @@ struct SocketMessageCounters {
  * This should handle both static and dynamic peers
  */
 struct BgpPeerDisplayInfo {
-  bgp::PeeringParams peeringParams;
+  bgp::PeeringParams peeringParams{fboss::kDefaultVrf};
   uint32_t remoteBgpId;
   std::optional<uint16_t> remoteGrRestartTime;
   BgpSessionState state;

@@ -60,6 +60,7 @@
 #include <folly/coro/Baton.h>
 #include <folly/coro/Invoke.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/UpdateGroupPolicyReEvalUTCommon.h"
 
 namespace facebook::bgp {
@@ -324,7 +325,7 @@ TEST_F(SplitToGroup, CopiesGroupFields) {
     sourceGroup->mraiInterval_ = 30000;
     sourceGroup->initialDumpCompletionTimeMs_ = int64_t{777};
     if (!sourceGroup->peeringParams_.has_value()) {
-      sourceGroup->peeringParams_ = PeeringParams();
+      sourceGroup->peeringParams_ = PeeringParams(fboss::kDefaultVrf);
     }
     sourceGroup->peeringParams_->globalAs = 64512;
     UpdateGroupConfig cfg;

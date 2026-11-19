@@ -63,6 +63,7 @@ class MockFiberBgpPeer;
 #include <folly/io/async/test/SocketPair.h>
 
 #include "common/network/AddressUtil.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpException.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpUtil.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/BgpSerializer.h"
@@ -82,6 +83,7 @@ using namespace std::chrono_literals;
 using facebook::bgp::AfiIpv4Configured;
 using facebook::bgp::AfiIpv6Configured;
 using facebook::bgp::PeeringParams;
+using facebook::fboss::kDefaultVrf;
 using facebook::neteng::fboss::bgp_attr::AdvertiseLinkBandwidth;
 using facebook::neteng::fboss::bgp_attr::ReceiveLinkBandwidth;
 using facebook::network::toBinaryAddress;
@@ -246,6 +248,7 @@ class FiberBgpPeerFixture : public ::testing::Test {
   BgpRouteRefresh routeRefreshMsg1_;
 
   PeeringParams params1_{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       4200000001, // globalAs
@@ -256,6 +259,7 @@ class FiberBgpPeerFixture : public ::testing::Test {
       std::chrono::seconds(120) // grRestartTime
   };
   PeeringParams params2_{
+      kDefaultVrf,
       folly::IPAddress("2.2.2.2"), // peerAddr
       std::nullopt, // peerPrefix
       4200000002, // globalAs
@@ -266,6 +270,7 @@ class FiberBgpPeerFixture : public ::testing::Test {
       std::chrono::seconds(120) // grRestartTime
   };
   PeeringParams params3_{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       1234, // globalAs
@@ -276,6 +281,7 @@ class FiberBgpPeerFixture : public ::testing::Test {
       std::chrono::seconds(10) // grRestartTime
   };
   PeeringParams params4_{
+      kDefaultVrf,
       folly::IPAddress("2.2.2.2"), // peerAddr
       std::nullopt, // peerPrefix
       1234, // globalAs
@@ -1280,6 +1286,7 @@ TEST_F(FiberBgpPeerFixture, HoldTimeNegotiationTest) {
 
   // peer1 is set with hold time 180 sec always.
   PeeringParams params1{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       1234, // globalAs
@@ -1296,6 +1303,7 @@ TEST_F(FiberBgpPeerFixture, HoldTimeNegotiationTest) {
      * negotiated hold time should be 30 sec.
      */
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1342,6 +1350,7 @@ TEST_F(FiberBgpPeerFixture, HoldTimeNegotiationTest) {
      * negotiated hold time should be 3 sec.
      */
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1388,6 +1397,7 @@ TEST_F(FiberBgpPeerFixture, HoldTimeNegotiationTest) {
      * session should not come up.
      */
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1437,6 +1447,7 @@ TEST_F(FiberBgpPeerFixture, HoldTimeNegotiationTest) {
      * session should come up.
      */
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1489,6 +1500,7 @@ TEST_F(FiberBgpPeerFixture, GRCapabilityTest) {
 
   // peer1 is set with grRestartTime 120 sec always.
   PeeringParams params1{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       1234, // globalAs
@@ -1502,6 +1514,7 @@ TEST_F(FiberBgpPeerFixture, GRCapabilityTest) {
   {
     // peer2 is set with grRestartTime 30 sec.
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1541,6 +1554,7 @@ TEST_F(FiberBgpPeerFixture, GRCapabilityTest) {
   {
     // peer2 has not GR config.
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1590,6 +1604,7 @@ TEST_F(FiberBgpPeerFixture, NoGRCapabilityWhenUnconfigured) {
 
   // Neither peer has grRestartTime configured
   PeeringParams params1{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       1234, // globalAs
@@ -1601,6 +1616,7 @@ TEST_F(FiberBgpPeerFixture, NoGRCapabilityWhenUnconfigured) {
   };
 
   PeeringParams params2{
+      kDefaultVrf,
       folly::IPAddress("2.2.2.2"), // peerAddr
       std::nullopt, // peerPrefix
       1234, // globalAs
@@ -1649,7 +1665,7 @@ TEST_F(FiberBgpPeerFixture, NoGRCapabilityWhenUnconfigured) {
 TEST_F(FiberBgpPeerFixture, ExtNHEncodingCapabilityTest) {
   auto& fm = fmWrapper_.get();
 
-  PeeringParams params1;
+  PeeringParams params1{kDefaultVrf};
   params1.peerAddr = folly::IPAddress("1.1.1.1");
   params1.peerPrefix = std::nullopt;
   params1.globalAs = 1234;
@@ -1792,6 +1808,7 @@ TEST_F(FiberBgpPeerFixture, AddPathCapabilityTest) {
   auto& fm = fmWrapper_.get();
 
   PeeringParams params1{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       1234, // globalAs
@@ -1804,6 +1821,7 @@ TEST_F(FiberBgpPeerFixture, AddPathCapabilityTest) {
 
   {
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1856,6 +1874,7 @@ TEST_F(FiberBgpPeerFixture, AddPathCapabilityTest) {
   {
     // BOTH | none
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1897,6 +1916,7 @@ TEST_F(FiberBgpPeerFixture, AddPathCapabilityTest) {
   {
     // BOTH | SEND
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -1963,6 +1983,7 @@ TEST_F(FiberBgpPeerFixture, AddPathCapabilityTest) {
   {
     // SEND | RECEIVE
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -2026,6 +2047,7 @@ TEST_F(FiberBgpPeerFixture, AddPathCapabilityTest) {
   {
     // SEND | SEND
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -2067,6 +2089,7 @@ TEST_F(FiberBgpPeerFixture, AddPathCapabilityTest) {
   {
     // RECEIVE | RECEIVE
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -2112,7 +2135,7 @@ TEST_F(FiberBgpPeerFixture, AddPathCapabilityTest) {
 TEST_F(FiberBgpPeerFixture, EnhancedRouteRefreshCapabilityTest) {
   auto& fm = fmWrapper_.get();
 
-  PeeringParams params1;
+  PeeringParams params1{kDefaultVrf};
   params1.peerAddr = folly::IPAddress("1.1.1.1");
   params1.peerPrefix = std::nullopt;
   params1.globalAs = 1234;
@@ -2266,7 +2289,7 @@ TEST_F(FiberBgpPeerFixture, EnhancedRouteRefreshCapabilityTest) {
 TEST_F(FiberBgpPeerFixture, RouteRefreshCapabilityTest) {
   auto& fm = fmWrapper_.get();
 
-  PeeringParams params1;
+  PeeringParams params1{kDefaultVrf};
   params1.peerAddr = folly::IPAddress("1.1.1.1");
   params1.peerPrefix = std::nullopt;
   params1.globalAs = 1234;
@@ -2417,6 +2440,7 @@ TEST_F(FiberBgpPeerFixture, AfiCapabilityNegotiationTest) {
 
   // peer1 is set with ipv4/ipv6 unicast and ls
   PeeringParams params1{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       1234, // globalAs
@@ -2433,6 +2457,7 @@ TEST_F(FiberBgpPeerFixture, AfiCapabilityNegotiationTest) {
      * negotiated address family should be only ipv4 unicast
      */
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -2480,6 +2505,7 @@ TEST_F(FiberBgpPeerFixture, AfiCapabilityNegotiationTest) {
      * negotiated address family should be only ipv6 unicast
      */
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -2527,6 +2553,7 @@ TEST_F(FiberBgpPeerFixture, AfiCapabilityNegotiationTest) {
      * negotiated address family should be ipv4/ipv6 unicast
      */
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -2574,6 +2601,7 @@ TEST_F(FiberBgpPeerFixture, AfiCapabilityNegotiationTest) {
      * negotiated address family should be ipv4/ipv6 unicast and ls
      */
     PeeringParams params2{
+        kDefaultVrf,
         folly::IPAddress("2.2.2.2"), // peerAddr
         std::nullopt, // peerPrefix
         1234, // globalAs
@@ -3121,6 +3149,7 @@ TEST_F(FiberBgpPeerFixture, ValidateRemoteAsTest) {
    * peer2 in AS 2345 and validateRemoteAs = false
    */
   PeeringParams params2{
+      kDefaultVrf,
       folly::IPAddress("2.2.2.2"), // peerAddr
       std::nullopt, // peerPrefix
       2345, // globalAs
@@ -3135,6 +3164,7 @@ TEST_F(FiberBgpPeerFixture, ValidateRemoteAsTest) {
       facebook::bgp::ValidateRemoteAs{false}};
   // peer3 in AS 3456 and validateRemoteAs = false,
   PeeringParams params3{
+      kDefaultVrf,
       folly::IPAddress("3.3.3.3"), // peerAddr
       std::nullopt, // peerPrefix
       3456, // globalAs
@@ -3488,6 +3518,7 @@ TEST_F(FiberBgpPeerFixture, GrNotificationHoldTimerExpiredTest) {
 
 TEST_F(FiberBgpPeerFixture, NeedToKeepThisPeerTest) {
   PeeringParams params1{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       4200000001, // globalAs
@@ -3498,6 +3529,7 @@ TEST_F(FiberBgpPeerFixture, NeedToKeepThisPeerTest) {
       std::chrono::seconds(120) // grRestartTime
   };
   PeeringParams params2{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       4200000001, // globalAs
@@ -3614,6 +3646,7 @@ TEST_F(FiberBgpPeerFixture, NeedToKeepThisPeerTest) {
 
 TEST_F(FiberBgpPeerFixture, SocketCloseTimerTest) {
   PeeringParams params{
+      kDefaultVrf,
       folly::IPAddress("1.1.1.1"), // peerAddr
       std::nullopt, // peerPrefix
       4200000001, // globalAs

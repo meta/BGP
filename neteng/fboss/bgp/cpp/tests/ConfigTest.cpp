@@ -30,6 +30,7 @@
 #include <cmath>
 #include "common/network/AddressUtil.h"
 #include "configerator/structs/neteng/fboss/bgp/if/gen-cpp2/bgp_attr_types.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/common/BgpError.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/FeatureFlags.h"
@@ -2882,7 +2883,7 @@ TEST_F(ConfigTestFixture, verifyPolicyConfigValidation) {
 }
 
 TEST(PeeringParams, getUniquePeerIdTest) {
-  PeeringParams p;
+  PeeringParams p{fboss::kDefaultVrf};
 
   p.peerId = kDefaultPeerId;
   toLower(p.peerId);
@@ -2931,7 +2932,7 @@ TEST(PeeringParams, AcceptsRemoteAsTest) {
   constexpr uint32_t kPrimaryAs = 65001;
   constexpr uint32_t kAdditionalAs = 65002;
   constexpr uint32_t kUnexpectedAs = 65003;
-  PeeringParams params;
+  PeeringParams params{fboss::kDefaultVrf};
   params.remoteAs = kPrimaryAs;
   params.additionalRemoteAs = kAdditionalAs;
 

@@ -452,8 +452,6 @@ CO_TEST_F(AdjRibOutDelayFixture, OutDelayPrefixesInBackpressureTest) {
       false,
       false,
       installTimeStamp);
-  evb_.runInEventBaseThread(
-      [&] { PublishChangesToChangeList(announcementsWithoutOutDelay); });
 
   /*
    * Let's also publish a new never before seen prefix which
@@ -461,8 +459,16 @@ CO_TEST_F(AdjRibOutDelayFixture, OutDelayPrefixesInBackpressureTest) {
    */
   auto newAnnouncement =
       buildAnnouncementWithInstallTimestamp({{attrs1, {kV4Prefix7}}});
-  evb_.runInEventBaseThread(
-      [&] { PublishChangesToChangeList(newAnnouncement); });
+
+  /*
+   * Publish both batches in one evb_ callback. The change list consumer
+   * also runs on evb_. With two callbacks, it can consume the first batch
+   * and block the queue before kV4Prefix7 is published.
+   */
+  evb_.runInEventBaseThread([&] {
+    PublishChangesToChangeList(announcementsWithoutOutDelay);
+    PublishChangesToChangeList(newAnnouncement);
+  });
 
   /*
    * All items have to be popped from the queue before the

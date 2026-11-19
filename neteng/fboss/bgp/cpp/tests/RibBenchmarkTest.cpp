@@ -20,6 +20,7 @@
 
 #include <neteng/fboss/bgp/cpp/common/RibMessage.h>
 #include <neteng/fboss/bgp/cpp/tests/RibUtils.h>
+#include "fboss/agent/Constants.h"
 
 using namespace facebook::bgp;
 
@@ -72,9 +73,11 @@ class RibBenchmarkFixture {
       PrefixPathIds pfxPathIds;
       pfxPathIds.emplace_back(prefix, kDefaultPathID);
       if (isWithdrawal) {
-        res.emplace_back(RibInWithdrawal(peer, std::move(pfxPathIds)));
+        res.emplace_back(RibInWithdrawal(
+            facebook::fboss::kDefaultVrf, peer, std::move(pfxPathIds)));
       } else {
-        res.emplace_back(RibInAnnouncement(peer, std::move(pfxPathIds), attrs));
+        res.emplace_back(RibInAnnouncement(
+            facebook::fboss::kDefaultVrf, peer, std::move(pfxPathIds), attrs));
       }
     }
     return res;

@@ -3343,7 +3343,8 @@ void PeerManagerBase::notifyRibInitialPathComputation(
    * (guarded by ribInitPathComputationNotified_), not a data-path operation
    * at scale.
    */
-  ribInQ_.forcePush(RibInInitialPathComputation(nexthopResolutionTimeout));
+  ribInQ_.forcePush(RibInInitialPathComputation(
+      fboss::kDefaultVrf, nexthopResolutionTimeout));
   eorTimerExpired_ = timerFired;
   BgpStats::setEorTimerExpired(timerFired);
 

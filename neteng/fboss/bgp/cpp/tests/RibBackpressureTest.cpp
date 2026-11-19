@@ -39,6 +39,7 @@
 #include <folly/io/async/EventBase.h>
 #include <folly/logging/xlog.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/Utils.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
 #include "neteng/fboss/bgp/cpp/tests/RetryUtils.h"
@@ -77,8 +78,8 @@ class QueueFairnessMockRib final : public MockRib {
   void fillBusyQueue(const TinyPeerInfo& peer) {
     if (busyQueue_ == BusyQueue::RIB_IN) {
       for (size_t i = 0; i < kBusyQueueMessages; ++i) {
-        folly::coro::blockingWait(
-            ribInQForTest_.push(RibInAddPathGrUpdate{peer, {}}));
+        folly::coro::blockingWait(ribInQForTest_.push(
+            RibInAddPathGrUpdate{fboss::kDefaultVrf, peer, {}}));
       }
     } else {
       enqueueRibPolicyMsg(RouteAttributePolicyClearMsg{});
@@ -495,6 +496,7 @@ TEST(RibBackpressureTest, RibInQueueBackpressureTest) {
   fm.addTask([&] {
     // Create RibInMessage to fill the queue
     auto announcement = RibInAnnouncement(
+        fboss::kDefaultVrf,
         iBgpPeer,
         {{folly::IPAddress::createNetwork("10.0.1.0/24"), kDefaultPathID}},
         attr);
@@ -655,8 +657,8 @@ TEST(RibBackpressureTest, RibInQueueConsumerScopeTest) {
   auto prefixBatch1 = PrefixPathIds{
       {folly::IPAddress::createNetwork("1::/64"), kDefaultPathID}};
 
-  folly::coro::blockingWait(
-      ribInQ.push(RibInAnnouncement(eBgpPeer, prefixBatch1, attr)));
+  folly::coro::blockingWait(ribInQ.push(
+      RibInAnnouncement(fboss::kDefaultVrf, eBgpPeer, prefixBatch1, attr)));
   EXPECT_EQ(1, ribInQ.size());
 
   // Step 2: Close the queue manually and verify pushes are dropped
@@ -664,8 +666,8 @@ TEST(RibBackpressureTest, RibInQueueConsumerScopeTest) {
 
   auto prefixBatch2 = PrefixPathIds{
       {folly::IPAddress::createNetwork("2::/64"), kDefaultPathID}};
-  folly::coro::blockingWait(
-      ribInQ.push(RibInAnnouncement(eBgpPeer, prefixBatch2, attr)));
+  folly::coro::blockingWait(ribInQ.push(
+      RibInAnnouncement(fboss::kDefaultVrf, eBgpPeer, prefixBatch2, attr)));
   EXPECT_EQ(1, ribInQ.size()); // Push was dropped
 
   /*
@@ -683,16 +685,16 @@ TEST(RibBackpressureTest, RibInQueueConsumerScopeTest) {
   // Step 4: Verify pushes work now that queue is open (ConsumerScope opened it)
   auto prefixBatch3 = PrefixPathIds{
       {folly::IPAddress::createNetwork("3::/64"), kDefaultPathID}};
-  folly::coro::blockingWait(
-      ribInQ.push(RibInAnnouncement(eBgpPeer, prefixBatch3, attr)));
+  folly::coro::blockingWait(ribInQ.push(
+      RibInAnnouncement(fboss::kDefaultVrf, eBgpPeer, prefixBatch3, attr)));
 
   // Push more messages to verify the loop is still running
   for (int i = 0; i < 10; ++i) {
     auto prefix = fmt::format("{}::/64", i);
     auto prefixBatch = PrefixPathIds{
         {folly::IPAddress::createNetwork(prefix), kDefaultPathID}};
-    folly::coro::blockingWait(
-        ribInQ.push(RibInAnnouncement(eBgpPeer, prefixBatch, attr)));
+    folly::coro::blockingWait(ribInQ.push(
+        RibInAnnouncement(fboss::kDefaultVrf, eBgpPeer, prefixBatch, attr)));
   }
 
   // Step 5: Cancel the async scope to stop processRibInMsgLoop
@@ -707,8 +709,8 @@ TEST(RibBackpressureTest, RibInQueueConsumerScopeTest) {
   size_t sizeBeforePush = ribInQ.size();
   auto prefixBatch4 = PrefixPathIds{
       {folly::IPAddress::createNetwork("11::/64"), kDefaultPathID}};
-  folly::coro::blockingWait(
-      ribInQ.push(RibInAnnouncement(eBgpPeer, prefixBatch4, attr)));
+  folly::coro::blockingWait(ribInQ.push(
+      RibInAnnouncement(fboss::kDefaultVrf, eBgpPeer, prefixBatch4, attr)));
   EXPECT_EQ(sizeBeforePush, ribInQ.size()); // Push was dropped
 
   XLOG(INFO, "ProcessRibInMsgLoop ConsumerScope test completed");
@@ -780,8 +782,8 @@ TEST(RibBackpressureTest, RibInQueueConsumerScopeExceptionPathTest) {
   // Step 2: Verify pushes work (queue is open via ConsumerScope)
   auto prefix1 = folly::IPAddress::createNetwork("1::/64");
   auto prefixBatch1 = PrefixPathIds{{prefix1, kDefaultPathID}};
-  folly::coro::blockingWait(
-      ribInQ.push(RibInAnnouncement(eBgpPeer, prefixBatch1, attr)));
+  folly::coro::blockingWait(ribInQ.push(
+      RibInAnnouncement(fboss::kDefaultVrf, eBgpPeer, prefixBatch1, attr)));
 
   /*
    * Verify the announcement was consumed (and hence has been pushed
@@ -815,8 +817,8 @@ TEST(RibBackpressureTest, RibInQueueConsumerScopeExceptionPathTest) {
   size_t sizeBeforePush = ribInQ.size();
   auto prefixBatch2 = PrefixPathIds{
       {folly::IPAddress::createNetwork("2::/64"), kDefaultPathID}};
-  folly::coro::blockingWait(
-      ribInQ.push(RibInAnnouncement(eBgpPeer, prefixBatch2, attr)));
+  folly::coro::blockingWait(ribInQ.push(
+      RibInAnnouncement(fboss::kDefaultVrf, eBgpPeer, prefixBatch2, attr)));
   EXPECT_EQ(sizeBeforePush, ribInQ.size()); // Push was dropped
 
   XLOG(INFO, "ProcessRibInMsgLoop ConsumerScope exception path test completed");

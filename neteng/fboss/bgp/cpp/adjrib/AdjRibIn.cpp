@@ -96,6 +96,7 @@ folly::coro::Task<void> AdjRib::sendRibInAnnouncement(
     const std::shared_ptr<const BgpPath>& attrs) noexcept {
   if (!pfxPathIds.empty()) {
     RibInAnnouncement announcement(
+        peeringParams_.vrfId,
         TinyPeerInfo(
             peeringParams_.peerAddr,
             getRemoteAs(),
@@ -115,6 +116,7 @@ folly::coro::Task<void> AdjRib::sendRibInWithdrawal(
     const PrefixPathIds& pfxPathIds) noexcept {
   if (!pfxPathIds.empty()) {
     RibInWithdrawal withdrawal(
+        peeringParams_.vrfId,
         TinyPeerInfo(
             peeringParams_.peerAddr,
             getRemoteAs(),
@@ -1125,6 +1127,7 @@ std::optional<RibInWithdrawal> AdjRib::collectStaleRoutes(
       pfxPathIds.size());
 
   return RibInWithdrawal(
+      peeringParams_.vrfId,
       TinyPeerInfo(
           peeringParams_.peerAddr,
           getRemoteAs(),
@@ -1258,6 +1261,7 @@ folly::coro::Task<void> AdjRib::cleanupStaleRoutesInPlace(
 
   // Send withdrawals for all stale entries
   RibInWithdrawal withdrawal(
+      peeringParams_.vrfId,
       TinyPeerInfo(
           peeringParams_.peerAddr,
           getRemoteAs(),

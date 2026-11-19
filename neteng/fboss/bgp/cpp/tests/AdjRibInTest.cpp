@@ -9081,6 +9081,7 @@ TEST_F(AdjRibInboundFixture, SchedulePendingRibInPushTrimsReady) {
      */
     PrefixPathIds pfxPathIds{{kV4Prefix1, 1}};
     RibInWithdrawal w(
+        fboss::kDefaultVrf,
         TinyPeerInfo(
             kPeerAddr1,
             kRemoteAs1,
@@ -9118,6 +9119,7 @@ TEST_F(AdjRibInboundFixture, PushStaleWithdrawalPushesToRibInQ) {
   fm_->addTask([&] {
     PrefixPathIds pfxPathIds{{kV4Prefix1, 7}};
     RibInWithdrawal w(
+        fboss::kDefaultVrf,
         TinyPeerInfo(
             kPeerAddr1,
             kRemoteAs1,

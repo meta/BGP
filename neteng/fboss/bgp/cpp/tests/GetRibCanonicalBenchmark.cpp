@@ -36,6 +36,7 @@
 #include <neteng/fboss/bgp/cpp/rib/canonical/CanonicalRibBuilder.h>
 #include <neteng/fboss/bgp/cpp/tests/RibUtils.h>
 #include <neteng/fboss/bgp/cpp/tests/Utils.h>
+#include "fboss/agent/Constants.h"
 
 /*
  * Micro-benchmark: RibBase::getRibEntries (legacy std::vector<TRibEntry>) vs
@@ -232,8 +233,11 @@ class GetRibCanonicalBenchmarkFixture {
 
           PrefixPathIds pfxPathIds;
           pfxPathIds.emplace_back(prefix, kDefaultPathID);
-          co_await ribInQ_.push(
-              RibInAnnouncement(peers[j], std::move(pfxPathIds), path));
+          co_await ribInQ_.push(RibInAnnouncement(
+              facebook::fboss::kDefaultVrf,
+              peers[j],
+              std::move(pfxPathIds),
+              path));
         }
       }
     }());

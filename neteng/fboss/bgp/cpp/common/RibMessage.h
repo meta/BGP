@@ -31,23 +31,34 @@ using PrefixPathId = std::tuple<folly::CIDRNetwork, uint32_t>;
 using PrefixPathIds = std::vector<PrefixPathId>;
 
 struct RibInAnnouncement {
+  // Routing table the paths belong to.
+  const VrfId vrfId;
   const TinyPeerInfo peer;
   const PrefixPathIds pfxPathIds; // v4 or v6 prefixes
   const std::shared_ptr<const BgpPath> attrs;
 
   RibInAnnouncement(
+      VrfId vrfId,
       const TinyPeerInfo& peer,
       PrefixPathIds pfxPathIds,
       const std::shared_ptr<const BgpPath> attrs)
-      : peer(peer), pfxPathIds(std::move(pfxPathIds)), attrs(attrs) {}
+      : vrfId(vrfId),
+        peer(peer),
+        pfxPathIds(std::move(pfxPathIds)),
+        attrs(attrs) {}
 };
 
 struct RibInWithdrawal {
+  // Routing table the paths belong to.
+  const VrfId vrfId;
   const TinyPeerInfo peer;
   const PrefixPathIds pfxPathIds; // v4 or v6 prefixes
 
-  RibInWithdrawal(const TinyPeerInfo& peer, const PrefixPathIds& pfxPathIds)
-      : peer(peer), pfxPathIds(pfxPathIds) {}
+  RibInWithdrawal(
+      VrfId vrfId,
+      const TinyPeerInfo& peer,
+      const PrefixPathIds& pfxPathIds)
+      : vrfId(vrfId), peer(peer), pfxPathIds(pfxPathIds) {}
 };
 
 /*
@@ -62,12 +73,14 @@ struct RibInWithdrawal {
  * expired (budget exhausted) and is forcing computation.
  */
 struct RibInInitialPathComputation {
+  // Routing table to run the initial path computation for.
+  VrfId vrfId;
   std::chrono::milliseconds nexthopResolutionTimeout{0};
 
-  RibInInitialPathComputation() = default;
-  explicit RibInInitialPathComputation(
+  RibInInitialPathComputation(
+      VrfId vrfId,
       std::chrono::milliseconds nexthopResolutionTimeout)
-      : nexthopResolutionTimeout(nexthopResolutionTimeout) {}
+      : vrfId(vrfId), nexthopResolutionTimeout(nexthopResolutionTimeout) {}
 };
 
 // Get full dump from Rib for newly established peers from PeerMgr to Rib
@@ -181,13 +194,16 @@ struct PrefixPathIdBatch {
  * @param batches: whole-prefix batches, at most one per prefix
  */
 struct RibInAddPathGrUpdate {
+  // Routing table the peer's paths belong to.
+  VrfId vrfId;
   TinyPeerInfo peer;
   std::vector<PrefixPathIdBatch> batches;
 
   RibInAddPathGrUpdate(
+      VrfId vrfId,
       TinyPeerInfo peer,
       std::vector<PrefixPathIdBatch> batches)
-      : peer(std::move(peer)), batches(std::move(batches)) {}
+      : vrfId(vrfId), peer(std::move(peer)), batches(std::move(batches)) {}
 };
 
 using RibInMessage = std::variant<

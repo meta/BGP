@@ -15,6 +15,7 @@
  */
 
 #include "neteng/fboss/bgp/cpp/tests/RibUtils.h"
+#include "fboss/agent/Constants.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -950,20 +951,22 @@ void RibFixture::sendRouteFilterPolicySet(TRouteFilterPolicy policy) {
 
 void RibFixture::sendInitialPathComputation(
     std::chrono::milliseconds nexthopResolutionTimeout) {
-  ribInQ_.forcePush(RibInInitialPathComputation(nexthopResolutionTimeout));
+  ribInQ_.forcePush(RibInInitialPathComputation(
+      fboss::kDefaultVrf, nexthopResolutionTimeout));
 }
 
 void RibFixture::sendAnnouncement(
     const PrefixPathIds& pfxPathIds,
     const TinyPeerInfo& peer,
     std::shared_ptr<facebook::bgp::BgpPath> attr) {
-  ribInQ_.fiberPush(RibInAnnouncement(peer, pfxPathIds, attr));
+  ribInQ_.fiberPush(
+      RibInAnnouncement(fboss::kDefaultVrf, peer, pfxPathIds, attr));
 }
 
 void RibFixture::sendWithdrawal(
     const PrefixPathIds& pfxPathIds,
     const TinyPeerInfo& peer) {
-  ribInQ_.fiberPush(RibInWithdrawal(peer, pfxPathIds));
+  ribInQ_.fiberPush(RibInWithdrawal(fboss::kDefaultVrf, peer, pfxPathIds));
 }
 
 // Send announcement to Rib with count number of prefixes
@@ -979,7 +982,8 @@ void RibFixture::sendBulkAnnouncement(
         folly::CIDRNetwork(folly::IPAddress::fromLongHBO(startAddress + i), 32),
         kDefaultPathID);
   }
-  ribInQ_.fiberPush(RibInAnnouncement(peer, std::move(prefixes), attr));
+  ribInQ_.fiberPush(
+      RibInAnnouncement(fboss::kDefaultVrf, peer, std::move(prefixes), attr));
 }
 
 // Send withdrawals to Rib with count number of prefixes
@@ -994,7 +998,8 @@ void RibFixture::sendBulkWithdrawal(
         folly::CIDRNetwork(folly::IPAddress::fromLongHBO(startAddress + i), 32),
         kDefaultPathID);
   }
-  ribInQ_.fiberPush(RibInWithdrawal(peer, std::move(prefixes)));
+  ribInQ_.fiberPush(
+      RibInWithdrawal(fboss::kDefaultVrf, peer, std::move(prefixes)));
 }
 
 // Send message to pause best path computation and Fib programming

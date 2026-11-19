@@ -681,8 +681,8 @@ folly::coro::Task<void> RibBase::processLocalRoutesRoutine() noexcept {
     if (getMinSupportRoutes(localRoute.network) == 0 &&
         !getRequireNhResolution(localRoute.network)) {
       PrefixPathIds pfxPathIds{{prefix, kDefaultPathID}};
-      co_await ribInQ_.push(
-          RibInAnnouncement(kV4LocalPeerInfo, pfxPathIds, localRoute.attrs));
+      co_await ribInQ_.push(RibInAnnouncement(
+          fboss::kDefaultVrf, kV4LocalPeerInfo, pfxPathIds, localRoute.attrs));
     }
   }
 
@@ -2982,7 +2982,10 @@ void RibBase::injectLocalRoutes(
               const auto& localRoute = localRouteOpt.value();
               PrefixPathIds pfxPathIds{{prefix, kDefaultPathID}};
               co_await ribInQ_.push(RibInAnnouncement(
-                  kV4LocalPeerInfo, pfxPathIds, localRoute.attrs));
+                  fboss::kDefaultVrf,
+                  kV4LocalPeerInfo,
+                  pfxPathIds,
+                  localRoute.attrs));
             }));
     folly::coro::blockingWait(std::move(coro));
   }
@@ -3006,8 +3009,8 @@ void RibBase::removeLocalRoutes(const std::set<TIpPrefix>& prefixes) {
         folly::coro::co_invoke(
             [this, prefix = std::move(prefix)]() -> folly::coro::Task<void> {
               PrefixPathIds pfxPathIds{{prefix, kDefaultPathID}};
-              co_await ribInQ_.push(
-                  RibInWithdrawal(kV4LocalPeerInfo, pfxPathIds));
+              co_await ribInQ_.push(RibInWithdrawal(
+                  fboss::kDefaultVrf, kV4LocalPeerInfo, pfxPathIds));
             }));
     folly::coro::blockingWait(std::move(coro));
   }

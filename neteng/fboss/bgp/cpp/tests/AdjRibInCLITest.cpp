@@ -117,29 +117,85 @@ TEST_F(AdjRibInboundFixture, V4GetNetworks) {
       ASSERT_EQ(3, tExtComms->size());
       EXPECT_EQ(
           kExtCommASTypeFirstWord >> 24,
-          ((*tExtComms)[0].u().value().get_two_byte_asn().type().value()));
+          ((*tExtComms)[0]
+               .u()
+               .value()
+               .two_byte_asn()
+               .as_const()
+               .value()
+               .type()
+               .value()));
       EXPECT_EQ(
           kExtCommASTypeFirstWord >> 16 & 0xFF,
-          ((*tExtComms)[0].u().value().get_two_byte_asn().sub_type().value()));
+          ((*tExtComms)[0]
+               .u()
+               .value()
+               .two_byte_asn()
+               .as_const()
+               .value()
+               .sub_type()
+               .value()));
       EXPECT_EQ(
           kExtCommASTypeFirstWord & 0xFFFF,
-          ((*tExtComms)[0].u().value().get_two_byte_asn().asn().value()));
+          ((*tExtComms)[0]
+               .u()
+               .value()
+               .two_byte_asn()
+               .as_const()
+               .value()
+               .asn()
+               .value()));
       EXPECT_EQ(
           kExtCommASTypeSecondWord,
-          ((*tExtComms)[0].u().value().get_two_byte_asn().value().value()));
+          ((*tExtComms)[0]
+               .u()
+               .value()
+               .two_byte_asn()
+               .as_const()
+               .value()
+               .value()
+               .value()));
 
       EXPECT_EQ(
           kExtCommLbwTypeFirstWord >> 24,
-          ((*tExtComms)[1].u().value().get_two_byte_asn().type().value()));
+          ((*tExtComms)[1]
+               .u()
+               .value()
+               .two_byte_asn()
+               .as_const()
+               .value()
+               .type()
+               .value()));
       EXPECT_EQ(
           kExtCommLbwTypeFirstWord >> 16 & 0xFF,
-          ((*tExtComms)[1].u().value().get_two_byte_asn().sub_type().value()));
+          ((*tExtComms)[1]
+               .u()
+               .value()
+               .two_byte_asn()
+               .as_const()
+               .value()
+               .sub_type()
+               .value()));
       EXPECT_EQ(
           kExtCommLbwTypeFirstWord & 0xFFFF,
-          ((*tExtComms)[1].u().value().get_two_byte_asn().asn().value()));
+          ((*tExtComms)[1]
+               .u()
+               .value()
+               .two_byte_asn()
+               .as_const()
+               .value()
+               .asn()
+               .value()));
       EXPECT_EQ(
           kExtCommLbwTypeSecondWord10G,
-          ((*tExtComms)[1].u().value().get_two_byte_asn().value().value()));
+          ((*tExtComms)[1]
+               .u()
+               .value()
+               .two_byte_asn()
+               .as_const()
+               .value()
+               .value()
+               .value()));
     }
     terminateAdjRib();
   });
@@ -220,39 +276,85 @@ TEST_F(AdjRibInboundFixture, V4GetNetworks2_ReceivedNonAddPath) {
         ASSERT_EQ(3, tExtComms->size());
         EXPECT_EQ(
             kExtCommASTypeFirstWord >> 24,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().type().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .type()
+                 .value()));
         EXPECT_EQ(
             kExtCommASTypeFirstWord >> 16 & 0xFF,
             ((*tExtComms)[0]
                  .u()
                  .value()
-                 .get_two_byte_asn()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
                  .sub_type()
                  .value()));
         EXPECT_EQ(
             kExtCommASTypeFirstWord & 0xFFFF,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().asn().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .asn()
+                 .value()));
         EXPECT_EQ(
             kExtCommASTypeSecondWord,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().value().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .value()
+                 .value()));
 
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord >> 24,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().type().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .type()
+                 .value()));
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord >> 16 & 0xFF,
             ((*tExtComms)[1]
                  .u()
                  .value()
-                 .get_two_byte_asn()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
                  .sub_type()
                  .value()));
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord & 0xFFFF,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().asn().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .asn()
+                 .value()));
         EXPECT_EQ(
             kExtCommLbwTypeSecondWord10G,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().value().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .value()
+                 .value()));
       }
     }
     terminateAdjRib();
@@ -347,39 +449,85 @@ TEST_F(AdjRibInboundFixture, V4GetNetworks2_Received) {
         ASSERT_EQ(3, tExtComms->size());
         EXPECT_EQ(
             kExtCommASTypeFirstWord >> 24,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().type().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .type()
+                 .value()));
         EXPECT_EQ(
             kExtCommASTypeFirstWord >> 16 & 0xFF,
             ((*tExtComms)[0]
                  .u()
                  .value()
-                 .get_two_byte_asn()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
                  .sub_type()
                  .value()));
         EXPECT_EQ(
             kExtCommASTypeFirstWord & 0xFFFF,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().asn().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .asn()
+                 .value()));
         EXPECT_EQ(
             kExtCommASTypeSecondWord,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().value().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .value()
+                 .value()));
 
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord >> 24,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().type().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .type()
+                 .value()));
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord >> 16 & 0xFF,
             ((*tExtComms)[1]
                  .u()
                  .value()
-                 .get_two_byte_asn()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
                  .sub_type()
                  .value()));
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord & 0xFFFF,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().asn().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .asn()
+                 .value()));
         EXPECT_EQ(
             kExtCommLbwTypeSecondWord10G,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().value().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .value()
+                 .value()));
       }
     }
     terminateAdjRib();
@@ -461,39 +609,85 @@ TEST_F(AdjRibInboundFixture, V4GetNetworks2_AdvertisedNonAddPath) {
         ASSERT_EQ(3, tExtComms->size());
         EXPECT_EQ(
             kExtCommASTypeFirstWord >> 24,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().type().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .type()
+                 .value()));
         EXPECT_EQ(
             kExtCommASTypeFirstWord >> 16 & 0xFF,
             ((*tExtComms)[0]
                  .u()
                  .value()
-                 .get_two_byte_asn()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
                  .sub_type()
                  .value()));
         EXPECT_EQ(
             kExtCommASTypeFirstWord & 0xFFFF,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().asn().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .asn()
+                 .value()));
         EXPECT_EQ(
             kExtCommASTypeSecondWord,
-            ((*tExtComms)[0].u().value().get_two_byte_asn().value().value()));
+            ((*tExtComms)[0]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .value()
+                 .value()));
 
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord >> 24,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().type().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .type()
+                 .value()));
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord >> 16 & 0xFF,
             ((*tExtComms)[1]
                  .u()
                  .value()
-                 .get_two_byte_asn()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
                  .sub_type()
                  .value()));
         EXPECT_EQ(
             kExtCommLbwTypeFirstWord & 0xFFFF,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().asn().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .asn()
+                 .value()));
         EXPECT_EQ(
             kExtCommLbwTypeSecondWord10G,
-            ((*tExtComms)[1].u().value().get_two_byte_asn().value().value()));
+            ((*tExtComms)[1]
+                 .u()
+                 .value()
+                 .two_byte_asn()
+                 .as_const()
+                 .value()
+                 .value()
+                 .value()));
       }
     }
     terminateAdjRib();

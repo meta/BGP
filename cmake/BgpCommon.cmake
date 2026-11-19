@@ -616,6 +616,7 @@ target_link_libraries(bgp_adjrib
 add_library(bgp_peer_base
   neteng/fboss/bgp/cpp/peer/PeerManagerBase.cpp
   neteng/fboss/bgp/cpp/peer/PeerManagerUtils.cpp
+  neteng/fboss/bgp/cpp/peer/PeerManagerVrf.cpp
   neteng/fboss/bgp/cpp/peer/SessionManager.cpp
 )
 

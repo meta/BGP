@@ -201,6 +201,8 @@ PeerManagerBase::PeerManagerBase(
       eorWaitDuration_(
           std::chrono::seconds(
               *configManager->getConfig()->getConfig().eor_time_s())),
+      defaultVrf_(createVrf(fboss::kDefaultVrf)),
+      quarantineVrf_(createVrf(fboss::kQuarantineVrfId)),
       configManager_(configManager),
       policyManager_(policyManager),
       ribInQ_(ribInQ),
@@ -4235,6 +4237,22 @@ std::shared_ptr<AdjRib> PeerManagerBase::createAdjRib(
     RibStats::incrAdjRibCount();
   }
   return adjRib;
+}
+
+PeerManagerVrf& PeerManagerBase::createVrf(VrfId vrfId) {
+  auto& vrf = vrfContexts_[vrfId];
+  if (!vrf) {
+    vrf = std::make_unique<PeerManagerVrf>(vrfId, *this);
+  }
+  return *vrf;
+}
+
+PeerManagerVrf* FOLLY_NULLABLE PeerManagerBase::findVrf(VrfId vrfId) noexcept {
+  auto match = vrfContexts_.find(vrfId);
+  if (match == vrfContexts_.cend()) {
+    return nullptr;
+  }
+  return match->second.get();
 }
 
 std::shared_ptr<AdjRib> PeerManagerBase::findAdjRib(

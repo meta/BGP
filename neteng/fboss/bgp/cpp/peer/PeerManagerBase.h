@@ -19,8 +19,10 @@
 #include <string_view>
 
 #include <folly/CancellationToken.h>
+#include <folly/CppAttributes.h>
 #include <folly/IPAddress.h>
 #include <folly/Portability.h>
+#include <folly/container/F14Map.h>
 #include <folly/coro/AsyncGenerator.h>
 #include <folly/coro/AsyncScope.h>
 #include <folly/coro/Baton.h>
@@ -41,6 +43,7 @@
 #include "neteng/fboss/bgp/cpp/lib/coro/BackPressuredQueue.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/BgpPeerDisplayInfo.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberBgpPeerManager.h"
+#include "neteng/fboss/bgp/cpp/peer/PeerManagerVrf.h"
 #include "neteng/fboss/bgp/cpp/peer/SessionManager.h"
 #include "neteng/fboss/bgp/cpp/policy/PolicyManager.h"
 #include "neteng/fboss/bgp/cpp/watchdog/MonitoredModule.h"
@@ -628,6 +631,17 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
       std::unique_ptr<PeerToPolicyMap> peerToPolicyNames) noexcept;
 
   bool getIsInitialized() const;
+
+  // Creates the context for @vrfId if it does not exist, and returns it.
+  PeerManagerVrf& createVrf(VrfId vrfId);
+
+  // Returns the context for @vrfId, or nullptr if it does not exist.
+  PeerManagerVrf* FOLLY_NULLABLE findVrf(VrfId vrfId) noexcept;
+
+  PeerManagerVrf& getDefaultVrf() {
+    return defaultVrf_;
+  }
+
   bool getIsSafeModeOn() const;
   void removeSafeModeFile();
   bool getIsGoldenPrefixPolicyActive() const;
@@ -761,6 +775,15 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
 
   // Peer session manager
   std::shared_ptr<SessionManager> sessionMgr_;
+
+  // Per-VRF contexts, keyed by VrfId. Holds the default and quarantine VRFs.
+  folly::F14NodeMap<VrfId, std::unique_ptr<PeerManagerVrf>> vrfContexts_;
+
+  // The default VRF's context in @vrfContexts_.
+  PeerManagerVrf& defaultVrf_;
+
+  // The quarantine VRF's context in @vrfContexts_.
+  PeerManagerVrf& quarantineVrf_;
 
   // A tracker for tracking ShadowRibEntries_ updates
   std::shared_ptr<ChangeTracker<ShadowRibEntry>> changeListTracker_{nullptr};

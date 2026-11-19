@@ -173,6 +173,8 @@ class FiberBgpPeer : public std::enable_shared_from_this<FiberBgpPeer>,
       std::shared_ptr<VersionNumber>& currentVersion);
 
   struct ObservableStateT {
+    // Copied from peeringParams_.vrfId.
+    bgp::VrfId vrfId;
     BgpPeerId peerId;
     BgpSessionState state;
     uint64_t versionNumber;
@@ -187,6 +189,8 @@ class FiberBgpPeer : public std::enable_shared_from_this<FiberBgpPeer>,
       variant<std::shared_ptr<const BgpUpdate2>, BgpEndOfRib, BgpRouteRefresh>;
 
   struct ObservableMessageT {
+    // Copied from peeringParams_.vrfId.
+    bgp::VrfId vrfId;
     BgpPeerId peerId;
     ObservableBgpMessageT message;
   };

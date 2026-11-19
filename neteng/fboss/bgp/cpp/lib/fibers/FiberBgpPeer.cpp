@@ -509,7 +509,8 @@ void FiberBgpPeer::run() noexcept {
   sendBgpMessage(std::move(openMsg));
 
   // state is OPEN_SENT initially
-  observerStateQueue_.put({getRemoteBgpPeerId(), peeringState_.state, 0});
+  observerStateQueue_.put(
+      {peeringParams_.vrfId, getRemoteBgpPeerId(), peeringState_.state, 0});
 
   XLOGF(DBG1, "Peer {} started all fibers", getRemotePeerAddrWithDescription());
 
@@ -561,7 +562,8 @@ void FiberBgpPeer::run() noexcept {
   // notify PeerManagerBase for session DOWN
   peeringState_.state = BgpSessionState::IDLE;
   observerStateQueue_.put(
-      {getRemoteBgpPeerId(),
+      {peeringParams_.vrfId,
+       getRemoteBgpPeerId(),
        peeringState_.state,
        0,
        peeringState_.remoteAs,
@@ -1108,7 +1110,8 @@ void FiberBgpPeer::processOpenMsg(const BgpOpenMsg& msg) {
         scheduleBgpKeepAliveTimer();
       }
       peeringState_.state = BgpSessionState::OPEN_CONFIRM;
-      observerStateQueue_.put({getRemoteBgpPeerId(), peeringState_.state, 0});
+      observerStateQueue_.put(
+          {peeringParams_.vrfId, getRemoteBgpPeerId(), peeringState_.state, 0});
 
       break;
     }
@@ -1209,7 +1212,8 @@ void FiberBgpPeer::processKeepAliveMsg() {
       peeringState_.state = BgpSessionState::ESTABLISHED;
       grNotification_ =
           isGrNotificationNegotiated(peeringState_.negotiatedCapabilities);
-      observerStateQueue_.put({getRemoteBgpPeerId(), peeringState_.state, 0});
+      observerStateQueue_.put(
+          {peeringParams_.vrfId, getRemoteBgpPeerId(), peeringState_.state, 0});
       break;
     }
     case BgpSessionState::IDLE:
@@ -1230,7 +1234,8 @@ folly::coro::Task<void> FiberBgpPeer::processBgpUpdateMsg(
   if (oqueue_) {
     co_await oqueue_->push(msg);
   }
-  observerRcvdMessageQueue_.put({getRemoteBgpPeerId(), msg});
+  observerRcvdMessageQueue_.put(
+      {peeringParams_.vrfId, getRemoteBgpPeerId(), msg});
   co_return;
 }
 
@@ -1239,7 +1244,8 @@ folly::coro::Task<void> FiberBgpPeer::processBgpEndOfRibMsg(
   if (oqueue_) {
     co_await oqueue_->push(msg);
   }
-  observerRcvdMessageQueue_.put({getRemoteBgpPeerId(), msg});
+  observerRcvdMessageQueue_.put(
+      {peeringParams_.vrfId, getRemoteBgpPeerId(), msg});
   co_return;
 }
 
@@ -1250,7 +1256,8 @@ void FiberBgpPeer::processBgpNotificationMsg(const BgpNotification& msg) {
     }
     default: {
       peeringState_.state = BgpSessionState::IDLE;
-      observerStateQueue_.put({getRemoteBgpPeerId(), peeringState_.state, 0});
+      observerStateQueue_.put(
+          {peeringParams_.vrfId, getRemoteBgpPeerId(), peeringState_.state, 0});
       errorQueue_.put(BgpNotificationError{msg});
       break;
     }
@@ -1262,7 +1269,8 @@ folly::coro::Task<void> FiberBgpPeer::processBgpRouteRefreshMsg(
   if (oqueue_) {
     co_await oqueue_->push(msg);
   }
-  observerRcvdMessageQueue_.put({getRemoteBgpPeerId(), msg});
+  observerRcvdMessageQueue_.put(
+      {peeringParams_.vrfId, getRemoteBgpPeerId(), msg});
   co_return;
 }
 

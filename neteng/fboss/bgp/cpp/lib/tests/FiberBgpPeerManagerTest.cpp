@@ -1060,6 +1060,7 @@ TEST_F(FiberBgpPeerManagerFixture, BgpSessionUpCoroNotifyQueueTest) {
   auto state1 = std::get<FiberBgpPeer::ObservableStateT>(stateEvt1);
   EXPECT_EQ(state1.state, BgpSessionState::ESTABLISHED);
   EXPECT_EQ(100, state1.remoteAs);
+  EXPECT_EQ(facebook::fboss::kDefaultVrf, state1.vrfId);
 
   auto stateEvt2 = facebook::bgp::test::boundedBlockingPop(
       peerMgr1->getNotifyCoroQueue(), "peerMgr1->getNotifyCoroQueue()");
@@ -1067,6 +1068,7 @@ TEST_F(FiberBgpPeerManagerFixture, BgpSessionUpCoroNotifyQueueTest) {
       std::holds_alternative<FiberBgpPeer::ObservableStateT>(stateEvt2));
   auto state2 = std::get<FiberBgpPeer::ObservableStateT>(stateEvt2);
   EXPECT_NE(state2.state, BgpSessionState::ESTABLISHED);
+  EXPECT_EQ(facebook::fboss::kDefaultVrf, state2.vrfId);
 }
 
 /*

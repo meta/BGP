@@ -298,7 +298,7 @@ void AdjRibOutboundFixture::setupAdjRibForOutUnitTest() {
   );
 }
 
-RibOutMessage AdjRibOutboundFixture::buildAnnouncementFromMap(
+RibOutPayload AdjRibOutboundFixture::buildAnnouncementFromMap(
     const folly::F14NodeMap<
         std::shared_ptr<BgpPath>,
         std::vector<folly::CIDRNetwork>>& entries,
@@ -315,11 +315,11 @@ RibOutMessage AdjRibOutboundFixture::buildAnnouncementFromMap(
       ribMsg.entries.emplace_back(pfx, kDefaultPathID, peerInfo, attrs);
     }
   }
-  return RibOutMessage(ribMsg);
+  return RibOutPayload(ribMsg);
 }
 
 // RIB update with prefilled attributes and multiple v4 or v6 announced prefix
-RibOutMessage createRibMultipleAnnounce(
+RibOutPayload createRibMultipleAnnounce(
     const std::vector<folly::CIDRNetwork>& prefixes,
     const folly::IPAddress& nexthop,
     const TinyPeerInfo& peer,
@@ -589,14 +589,14 @@ bool verifyRouteAttributes(
 }
 
 // RIB update for single v4 or v6 withdrawal prefix
-RibOutMessage createRibSingleWithdrawal(const folly::CIDRNetwork& prefix) {
+RibOutPayload createRibSingleWithdrawal(const folly::CIDRNetwork& prefix) {
   RibOutWithdrawal ribMsg;
   ribMsg.entries.emplace_back(prefix, kDefaultPathID);
   return ribMsg;
 }
 
 // RIB update for single v4 or v6 withdrawal prefix
-RibOutMessage createRibSingleWithdrawalForAddPath(
+RibOutPayload createRibSingleWithdrawalForAddPath(
     const folly::CIDRNetwork& prefix,
     const folly::IPAddress& nh,
     const uint32_t pathIdToSend) {

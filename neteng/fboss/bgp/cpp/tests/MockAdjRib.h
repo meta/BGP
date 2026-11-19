@@ -66,7 +66,7 @@ class MockAdjRib : public AdjRib {
      * MockAdjRib that don't care about rib-dump delivery are unaffected.
      */
     ON_CALL(*this, processRibMessage(testing::_))
-        .WillByDefault([this](const RibOutMessage& update) {
+        .WillByDefault([this](const RibOutPayload& update) {
           AdjRib::processRibMessage(update);
         });
   }
@@ -81,7 +81,7 @@ class MockAdjRib : public AdjRib {
   MOCK_METHOD(
       void,
       processRibMessage,
-      (const RibOutMessage& update),
+      (const RibOutPayload& update),
       (noexcept, override));
 };
 

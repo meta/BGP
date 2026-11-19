@@ -31,6 +31,7 @@
 #include "magic_enum/magic_enum.hpp"
 
 #include "common/network/AddressUtil.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/BgpProfiler.h"
 #include "neteng/fboss/bgp/cpp/BgpServiceUtil.h"
 #include "neteng/fboss/bgp/cpp/common/BgpError.h"
@@ -2237,7 +2238,8 @@ void RibBase::handleFibProgrammedMessage(
      * This msg MUST be enqueued BEFORE
      * the first RibAnnouncement only if sendWithEoR is true.
      */
-    ribOutQ_.push(RibInitialAnnouncementStart{});
+    ribOutQ_.push(
+        RibOutMessage{fboss::kDefaultVrf, RibInitialAnnouncementStart{}});
 
     // log BGP++ initialization event
     BgpStats::logInitializationEvent("Rib", BgpInitializationEvent::EOR_SENT);

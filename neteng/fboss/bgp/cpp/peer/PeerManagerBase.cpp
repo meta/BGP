@@ -1419,7 +1419,7 @@ folly::coro::Task<void> PeerManagerBase::processRibOutMsgLoop() noexcept {
     }
 
     folly::variant_match(
-        *msg,
+        msg->payload,
         [&](RibOutAnnouncement& announcement) {
           /*
            * Incremental announcements come to PeerManagerBase, which will be

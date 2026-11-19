@@ -21,6 +21,7 @@
 #include "neteng/fboss/bgp/cpp/common/BgpPath.h"
 #include "neteng/fboss/bgp/cpp/common/RouteInfo.h"
 #include "neteng/fboss/bgp/cpp/common/Structs.h"
+#include "neteng/fboss/bgp/cpp/common/Types.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpStructs.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopStatus.h"
 
@@ -511,11 +512,20 @@ using ShadowRibEntry = ShadowRibOutAnnouncementEntry;
  */
 struct RibInitialAnnouncementStart {};
 
-using RibOutMessage = std::variant<
+using RibOutPayload = std::variant<
     RibOutAnnouncement,
     RibOutWithdrawal,
     ShadowRibOutAnnouncement,
     ShadowRibOutWithdrawal,
     RibInitialAnnouncementStart>;
+
+/*
+ * Envelope for ribOutQ_. The routing table is carried once per message
+ * rather than in every announcement or withdrawal entry.
+ */
+struct RibOutMessage {
+  VrfId vrfId;
+  RibOutPayload payload;
+};
 
 } // namespace facebook::bgp

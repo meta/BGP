@@ -269,6 +269,7 @@
 
 #include <fb303/ThreadCachedServiceData.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigManager.h"
 #include "neteng/fboss/bgp/cpp/peer/SessionManager.h"
 #include "neteng/fboss/bgp/cpp/tests/BoundedWaitUtils.h"
@@ -916,7 +917,7 @@ TEST_F(PeerManagerTestFixture, ThriftStreamSubscribePreInitializationTest) {
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(message));
     auto announcement = std::get<RibOutAnnouncement>(message);
     EXPECT_TRUE(announcement.initialDump);
-    ribOutQ_.push(announcement);
+    ribOutQ_.push(RibOutMessage{fboss::kDefaultVrf, announcement});
   });
 
   folly::Synchronized<std::optional<neteng::fboss::bgp::thrift::TBgpRouteDelta>>
@@ -1023,7 +1024,7 @@ TEST_F(StreamSubscriberFixture, ThriftStreamSubscribePostInitializationTest) {
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(message));
     auto announcement = std::get<RibOutAnnouncement>(message);
     EXPECT_TRUE(announcement.initialDump);
-    ribOutQ_.push(announcement);
+    ribOutQ_.push(RibOutMessage{fboss::kDefaultVrf, announcement});
   });
 
   folly::Synchronized<std::optional<neteng::fboss::bgp::thrift::TBgpRouteDelta>>

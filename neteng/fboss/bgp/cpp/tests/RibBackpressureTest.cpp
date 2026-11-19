@@ -324,18 +324,18 @@ TEST_F(
      */
     WITH_RETRIES({ ASSERT_EVENTUALLY_TRUE(ribOutQ_.size() == 4); });
     // RibInitialAnnouncementStart
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
 
     std::vector<RibOutAnnouncement> rcvdAnnouncements;
 
     // Announcement 1
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     rcvdAnnouncements.emplace_back(std::get<RibOutAnnouncement>(msg));
 
     // Announcement 2
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     rcvdAnnouncements.emplace_back(std::get<RibOutAnnouncement>(msg));
 
@@ -348,7 +348,7 @@ TEST_F(
     EXPECT_FALSE(rcvdAnnouncements[1].initialDump);
 
     // pop last message out
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   }
   /*
    * Case 2: Send 1 RibAnnouncement when local Rib thread operations are
@@ -376,7 +376,7 @@ TEST_F(
 
     // Test expects to see 1 withdrawal
     WITH_RETRIES({ ASSERT_EVENTUALLY_TRUE(ribOutQ_.size() == 1); });
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   }
 }

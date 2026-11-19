@@ -73,7 +73,7 @@ class AdjRibOutboundFixture : public ::testing::Test {
    * @brief: Call processRibMessage directly on the adjRib. If backpressure
    * is enabled, also schedule sendBgpUpdates.
    *
-   * @details: Templated function to accept any instance of RibOutMessage
+   * @details: Templated function to accept any instance of RibOutPayload
    * variant. Mimics the flow when simulating an announcement or withdrawal
    * from RIB.
    *
@@ -92,7 +92,7 @@ class AdjRibOutboundFixture : public ::testing::Test {
    */
   template <typename T>
   void pushRibOutMsgToAdjRib(T&& msg) {
-    RibOutMessage ribOutMsg(std::forward<T>(msg));
+    RibOutPayload ribOutMsg(std::forward<T>(msg));
     adjRib_->processRibMessage(ribOutMsg);
     adjRib_->scheduleSendBgpUpdates(true /* tryPullNewChangeItems */);
   }
@@ -130,7 +130,7 @@ class AdjRibOutboundFixture : public ::testing::Test {
     co_return msg;
   }
 
-  RibOutMessage buildAnnouncementFromMap(
+  RibOutPayload buildAnnouncementFromMap(
       const folly::F14NodeMap<
           std::shared_ptr<BgpPath>,
           std::vector<folly::CIDRNetwork>>& entries,
@@ -289,18 +289,18 @@ class AdjRibOutboundFixtureBooleanSuite
       public testing::WithParamInterface<bool> {};
 
 // RIB update with prefilled attributes and multiple v4 or v6 announced prefix
-RibOutMessage createRibMultipleAnnounce(
+RibOutPayload createRibMultipleAnnounce(
     const std::vector<folly::CIDRNetwork>& prefixes,
     const folly::IPAddress& nexthop,
     const TinyPeerInfo& peer,
     bool sendWithEoR);
 
 // RIB update for single v4 or v6 withdrawal prefix
-RibOutMessage createRibSingleWithdrawal(
+RibOutPayload createRibSingleWithdrawal(
     const folly::CIDRNetwork& prefix = kV4Prefix1);
 
 // RIB update for single v4 or v6 withdrawal prefix for addPath
-RibOutMessage createRibSingleWithdrawalForAddPath(
+RibOutPayload createRibSingleWithdrawalForAddPath(
     const folly::CIDRNetwork& prefix,
     const folly::IPAddress& nh,
     const uint32_t pathIdToSend);

@@ -561,11 +561,11 @@ TEST_P(
 
   {
     // Message marker for start of initial announcements
-    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(eorMsg));
 
     // Initial RibOutAnnouncements
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     EXPECT_TRUE(announcement.entries.empty());
@@ -626,7 +626,7 @@ TEST_P(
   // With partial drain, bestpath is retained and announced
   WITH_RETRIES({ ASSERT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -645,7 +645,7 @@ TEST_P(
 
   // expect announcement to peers
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -665,7 +665,7 @@ TEST_P(
   // With partial drain, bestpath is retained — re-announcement, not withdrawal
   WITH_RETRIES({ ASSERT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -687,7 +687,7 @@ TEST_P(
 
   WITH_RETRIES({ ASSERT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -709,7 +709,7 @@ TEST_P(
   // With partial drain, bestpath is retained — re-announcement, not withdrawal
   WITH_RETRIES({ ASSERT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -729,7 +729,7 @@ TEST_P(
   // expect announcement to peers
   WITH_RETRIES({ ASSERT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -920,11 +920,11 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsRelaxTest) {
 
   {
     // Message marker for start of initial announcements
-    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(eorMsg));
 
     // Initial RibOutAnnouncements
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     EXPECT_TRUE(announcement.entries.empty());
@@ -986,7 +986,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsRelaxTest) {
 
   // expect announcement to peers
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -1003,7 +1003,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsRelaxTest) {
 
   // Expect withdrawal from peers
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
     auto withdrawal = std::get<RibOutWithdrawal>(msg);
     ASSERT_EQ(1, withdrawal.entries.size());
@@ -1030,7 +1030,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsRelaxTest) {
 
   // expect announcement to peers since policy is cleared
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   }
 }
@@ -1203,11 +1203,11 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsTest) {
 
   {
     // Message marker for start of initial announcements
-    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(eorMsg));
 
     // Initial RibOutAnnouncements
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     EXPECT_TRUE(announcement.entries.empty());
@@ -1267,7 +1267,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsTest) {
 
   // expect announcement to peers
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -1284,7 +1284,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsTest) {
 
   // Expect withdrawal from peers
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   }
 
@@ -1334,11 +1334,11 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsMissingLbwTest) {
 
   {
     // Message marker for start of initial announcements
-    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(eorMsg));
 
     // Initial RibOutAnnouncements
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   }
 
@@ -1380,7 +1380,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsMissingLbwTest) {
 
   // expect announcement to peers (BGP fallback, not filtered)
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -1425,11 +1425,11 @@ TEST_P(RibFixtureAddPathTestSuite, AnnouncementTest) {
 
   {
     // Message marker for start of initial announcements
-    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto eorMsg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(eorMsg));
 
     // Initial RibOutAnnouncements
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -1458,7 +1458,7 @@ TEST_P(RibFixtureAddPathTestSuite, AnnouncementTest) {
     EXPECT_EQ(nullptr, ribEntry.getBestPath());
 
     // Ensure that the change be announced to the neighbor
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
     auto withdrawal = std::get<RibOutWithdrawal>(msg);
     ASSERT_EQ(1, withdrawal.entries.size());
@@ -1484,7 +1484,7 @@ TEST_P(RibFixtureAddPathTestSuite, AnnouncementTest) {
     EXPECT_EQ(1, rib_->fibItems.size());
 
     // Ensure that the change be announced to the neighbor
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());

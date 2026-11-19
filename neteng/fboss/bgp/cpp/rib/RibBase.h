@@ -33,8 +33,10 @@
 #include <folly/io/async/EventBase.h>
 
 #include "configerator/structs/neteng/fboss/bgp/gen-cpp2/bgp_config_types.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/common/BgpModuleBase.h"
 #include "neteng/fboss/bgp/cpp/common/BgpPath.h"
+#include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/RibMessage.h"
 #include "neteng/fboss/bgp/cpp/common/RouteInfo.h"
 #include "neteng/fboss/bgp/cpp/common/Structs.h"
@@ -245,7 +247,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    */
   template <typename T>
   void ribOutQPushAndMayPauseBestPathAndFibProgramming(T&& val) {
-    ribOutQ_.push(std::forward<T>(val));
+    ribOutQ_.push(RibOutMessage{fboss::kDefaultVrf, std::forward<T>(val)});
 
     if (ribOutQ_.size() > ribOutQHighWatermark_) {
       XLOGF(INFO, "Pause RIB as ribOutQ size : {}", ribOutQ_.size());

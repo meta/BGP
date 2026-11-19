@@ -43,7 +43,7 @@ std::unique_ptr<nettools::bgplib::BgpUpdate2> createBgpUpdate2(
     uint32_t num,
     folly::IPAddress nexthop);
 
-RibOutMessage createRibSingleAnnounce(
+RibOutPayload createRibSingleAnnounce(
     const folly::CIDRNetwork& prefix = kV4Prefix1,
     const folly::IPAddress& nexthop = kV4Nexthop1,
     AsNum ribEntryAs = kLocalRouteAs,
@@ -51,7 +51,7 @@ RibOutMessage createRibSingleAnnounce(
     bool addPath = false,
     uint32_t pathIdToSend = kDefaultPathID);
 
-RibOutMessage createRibInitialSingleAnnounce(
+RibOutPayload createRibInitialSingleAnnounce(
     const folly::CIDRNetwork& prefix = kV4Prefix1,
     const folly::IPAddress& nexthop = kV4Nexthop1,
     AsNum ribEntryAs = kLocalRouteAs,

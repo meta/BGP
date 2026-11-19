@@ -290,7 +290,7 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
     rib_->ribEntries_.emplace(kV4Prefix1, entry);
     inputQ.push(std::move(fibMsg));
 
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
 
@@ -415,7 +415,7 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
     Fib::FibProgrammedMessage fibMsg(FibProgrammedPfxs, false /* fullSync */);
     inputQ.push(std::move(fibMsg));
 
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -466,7 +466,7 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
 
     if (GetParam()) {
       // expect one withdraw
-      msg = folly::coro::blockingWait(ribOutQ_.pop());
+      msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
       auto withdrawal = std::get<RibOutWithdrawal>(msg);
       ASSERT_EQ(1, withdrawal.addPathEntries.size());
@@ -475,7 +475,7 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
     }
 
     // expect one announcement
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement3 = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement3.entries.size());
@@ -520,12 +520,12 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
 
     // Expect RibInitialAnnouncementStart before initial announcement.
     auto ribInitialAnnouncementStart =
-        folly::coro::blockingWait(ribOutQ_.pop());
+        folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(
         std::holds_alternative<RibInitialAnnouncementStart>(
             ribInitialAnnouncementStart));
 
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -777,18 +777,18 @@ TEST_F(RibFixture, PauseAndResumeBestPathAndFibProgrammingTest) {
      */
     WITH_RETRIES({ ASSERT_EVENTUALLY_TRUE(ribOutQ_.size() == 4); });
     // RibInitialAnnouncementStart
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
 
     std::vector<RibOutAnnouncement> rcvdAnnouncements;
 
     // Announcement 1
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     rcvdAnnouncements.emplace_back(std::get<RibOutAnnouncement>(msg));
 
     // Announcement 2
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     rcvdAnnouncements.emplace_back(std::get<RibOutAnnouncement>(msg));
 
@@ -801,7 +801,7 @@ TEST_F(RibFixture, PauseAndResumeBestPathAndFibProgrammingTest) {
     EXPECT_FALSE(rcvdAnnouncements[1].initialDump);
 
     // pop last message out
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   }
   /*
    * Case 2: Send 1 RibAnnouncement when local Rib thread operations are
@@ -829,7 +829,7 @@ TEST_F(RibFixture, PauseAndResumeBestPathAndFibProgrammingTest) {
 
     // Test expects to see 1 withdrawal
     WITH_RETRIES({ ASSERT_EVENTUALLY_TRUE(ribOutQ_.size() == 1); });
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   }
 }
@@ -867,10 +867,10 @@ TEST_F(RibFixture, DefaultStateAndPauseBestPathAndFibProgrammingTest) {
    * only one announcement (One before local RIB thread was paused).
    */
   WITH_RETRIES({ ASSERT_EVENTUALLY_TRUE(ribOutQ_.size() == 2); });
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(2, announcement.entries.size());
@@ -1033,7 +1033,7 @@ TEST_F(RibFixture, FibFlushedCounterTest) {
     inputQ.push(std::move(fibMsg));
 
     // Wait for the message to be processed
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
     // Verify counter was NOT incremented (ribEntries_ still has 2 entries)

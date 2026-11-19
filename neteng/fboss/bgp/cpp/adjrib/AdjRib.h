@@ -1322,7 +1322,7 @@ class AdjRib : boost::noncopyable,
    * process a single Rib Update. virtual so tests can spy on rib-dump delivery
    * via MockAdjRib.
    */
-  virtual void processRibMessage(const RibOutMessage& update) noexcept;
+  virtual void processRibMessage(const RibOutPayload& update) noexcept;
 
   /*
    * This function enables or disables the update-group state machine for this

@@ -156,6 +156,7 @@
 #include <gtest/gtest.h>
 
 #include "common/network/AddressUtil.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigManager.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
 #include "neteng/fboss/bgp/cpp/tests/BoundedWaitUtils.h"
@@ -1135,7 +1136,8 @@ CO_TEST_F(RibInitialAnnouncementTestFixture, RibInitialAnnouncementStartTest) {
   // Start processRibOutMsgLoop and push RibInitialAnnouncementStart.
   peerMgr_->asyncScope_.add(
       co_withExecutor(&evb, peerMgr_->processRibOutMsgLoop()));
-  ribOutQ_.push(RibInitialAnnouncementStart{});
+  ribOutQ_.push(
+      RibOutMessage{fboss::kDefaultVrf, RibInitialAnnouncementStart{}});
 
   /*
    * Wait for ribOutQ_ to drain, then synchronize with the EVB thread to
@@ -1651,7 +1653,7 @@ TEST_F(
       std::get<RibOutAnnouncement>(v6Announcement));
 
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_))
-      .WillOnce([](const RibOutMessage& message) {
+      .WillOnce([](const RibOutPayload& message) {
         ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(message));
         const auto& announcement = std::get<RibOutAnnouncement>(message);
         EXPECT_TRUE(announcement.routeRefreshAfi.has_value());
@@ -1693,7 +1695,7 @@ TEST_F(
 
   bool delivered = false;
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_))
-      .WillOnce([&](const RibOutMessage& message) {
+      .WillOnce([&](const RibOutPayload& message) {
         delivered = true;
         ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(message));
         const auto& announcement = std::get<RibOutAnnouncement>(message);
@@ -1742,7 +1744,7 @@ TEST_F(
       std::get<RibOutAnnouncement>(v6Announcement));
 
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_))
-      .WillOnce([](const RibOutMessage& message) {
+      .WillOnce([](const RibOutPayload& message) {
         ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(message));
         const auto& announcement = std::get<RibOutAnnouncement>(message);
         EXPECT_FALSE(announcement.routeRefreshAfi.has_value());
@@ -1820,7 +1822,7 @@ TEST_F(
   std::vector<folly::CIDRNetwork> replayedPrefixes;
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_))
       .Times(2)
-      .WillRepeatedly([&](const RibOutMessage& message) {
+      .WillRepeatedly([&](const RibOutPayload& message) {
         ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(message));
         const auto& announcement = std::get<RibOutAnnouncement>(message);
         EXPECT_TRUE(announcement.routeRefreshAfi.has_value());
@@ -2079,7 +2081,7 @@ TEST_F(
    */
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_))
       .Times(1)
-      .WillOnce([](const RibOutMessage& message) {
+      .WillOnce([](const RibOutPayload& message) {
         ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(message));
         EXPECT_FALSE(
             std::get<RibOutAnnouncement>(message).routeRefreshAfi.has_value());
@@ -2511,21 +2513,28 @@ CO_TEST_F(
       co_withExecutor(&evb, peerMgr_->processRibOutMsgLoop()));
 
   // Simulate RIB starting initial dump with two RibOutAnnouncements.
-  ribOutQ_.push(RibInitialAnnouncementStart{});
+  ribOutQ_.push(
+      RibOutMessage{fboss::kDefaultVrf, RibInitialAnnouncementStart{}});
 
-  ribOutQ_.push(createRibInitialSingleAnnounce(
-      kV4Prefix1,
-      kV4Nexthop1,
-      kLocalRouteAs,
-      false /* sendWithEoR */,
-      false /* sendAddPath */));
+  ribOutQ_.push(
+      RibOutMessage{
+          fboss::kDefaultVrf,
+          createRibInitialSingleAnnounce(
+              kV4Prefix1,
+              kV4Nexthop1,
+              kLocalRouteAs,
+              false /* sendWithEoR */,
+              false /* sendAddPath */)});
 
-  ribOutQ_.push(createRibInitialSingleAnnounce(
-      kV4Prefix2,
-      kV4Nexthop2,
-      kLocalRouteAs,
-      true /* sendWithEoR */,
-      false /* sendAddPath */));
+  ribOutQ_.push(
+      RibOutMessage{
+          fboss::kDefaultVrf,
+          createRibInitialSingleAnnounce(
+              kV4Prefix2,
+              kV4Nexthop2,
+              kLocalRouteAs,
+              true /* sendWithEoR */,
+              false /* sendAddPath */)});
 
   // Expect 2 announcements and 1 EOR.
   co_await verifyTwoAnnouncementsWithEoR();
@@ -2569,14 +2578,18 @@ CO_TEST_F(
       .sessionInfo = sessionInfo_};
 
   // Simulate RIB starting initial dump with two RibOutAnnouncements.
-  ribOutQ_.push(RibInitialAnnouncementStart{});
+  ribOutQ_.push(
+      RibOutMessage{fboss::kDefaultVrf, RibInitialAnnouncementStart{}});
 
-  ribOutQ_.push(createRibInitialSingleAnnounce(
-      kV4Prefix1,
-      kV4Nexthop1,
-      kLocalRouteAs,
-      false /* sendWithEoR */,
-      false /* sendAddPath */));
+  ribOutQ_.push(
+      RibOutMessage{
+          fboss::kDefaultVrf,
+          createRibInitialSingleAnnounce(
+              kV4Prefix1,
+              kV4Nexthop1,
+              kLocalRouteAs,
+              false /* sendWithEoR */,
+              false /* sendAddPath */)});
 
   /*
    * Wait for ribOutQ_ to drain, then synchronize with the EVB thread to
@@ -2599,12 +2612,15 @@ CO_TEST_F(
    */
   EXPECT_FALSE(peerMgr_->adjRibs_[kPeerId3]->inInitialAnnouncement());
 
-  ribOutQ_.push(createRibInitialSingleAnnounce(
-      kV4Prefix2,
-      kV4Nexthop2,
-      kLocalRouteAs,
-      true /* sendWithEoR */,
-      false /* sendAddPath */));
+  ribOutQ_.push(
+      RibOutMessage{
+          fboss::kDefaultVrf,
+          createRibInitialSingleAnnounce(
+              kV4Prefix2,
+              kV4Nexthop2,
+              kLocalRouteAs,
+              true /* sendWithEoR */,
+              false /* sendAddPath */)});
 
   // Expect 2 announcements and 1 EOR.
   co_await verifyTwoAnnouncementsWithEoR();
@@ -2653,7 +2669,8 @@ CO_TEST_F(
       .sessionInfo = sessionInfo_};
 
   // Simulate RIB starting initial dump.
-  ribOutQ_.push(RibInitialAnnouncementStart{});
+  ribOutQ_.push(
+      RibOutMessage{fboss::kDefaultVrf, RibInitialAnnouncementStart{}});
 
   // Wait for ribOutQ_ to drain, then synchronize with the EVB thread.
   while (!ribOutQ_.empty()) {
@@ -2672,12 +2689,15 @@ CO_TEST_F(
   // There should be ONE pending rib dump req for this peer.
   EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
 
-  ribOutQ_.push(createRibInitialSingleAnnounce(
-      kV4Prefix1,
-      kV4Nexthop1,
-      kLocalRouteAs,
-      false /* sendWithEoR */,
-      false /* sendAddPath */));
+  ribOutQ_.push(
+      RibOutMessage{
+          fboss::kDefaultVrf,
+          createRibInitialSingleAnnounce(
+              kV4Prefix1,
+              kV4Nexthop1,
+              kLocalRouteAs,
+              false /* sendWithEoR */,
+              false /* sendAddPath */)});
 
   /*
    * Drain ribOutQ_ and synchronize with the EVB thread so this announcement is
@@ -2722,12 +2742,15 @@ CO_TEST_F(
   // There should be 1 pending rib dump req for this peer.
   EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
 
-  ribOutQ_.push(createRibInitialSingleAnnounce(
-      kV4Prefix2,
-      kV4Nexthop2,
-      kLocalRouteAs,
-      true /* sendWithEoR */,
-      false /* sendAddPath */));
+  ribOutQ_.push(
+      RibOutMessage{
+          fboss::kDefaultVrf,
+          createRibInitialSingleAnnounce(
+              kV4Prefix2,
+              kV4Nexthop2,
+              kLocalRouteAs,
+              true /* sendWithEoR */,
+              false /* sendAddPath */)});
 
   // Expect 2 announcements and 1 EOR.
   co_await verifyTwoAnnouncementsWithEoR();
@@ -2775,21 +2798,28 @@ CO_TEST_F(
       .sessionInfo = sessionInfo_};
 
   // Simulate RIB starting initial dump with two RibOutAnnouncements.
-  ribOutQ_.push(RibInitialAnnouncementStart{});
+  ribOutQ_.push(
+      RibOutMessage{fboss::kDefaultVrf, RibInitialAnnouncementStart{}});
 
-  ribOutQ_.push(createRibInitialSingleAnnounce(
-      kV4Prefix1,
-      kV4Nexthop1,
-      kLocalRouteAs,
-      false /* sendWithEoR */,
-      false /* sendAddPath */));
+  ribOutQ_.push(
+      RibOutMessage{
+          fboss::kDefaultVrf,
+          createRibInitialSingleAnnounce(
+              kV4Prefix1,
+              kV4Nexthop1,
+              kLocalRouteAs,
+              false /* sendWithEoR */,
+              false /* sendAddPath */)});
 
-  ribOutQ_.push(createRibInitialSingleAnnounce(
-      kV4Prefix2,
-      kV4Nexthop2,
-      kLocalRouteAs,
-      true /* sendWithEoR */,
-      false /* sendAddPath */));
+  ribOutQ_.push(
+      RibOutMessage{
+          fboss::kDefaultVrf,
+          createRibInitialSingleAnnounce(
+              kV4Prefix2,
+              kV4Nexthop2,
+              kLocalRouteAs,
+              true /* sendWithEoR */,
+              false /* sendAddPath */)});
 
   // Verify that all rib out messages were processed.
   while (!ribOutQ_.empty()) {
@@ -2893,7 +2923,7 @@ TEST_F(PeerManagerTestFixture, ReplicateRibMessageInitialadjRibsTest) {
   fm.addTask([&] {
     auto ribMsg =
         createRibSingleAnnounce(kV4Prefix1, kV4Nexthop1, kLocalRouteAs, true);
-    ribOutQ_.push(std::move(ribMsg));
+    ribOutQ_.push(RibOutMessage{fboss::kDefaultVrf, std::move(ribMsg)});
   });
 
   fm.addTask([&] {

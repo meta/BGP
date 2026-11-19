@@ -230,7 +230,7 @@ void AdjRib::processShadowRibEntryFullMultipaths(
   }
 }
 
-void AdjRib::processRibMessage(const RibOutMessage& ribMsg) noexcept {
+void AdjRib::processRibMessage(const RibOutPayload& ribMsg) noexcept {
   folly::variant_match(
       ribMsg,
       [this](const RibOutAnnouncement& announcement) {

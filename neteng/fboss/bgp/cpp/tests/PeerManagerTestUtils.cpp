@@ -82,7 +82,7 @@ std::unique_ptr<BgpUpdate2> createBgpUpdate2(
 }
 
 // RIB update with prefilled attributes and single v4 or v6 announced prefix
-RibOutMessage createRibSingleAnnounce(
+RibOutPayload createRibSingleAnnounce(
     const folly::CIDRNetwork& prefix,
     const folly::IPAddress& nexthop,
     AsNum ribEntryAs,
@@ -112,7 +112,7 @@ RibOutMessage createRibSingleAnnounce(
 }
 
 // RIB update with prefilled attributes and single v4 or v6 announced prefix
-RibOutMessage createRibInitialSingleAnnounce(
+RibOutPayload createRibInitialSingleAnnounce(
     const folly::CIDRNetwork& prefix,
     const folly::IPAddress& nexthop,
     AsNum ribEntryAs,

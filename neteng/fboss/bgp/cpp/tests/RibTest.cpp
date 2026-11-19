@@ -236,6 +236,7 @@
 
 #include <fb303/ThreadCachedServiceData.h>
 #include "common/network/AddressUtil.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/BgpServiceBase.h"
 #include "neteng/fboss/bgp/cpp/BgpServiceUtil.h"
 #include "neteng/fboss/bgp/cpp/fsdb/FsdbSyncer.h"
@@ -297,9 +298,9 @@ TEST_F(RibFixture, WithdrawRouteWithAgentReconnectTest) {
   sendInitialPathComputation();
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   // Withdraw this route
@@ -315,8 +316,33 @@ TEST_F(RibFixture, WithdrawRouteWithAgentReconnectTest) {
   // Wait for fib programming
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
+}
+
+// Every RIB-out message carries the default routing table in its envelope.
+TEST_F(RibFixture, RibOutMessageCarriesDefaultVrfId) {
+  auto prefixBatch = PrefixPathIds{{kV6Prefix1, kDefaultPathID}};
+  auto fibFuture = fib_->getFibProgramFuture();
+  sendAnnouncement(prefixBatch, eBgpPeer1_, attr_);
+  sendInitialPathComputation();
+  fibFuture.wait();
+
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  EXPECT_EQ(fboss::kDefaultVrf, msg.vrfId);
+  ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg.payload));
+
+  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  EXPECT_EQ(fboss::kDefaultVrf, msg.vrfId);
+  ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg.payload));
+
+  fibFuture = fib_->getFibProgramFuture();
+  sendWithdrawal(prefixBatch, eBgpPeer1_);
+  fibFuture.wait();
+
+  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  EXPECT_EQ(fboss::kDefaultVrf, msg.vrfId);
+  ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg.payload));
 }
 
 /*
@@ -921,9 +947,9 @@ TEST_F(
   sendInitialPathComputation();
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const auto initialAnnouncement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(1, initialAnnouncement.entries.size());
@@ -937,7 +963,7 @@ TEST_F(
   sendAnnouncement(prefixBatch, eBgpPeer4_, attrs2);
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const auto announcement = std::get<RibOutAnnouncement>(msg);
   EXPECT_TRUE(announcement.entries.empty());
@@ -966,9 +992,9 @@ TEST_F(
   sendInitialPathComputation();
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const auto initialAnnouncement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(1, initialAnnouncement.entries.size());
@@ -982,7 +1008,7 @@ TEST_F(
   sendAnnouncement(prefixBatch, eBgpPeer4_, updatedAttrs2);
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   const auto withdrawal = std::get<RibOutWithdrawal>(msg);
   EXPECT_TRUE(withdrawal.entries.empty());
@@ -990,7 +1016,7 @@ TEST_F(
   ASSERT_TRUE(withdrawal.addPathEntries.front().nh.has_value());
   EXPECT_EQ(kV4Nexthop2, withdrawal.addPathEntries.front().nh.value());
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const auto announcement = std::get<RibOutAnnouncement>(msg);
   EXPECT_TRUE(announcement.entries.empty());
@@ -1064,7 +1090,7 @@ TEST_F(RibFixture, NoBestPathNexthopChangeAddPath) {
   sendAnnouncement(prefixBatch2, eBgpPeer2_, attr);
 
   // expect one announcement
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement3 = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(2, announcement3.addPathEntries.size());
@@ -1145,7 +1171,7 @@ TEST_F(RibFixture, NoBestPathNexthopChangeAddPathWithRibPolicyMNHTest) {
 
   // With partial drain, bestpath is retained — re-announcement, not withdrawal
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -1171,7 +1197,7 @@ TEST_F(RibFixture, NoBestPathNexthopChangeAddPathWithRibPolicyMNHTest) {
 
   WITH_RETRIES({ ASSERT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     EXPECT_EQ(0, announcement.entries.size());
@@ -1223,7 +1249,7 @@ TEST_F(RibFixture, PartialDrainAnnouncesWhenBestpathPointerUnchanged) {
   // Drain the announcement for the initial single-path install.
   WITH_RETRIES({ ASSERT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   }
 
@@ -1261,7 +1287,7 @@ TEST_F(RibFixture, PartialDrainAnnouncesWhenBestpathPointerUnchanged) {
    */
   WITH_RETRIES({ ASSERT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -1742,7 +1768,7 @@ TEST_F(RibFixture, BestPathWithAddPathEnabled_OnlyPathIdChange) {
   sendAnnouncement(prefixBatch2, eBgpPeer1_, attr);
 
   // expect one announcement
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   // Verify that the bestpath is equivalent to attr_ (or attr).
@@ -1810,11 +1836,11 @@ TEST_P(RibFixtureAddPathTestSuite, EoR) {
   sendInitialPathComputation();
 
   // Expect RibInitialAnnouncementStart before initial dump.
-  auto msg0 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg0 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg0));
 
   // initial dump to all peers after syncFib
-  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg1));
   auto announcement1 = std::get<RibOutAnnouncement>(msg1);
   ASSERT_EQ(2, announcement1.entries.size());
@@ -1853,12 +1879,13 @@ TEST_F(RibFixture, RibAnnouncementRedistributePeerTest) {
   fibFuture.wait();
 
   // Expect RibInitialAnnouncementStart before initial dump RibOutAnnouncements.
-  auto ribInitialAnnouncementStart = folly::coro::blockingWait(ribOutQ_.pop());
+  auto ribInitialAnnouncementStart =
+      folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(
       std::holds_alternative<RibInitialAnnouncementStart>(
           ribInitialAnnouncementStart));
 
-  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg1));
   auto announcement1 = std::get<RibOutAnnouncement>(msg1);
   EXPECT_EQ(0, announcement1.entries.size());
@@ -1872,7 +1899,7 @@ TEST_F(RibFixture, RibAnnouncementRedistributePeerTest) {
   sendAnnouncement(prefixBatch, eBgpPeer1_, attr_);
   fibFuture.wait();
 
-  auto msg2 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg2 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg2));
   auto announcement2 = std::get<RibOutAnnouncement>(msg2);
   ASSERT_EQ(1, announcement2.entries.size());
@@ -1890,7 +1917,7 @@ TEST_F(RibFixture, RibAnnouncementRedistributePeerTest) {
   sendAnnouncement(prefixBatch, redistributePeer_, attrHighLocalPref_);
   fibFuture.wait();
 
-  auto msg3 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg3 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg3));
   auto announcement3 = std::get<RibOutAnnouncement>(msg3);
   ASSERT_EQ(1, announcement3.entries.size());
@@ -1913,7 +1940,7 @@ TEST_F(RibFixture, RibAnnouncementRedistributePeerTest) {
   sendWithdrawal(prefixBatch, redistributePeer_);
   fibFuture.wait();
 
-  auto msg4 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg4 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg4));
   auto announcement4 = std::get<RibOutAnnouncement>(msg4);
   ASSERT_EQ(1, announcement4.entries.size());
@@ -1946,12 +1973,13 @@ TEST_F(RibFixture, RibAnnouncementFromSamePeerWithBestPathChange) {
   fibFuture.wait();
 
   // Expect RibInitialAnnouncementStart before initial dump RibOutAnnouncements.
-  auto ribInitialAnnouncementStart = folly::coro::blockingWait(ribOutQ_.pop());
+  auto ribInitialAnnouncementStart =
+      folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(
       std::holds_alternative<RibInitialAnnouncementStart>(
           ribInitialAnnouncementStart));
 
-  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg1));
   auto announcement1 = std::get<RibOutAnnouncement>(msg1);
   EXPECT_EQ(0, announcement1.entries.size());
@@ -1965,7 +1993,7 @@ TEST_F(RibFixture, RibAnnouncementFromSamePeerWithBestPathChange) {
   sendAnnouncement(prefixBatch, injector2_, attr_);
   fibFuture.wait();
 
-  auto msg2 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg2 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg2));
   auto announcement2 = std::get<RibOutAnnouncement>(msg2);
   ASSERT_EQ(1, announcement2.entries.size());
@@ -1983,7 +2011,7 @@ TEST_F(RibFixture, RibAnnouncementFromSamePeerWithBestPathChange) {
   sendAnnouncement(prefixBatch, injector1_, attr_);
   fibFuture.wait();
 
-  auto msg3 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg3 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg3));
   auto announcement3 = std::get<RibOutAnnouncement>(msg3);
   ASSERT_EQ(1, announcement3.entries.size());
@@ -1998,7 +2026,7 @@ TEST_F(RibFixture, RibAnnouncementFromSamePeerWithBestPathChange) {
   sendWithdrawal(prefixBatch, injector1_);
   fibFuture.wait();
 
-  auto msg4 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg4 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg4));
   auto announcement4 = std::get<RibOutAnnouncement>(msg4);
   ASSERT_EQ(1, announcement4.entries.size());
@@ -2034,12 +2062,13 @@ TEST_F(RibFixture, RibAnnouncementFromSamePeerWithoutBestPathChange) {
   fibFuture.wait();
 
   // Expect RibInitialAnnouncementStart before initial dump RibOutAnnouncements.
-  auto ribInitialAnnouncementStart = folly::coro::blockingWait(ribOutQ_.pop());
+  auto ribInitialAnnouncementStart =
+      folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(
       std::holds_alternative<RibInitialAnnouncementStart>(
           ribInitialAnnouncementStart));
 
-  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg1));
   auto announcement1 = std::get<RibOutAnnouncement>(msg1);
   ASSERT_EQ(1, announcement1.entries.size());
@@ -2111,9 +2140,9 @@ TEST_F(RibFixture, RibVersionIncrementsOnBestpathChange) {
   fibFuture.wait();
 
   // Drain initial dump messages
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   // RIB version should still be 0 (no routes yet)
@@ -2129,7 +2158,7 @@ TEST_F(RibFixture, RibVersionIncrementsOnBestpathChange) {
   sendAnnouncement(prefixBatch, injector2_, attr_);
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   uint64_t versionAfterFirstRoute = rib_->getRibVersion();
@@ -2168,7 +2197,7 @@ TEST_F(RibFixture, RibVersionIncrementsOnBestpathChange) {
   sendAnnouncement(prefixBatch, injector1_, attr_);
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   uint64_t versionAfterBetterRoute = rib_->getRibVersion();
@@ -2205,7 +2234,7 @@ TEST_F(RibFixture, RibVersionIncrementsOnBestpathChange) {
   sendWithdrawal(prefixBatch, injector1_);
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   uint64_t versionAfterWithdrawal = rib_->getRibVersion();
@@ -2263,9 +2292,9 @@ TEST_F(RibFixture, DISABLED_GetRibVersionAndNumPrefixesHandlers) {
   auto fibFuture = fib_->getFibProgramFuture();
   sendInitialPathComputation();
   fibFuture.wait();
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   // Inject one route; synchronize on the emitted announcement before reading.
@@ -2273,7 +2302,7 @@ TEST_F(RibFixture, DISABLED_GetRibVersionAndNumPrefixesHandlers) {
   sendAnnouncement(
       PrefixPathIds{{kV6Prefix1, kDefaultPathID}}, injector2_, attr_);
   fibFuture.wait();
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   // Each handler delegates to the RIB getter and returns its live value.
@@ -2307,9 +2336,9 @@ TEST_F(RibFixture, RibVersionNoChangeOnDuplicateRoute) {
   fibFuture.wait();
 
   // Drain initial dump messages
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   /*
@@ -2320,7 +2349,7 @@ TEST_F(RibFixture, RibVersionNoChangeOnDuplicateRoute) {
   sendAnnouncement(prefixBatch, eBgpPeer1_, attr_);
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   uint64_t versionAfterFirst = rib_->getRibVersion();
@@ -2362,9 +2391,9 @@ TEST_F(RibFixture, RibVersionStampedOnEmittedEntriesMonotonicPerPrefix) {
   auto fibFuture = fib_->getFibProgramFuture();
   sendInitialPathComputation();
   fibFuture.wait();
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   /*
@@ -2375,7 +2404,7 @@ TEST_F(RibFixture, RibVersionStampedOnEmittedEntriesMonotonicPerPrefix) {
   sendAnnouncement(prefixBatch, eBgpPeer1_, attr_);
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(1, announcement.entries.size());
@@ -2393,7 +2422,7 @@ TEST_F(RibFixture, RibVersionStampedOnEmittedEntriesMonotonicPerPrefix) {
   sendWithdrawal(prefixBatch, eBgpPeer1_);
   fibFuture.wait();
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   auto withdrawal = std::get<RibOutWithdrawal>(msg);
   ASSERT_EQ(1, withdrawal.entries.size());
@@ -2438,9 +2467,9 @@ TEST_F(RibFixture, RibVersionSingleBumpAcrossMultipathAddPathEntries) {
   sendInitialPathComputation();
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(1, announcement.entries.size());
@@ -2488,9 +2517,9 @@ TEST_F(RibFixture, RibVersionDistinctPerPrefixInAnnouncement) {
   sendInitialPathComputation();
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(2, announcement.entries.size());
@@ -2542,7 +2571,7 @@ TEST_F(RibFixture, RibVersionDistinctPerPrefixInWithdrawal) {
     rib_->prepareFibProgramming();
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   auto withdrawal = std::get<RibOutWithdrawal>(msg);
   ASSERT_EQ(2, withdrawal.entries.size());
@@ -2588,13 +2617,13 @@ TEST_F(RibFixture, RibVersionWithdrawalAdvertisedFirstHasLowerVersion) {
   sendAnnouncement(p2, eBgpPeer2_, attrHighLocalPref_);
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   auto withdrawal = std::get<RibOutWithdrawal>(msg);
   ASSERT_EQ(1, withdrawal.entries.size());
   EXPECT_EQ(kV4Prefix1, withdrawal.entries.at(0).prefix);
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(1, announcement.entries.size());
@@ -2658,7 +2687,7 @@ TEST_F(RibFixture, RibVersionWithdrawalsPrecedeAllAnnouncementsInPass) {
   uint32_t withdrawn = 0;
   uint32_t announced = 0;
   while (withdrawn < kBlock || announced < kBlock) {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     if (std::holds_alternative<RibOutWithdrawal>(msg)) {
       for (const auto& entry : std::get<RibOutWithdrawal>(msg).entries) {
         if (entry.ribVersion > maxWithdrawVersion) {
@@ -2709,7 +2738,7 @@ TEST_F(RibFixture, RibVersionBestPathOnlyChangeBumpsExactlyOnce) {
   fibFuture = fib_->getFibProgramFuture();
   sendAnnouncement(prefixBatch, injector2_, attr_);
   fibFuture.wait();
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const uint64_t versionAfterFirst = rib_->getRibVersion();
 
@@ -2720,7 +2749,7 @@ TEST_F(RibFixture, RibVersionBestPathOnlyChangeBumpsExactlyOnce) {
   fibFuture = fib_->getFibProgramFuture();
   sendAnnouncement(prefixBatch, injector1_, attr_);
   fibFuture.wait();
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const uint64_t versionAfterBestFlip = rib_->getRibVersion();
 
@@ -2769,7 +2798,7 @@ TEST_F(RibFixture, RibVersionIncrementalAddPathBumpsExactlyOnce) {
   sendAnnouncement(prefixBatch, eBgpPeer3_, attr3);
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(3, announcement.addPathEntries.size());
@@ -2826,12 +2855,12 @@ TEST_F(RibFixture, RibVersionEcmpShrinkWithdrawAndReannounceShareVersion) {
   sendWithdrawal(prefixBatch, eBgpPeer3_);
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   auto withdrawal = std::get<RibOutWithdrawal>(msg);
   ASSERT_EQ(1, withdrawal.addPathEntries.size());
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   ASSERT_EQ(2, announcement.addPathEntries.size());
@@ -2882,7 +2911,7 @@ TEST_F(RibFixture, RibVersionAddPathsSpanningChunksBumpAcrossChunks) {
   fibFuture.wait();
 
   // Drain the initial-dump start marker.
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
 
   /*
@@ -2893,7 +2922,7 @@ TEST_F(RibFixture, RibVersionAddPathsSpanningChunksBumpAcrossChunks) {
   uint32_t addPathTotal = 0;
   bool haveEoR = false;
   while (!haveEoR) {
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     const auto& ann = std::get<RibOutAnnouncement>(msg);
     haveEoR = ann.sendWithEoR;
@@ -2974,7 +3003,7 @@ TEST_F(RibFixture, RibVersionAddPathWithdrawalsSpanningChunksBumpAcrossChunks) {
   std::vector<uint64_t> chunkVersions;
   uint32_t addPathTotal = 0;
   while (addPathTotal < kNumPaths) {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
     const auto& wd = std::get<RibOutWithdrawal>(msg);
     if (wd.addPathEntries.empty()) {
@@ -3399,7 +3428,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAddPathSpansChunks) {
     EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const auto& flushed = std::get<RibOutAnnouncement>(msg).addPathEntries;
   ASSERT_EQ(kRibChunkSize, flushed.size());
@@ -3473,7 +3502,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawalSpansChunks) {
     EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   const auto& flushed = std::get<RibOutWithdrawal>(msg).addPathEntries;
   ASSERT_EQ(kRibChunkSize, flushed.size());
@@ -3540,7 +3569,7 @@ TEST_F(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion) {
         versionBefore + 1, rib_->ribEntries_.at(kV4Prefix3).getRibVersion());
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const auto& entries = std::get<RibOutAnnouncement>(msg).entries;
   ASSERT_EQ(1, entries.size());
@@ -3590,7 +3619,7 @@ TEST_F(RibAllocatedPathIdFixture, FullAddPathWithdrawalUsesAdvertisedPathIds) {
     rib_->prepareFibProgramming();
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   std::set<std::pair<uint32_t, folly::IPAddress>> withdrawn;
   for (const auto& wd : std::get<RibOutWithdrawal>(msg).addPathEntries) {
@@ -3645,7 +3674,7 @@ TEST_F(
     rib_->prepareFibProgramming();
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   std::set<std::pair<uint32_t, folly::IPAddress>> withdrawn;
   for (const auto& wd : std::get<RibOutWithdrawal>(msg).addPathEntries) {
@@ -4051,7 +4080,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaAddPathSpansChunks) {
     EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   const auto& flushed = std::get<RibOutAnnouncement>(msg).addPathEntries;
   ASSERT_EQ(kRibChunkSize, flushed.size());
@@ -4131,7 +4160,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawalSpansChunks) {
     EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   const auto& flushed = std::get<RibOutWithdrawal>(msg).addPathEntries;
   ASSERT_EQ(kRibChunkSize, flushed.size());
@@ -4171,14 +4200,14 @@ TEST_F(
   REPEAT_N(2, folly::coro::blockingWait(ribOutQ_.pop()));
 
   // Pop ribOutQ_ messages until one matches pred.
-  auto popUntil = [&](const std::function<bool(const RibOutMessage&)>& pred)
-      -> std::optional<RibOutMessage> {
+  auto popUntil = [&](const std::function<bool(const RibOutPayload&)>& pred)
+      -> std::optional<RibOutPayload> {
     for (int i = 0; i < 500; i++) {
       WITH_RETRIES({ EXPECT_EVENTUALLY_GE(ribOutQ_.size(), 1); });
       if (ribOutQ_.size() == 0) {
         return std::nullopt;
       }
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       if (pred(msg)) {
         return msg;
       }
@@ -4231,7 +4260,7 @@ TEST_F(
       createTPathSelectionPolicyWithPathSelector({kV4Prefix1}, tPathSelector));
   rib_->waitForPathSelectionPolicyUpdate();
   ribFuture.wait();
-  auto withdrawalMsg = popUntil([](const RibOutMessage& msg) {
+  auto withdrawalMsg = popUntil([](const RibOutPayload& msg) {
     const auto* withdrawal = std::get_if<RibOutWithdrawal>(&msg);
     return withdrawal && !withdrawal->addPathEntries.empty();
   });
@@ -4252,7 +4281,7 @@ TEST_F(
   attrs3->setNonTransitiveLbwExtCommunity(kLocalAs1, kLbw10G);
   attrs3->publish();
   sendAnnouncement(prefixBatch, eBgpPeer3_, attrs3);
-  auto announcementMsg = popUntil([](const RibOutMessage& msg) {
+  auto announcementMsg = popUntil([](const RibOutPayload& msg) {
     const auto* announcement = std::get_if<RibOutAnnouncement>(&msg);
     return announcement && !announcement->addPathEntries.empty();
   });
@@ -4468,13 +4497,13 @@ TEST_F(RibFixture, IncrementalAnnoucementChunkTestAfterReadOnly) {
 
     // Indicate start of initial announcements
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
     }
 
     // first dump to all peers
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       EXPECT_EQ(kRibChunkSize, announcement.addPathEntries.size());
@@ -4483,7 +4512,7 @@ TEST_F(RibFixture, IncrementalAnnoucementChunkTestAfterReadOnly) {
       EXPECT_EQ(false, announcement.sendWithEoR);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       EXPECT_EQ(kRibChunkSize, announcement.entries.size());
@@ -4494,7 +4523,7 @@ TEST_F(RibFixture, IncrementalAnnoucementChunkTestAfterReadOnly) {
       EXPECT_EQ(false, announcement.sendWithEoR);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       ASSERT_EQ(1, announcement.entries.size());
@@ -4507,7 +4536,7 @@ TEST_F(RibFixture, IncrementalAnnoucementChunkTestAfterReadOnly) {
     fibSyncDone.post();
     // incremental announcements to kPeerAddr1
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       EXPECT_EQ(kRibChunkSize, announcement.addPathEntries.size());
@@ -4516,7 +4545,7 @@ TEST_F(RibFixture, IncrementalAnnoucementChunkTestAfterReadOnly) {
       EXPECT_EQ(false, announcement.sendWithEoR);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       EXPECT_EQ(kRibChunkSize, announcement.entries.size());
@@ -4527,7 +4556,7 @@ TEST_F(RibFixture, IncrementalAnnoucementChunkTestAfterReadOnly) {
       EXPECT_EQ(false, announcement.sendWithEoR);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       ASSERT_EQ(1, announcement.entries.size());
@@ -4582,12 +4611,12 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnly) {
      *   two messages for incremental withdrawals
      */
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
     }
     // first dump to all peers
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       EXPECT_EQ(kRibChunkSize, announcement.addPathEntries.size());
@@ -4596,7 +4625,7 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnly) {
       EXPECT_EQ(false, announcement.sendWithEoR);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       EXPECT_EQ(kRibChunkSize, announcement.entries.size());
@@ -4607,7 +4636,7 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnly) {
       EXPECT_EQ(false, announcement.sendWithEoR);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       ASSERT_EQ(1, announcement.entries.size());
@@ -4620,7 +4649,7 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnly) {
     fibSyncDone.post();
     // second withdrawal to kPeerAddr1
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
       auto withdrawal = std::get<RibOutWithdrawal>(msg);
       EXPECT_EQ(kRibChunkSize, withdrawal.entries.size());
@@ -4629,14 +4658,14 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnly) {
       }
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
       auto withdrawal = std::get<RibOutWithdrawal>(msg);
       EXPECT_EQ(kRibChunkSize, withdrawal.addPathEntries.size());
       checkRibOutEntriesAddPathIds(withdrawal);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
       auto withdrawal = std::get<RibOutWithdrawal>(msg);
       ASSERT_EQ(1, withdrawal.entries.size());
@@ -4689,12 +4718,12 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnlyForAddPath) {
 
     // Expect RibInitialAnnouncementStart
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
     }
     // first dump to all peers
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       EXPECT_EQ(kRibChunkSize, announcement.addPathEntries.size());
@@ -4703,7 +4732,7 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnlyForAddPath) {
       EXPECT_EQ(false, announcement.sendWithEoR);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       EXPECT_EQ(kRibChunkSize, announcement.entries.size());
@@ -4714,7 +4743,7 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnlyForAddPath) {
       EXPECT_EQ(false, announcement.sendWithEoR);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
       auto announcement = std::get<RibOutAnnouncement>(msg);
       ASSERT_EQ(1, announcement.entries.size());
@@ -4727,7 +4756,7 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnlyForAddPath) {
     fibSyncDone.post();
     // second withdrawal to kPeerAddr1
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
       auto withdrawal = std::get<RibOutWithdrawal>(msg);
       EXPECT_EQ(kRibChunkSize, withdrawal.entries.size());
@@ -4736,14 +4765,14 @@ TEST_F(RibFixture, IncrementalWithdrawnChunkTestAfterReadOnlyForAddPath) {
       }
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
       auto withdrawal = std::get<RibOutWithdrawal>(msg);
       EXPECT_EQ(kRibChunkSize, withdrawal.addPathEntries.size());
       checkRibOutEntriesAddPathIds(withdrawal);
     }
     {
-      auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+      auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
       ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
       auto withdrawal = std::get<RibOutWithdrawal>(msg);
       ASSERT_EQ(1, withdrawal.entries.size());
@@ -4860,11 +4889,11 @@ TEST_F(RibFixture, InitialDumpChunkTest) {
    * notification is to all peers)
    */
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
   }
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     EXPECT_EQ(kRibChunkSize, announcement.addPathEntries.size());
@@ -4873,7 +4902,7 @@ TEST_F(RibFixture, InitialDumpChunkTest) {
     EXPECT_EQ(false, announcement.sendWithEoR);
   }
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     EXPECT_EQ(kRibChunkSize, announcement.entries.size());
@@ -4885,7 +4914,7 @@ TEST_F(RibFixture, InitialDumpChunkTest) {
     EXPECT_EQ(false, announcement.sendWithEoR);
   }
   {
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     ASSERT_EQ(1, announcement.entries.size());
@@ -4938,12 +4967,12 @@ TEST_F(RibFixture, WithdrawalAfterReadOnly) {
    */
   auto listenerThread = std::thread([&]() {
     auto ribInitialAnnouncementStart =
-        folly::coro::blockingWait(ribOutQ_.pop());
+        folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(
         std::holds_alternative<RibInitialAnnouncementStart>(
             ribInitialAnnouncementStart));
 
-    auto msg1 = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg1 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg1));
     auto announcement = std::get<RibOutAnnouncement>(msg1);
     ASSERT_EQ(2, announcement.entries.size());
@@ -4951,7 +4980,7 @@ TEST_F(RibFixture, WithdrawalAfterReadOnly) {
     EXPECT_EQ(kDefaultPathID, announcement.entries[1].pathIdToSend);
     EXPECT_TRUE(announcement.sendWithEoR);
 
-    auto msg2 = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg2 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg2));
     auto withdrawal = std::get<RibOutWithdrawal>(msg2);
     // we should receive this before fib programming timer triggers
@@ -5179,10 +5208,10 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationStress) {
   EXPECT_EQ(kLocalPref, *bestpath->attrs->getLocalPref());
   EXPECT_EQ(localPeer_, bestpath->peer);
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   EXPECT_EQ(7, announcement.entries.size());
@@ -5304,11 +5333,11 @@ TEST_F(RibFixture, RoutesAnnouncedPerAttr) {
   sendInitialPathComputation();
   fibFuture.wait();
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   // Expect RibInitialAnnouncementStart before initial dump.
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
 
-  msg = folly::coro::blockingWait(ribOutQ_.pop());
+  msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
   auto announcement = std::get<RibOutAnnouncement>(msg);
   EXPECT_EQ(6, announcement.entries.size());
@@ -6067,12 +6096,13 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationPromotion) {
   EXPECT_EQ(ribOutQ_.size(), 2);
 
   // Expect RibInitialAnnouncementStart before initial announcement.
-  auto ribInitialAnnouncementStart = folly::coro::blockingWait(ribOutQ_.pop());
+  auto ribInitialAnnouncementStart =
+      folly::coro::blockingWait(ribOutQ_.pop()).payload;
   EXPECT_TRUE(
       std::holds_alternative<RibInitialAnnouncementStart>(
           ribInitialAnnouncementStart));
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   auto ret = folly::variant_match(
       msg,
       [&](const ShadowRibOutAnnouncement& /* unused */) { return false; },
@@ -8285,7 +8315,7 @@ TEST_F(RibFixture, LbwCommunityForward) {
     rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry)));
     inputQ.push(std::move(msg));
 
-    auto result = folly::coro::blockingWait(ribOutQ_.pop());
+    auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     auto ret = folly::variant_match(
         result,
         [&](const ShadowRibOutAnnouncement& /* unused */) { return false; },
@@ -8374,7 +8404,7 @@ TEST_F(RibFixture, LbwCommunitySuppression1) {
     rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry)));
     inputQ.push(std::move(msg));
 
-    auto result = folly::coro::blockingWait(ribOutQ_.pop());
+    auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     auto ret = folly::variant_match(
         result,
         [&](const ShadowRibOutAnnouncement& /* unused */) { return false; },
@@ -8463,7 +8493,7 @@ TEST_F(RibFixture, LbwCommunitySuppression2) {
     rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry)));
     inputQ.push(std::move(msg));
 
-    auto result = folly::coro::blockingWait(ribOutQ_.pop());
+    auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     auto ret = folly::variant_match(
         result,
         [&](const ShadowRibOutAnnouncement& /* unused */) { return false; },
@@ -8528,10 +8558,10 @@ TEST_F(RibFixture, EorSentInitializationEvent) {
   Fib::FibProgrammedMessage fibMsg(FibProgrammedPfxs, true /* fullSync */);
   inputQ.push(std::move(fibMsg));
 
-  auto msg0 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg0 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg0));
 
-  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg1 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg1));
   auto announcement = std::get<RibOutAnnouncement>(msg1);
   EXPECT_EQ(true, announcement.sendWithEoR);
@@ -8588,11 +8618,11 @@ TEST_P(RibFixtureAddPathTestSuite, PathRemovedAndRibDumpReqTest) {
                       // then fetched below
   {
     // Expect RibInitialAnnouncementStart before initial dump.
-    auto msg0 = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg0 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg0));
 
     // initial dump to all peers after syncFib
-    auto msg1 = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg1 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg1));
     auto announcement1 = std::get<RibOutAnnouncement>(msg1);
     /*
@@ -8680,9 +8710,9 @@ TEST_P(RibFixtureAddPathTestSuite, PathRemovedAndRibDumpReqTest) {
      * expect 2 elements in the ribOutQ_, 1 RibOutWithdrawal followed by
      * 1 RibOutAnnouncement since rib_->sendAddPath is true
      */
-    auto msg1 = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg1 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg1));
-    auto msg2 = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg2 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg2));
     auto announcement = std::get<RibOutAnnouncement>(msg2);
     ASSERT_EQ(1, announcement.entries.size());
@@ -8742,11 +8772,11 @@ TEST_P(RibFixtureAddPathTestSuite, RouteWithdrawnAndRibDumpReqTest) {
   sendInitialPathComputation();
   {
     // Expect RibInitialAnnouncementStart before announcement.
-    auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibInitialAnnouncementStart>(msg));
 
     // initial dump to all peers after syncFib
-    msg = folly::coro::blockingWait(ribOutQ_.pop());
+    msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
     auto announcement = std::get<RibOutAnnouncement>(msg);
     /*
@@ -11896,7 +11926,7 @@ TEST_F(
         rib_->ribEntries_.at(kV4Prefix1).getAdvertisedMultipaths().empty());
   });
 
-  auto msg = folly::coro::blockingWait(ribOutQ_.pop());
+  auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   ASSERT_TRUE(std::holds_alternative<RibOutWithdrawal>(msg));
   EXPECT_EQ(2, std::get<RibOutWithdrawal>(msg).addPathEntries.size());
 }

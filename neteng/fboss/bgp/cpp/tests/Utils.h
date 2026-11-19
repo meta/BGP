@@ -820,7 +820,7 @@ inline facebook::nettools::bgplib::BgpUpdate2 buildBgpUpdateAttributes(
 }
 
 // RIB update with prefilled attributes and single v4 or v6 announced prefix
-inline facebook::bgp::RibOutMessage createRibSingleAnnounce(
+inline facebook::bgp::RibOutPayload createRibSingleAnnounce(
     const folly::CIDRNetwork& prefix,
     const folly::IPAddress& nexthop,
     const facebook::bgp::TinyPeerInfo& peer,
@@ -868,7 +868,7 @@ inline facebook::bgp::RibOutMessage createRibSingleAnnounce(
 }
 
 // RIB update with prefilled attributes and single v4 or v6 announced prefix
-inline facebook::bgp::RibOutMessage createRibSingleAnnounce(
+inline facebook::bgp::RibOutPayload createRibSingleAnnounce(
     const folly::CIDRNetwork& prefix,
     const folly::IPAddress& nexthop,
     const facebook::bgp::TinyPeerInfo& peer,

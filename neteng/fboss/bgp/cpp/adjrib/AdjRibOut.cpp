@@ -578,7 +578,7 @@ void AdjRib::onEgressEoRSent() noexcept {
   logPeerEvent("SESSION_EOR_SENT", BGP_LOG_SRC());
 
   /* Send out egressEoR notification to peer manager for initialization. */
-  fromAdjRibQ_.push({*remotePeerId_, EgressEoR{}});
+  fromAdjRibQ_.push({peeringParams_.vrfId, *remotePeerId_, EgressEoR{}});
 }
 
 /*
@@ -2020,7 +2020,8 @@ void AdjRib::transitionPeerUpdateState() noexcept {
   if (completedDetachedInitDump &&
       peerState_ != PeerUpdateState::DETACHED_INIT_DUMP) {
     /* remotePeerId_ is installed by the constructor and is never reset. */
-    fromAdjRibQ_.push({getRemotePeerId(), DetachedInitDumpCompleted{}});
+    fromAdjRibQ_.push(
+        {peeringParams_.vrfId, getRemotePeerId(), DetachedInitDumpCompleted{}});
   }
 }
 

@@ -36,6 +36,7 @@
 #include "neteng/fboss/bgp/cpp/tests/RetryUtils.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/E2ETestRibFactory.h"
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/PeerManagerTestUtils.h"
 
 using facebook::bgp::test::boundedBlockingPop;
@@ -1594,7 +1595,8 @@ void E2ETestFixture::sendRouteRefreshToPeer(
 void E2ETestFixture::processRouteRefreshEventForTesting(
     const BgpPeerId& peerId,
     nettools::bgplib::BgpUpdateAfi afi) {
-  AdjRib::ObservableMessageT event{peerId, AdjRib::RouteRefreshReceived{afi}};
+  AdjRib::ObservableMessageT event{
+      fboss::kDefaultVrf, peerId, AdjRib::RouteRefreshReceived{afi}};
   folly::coro::blockingWait(
       folly::coro::co_withExecutor(
           &peerManager_->getEventBase(),

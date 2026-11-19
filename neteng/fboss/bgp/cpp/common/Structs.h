@@ -66,11 +66,13 @@ struct TinyPeerInfo {
 };
 
 struct NeighborEventMsg {
+  // Routing table of the interface on which the neighbor was learned.
+  const VrfId vrfId;
   const folly::IPAddress nbrAddr;
   const bool isUp;
 
-  NeighborEventMsg(const folly::IPAddress& nbrAddr, bool isUp)
-      : nbrAddr(nbrAddr), isUp(isUp) {}
+  NeighborEventMsg(VrfId vrfId, const folly::IPAddress& nbrAddr, bool isUp)
+      : vrfId(vrfId), nbrAddr(nbrAddr), isUp(isUp) {}
 };
 
 struct NeighborReachabilityMsg {};

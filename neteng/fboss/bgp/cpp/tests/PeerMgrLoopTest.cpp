@@ -26,6 +26,7 @@
 
 #include <folly/fibers/Semaphore.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/config/Config.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigManager.h"
 #include "neteng/fboss/bgp/cpp/peer/PeerManagerBase.h"
@@ -165,7 +166,7 @@ class PeerManagerLoopTestFixture : public ::testing::Test {
 TEST_F(PeerManagerLoopTestFixture, HandleNeighborEventMsgTest) {
   mockPeerMgr_->scheduleLoop(mockPeerMgr_->processNeighborRouteChangeLoop());
 
-  NeighborEventMsg msg{kLocalAddr1, false};
+  NeighborEventMsg msg{fboss::kDefaultVrf, kLocalAddr1, false};
 
   nbrRouteChangeQ_->push(msg);
 
@@ -202,7 +203,7 @@ TEST_F(PeerManagerLoopTestFixture, HandleNeighborReachabilityMsgTest) {
 TEST_F(PeerManagerLoopTestFixture, ProcessNeighborRouteChangeLoopMixMsgTest) {
   mockPeerMgr_->scheduleLoop(mockPeerMgr_->processNeighborRouteChangeLoop());
 
-  NeighborEventMsg msg{kLocalAddr1, false};
+  NeighborEventMsg msg{fboss::kDefaultVrf, kLocalAddr1, false};
 
   nbrRouteChangeQ_->push(msg);
   nbrRouteChangeQ_->push(NeighborReachabilityMsg{});
@@ -223,7 +224,7 @@ TEST_F(PeerManagerLoopTestFixture, ProcessNeighborRouteChangeLoopMixMsgTest) {
  */
 TEST_F(PeerManagerLoopTestFixture, ProcessAdjRibEventTest) {
   mockPeerMgr_->scheduleLoop(mockPeerMgr_->processAdjRibMsgLoop());
-  AdjRib::ObservableMessageT evt{kPeerId1, AdjRib::EoR{}};
+  AdjRib::ObservableMessageT evt{fboss::kDefaultVrf, kPeerId1, AdjRib::EoR{}};
 
   mockPeerMgr_->fromAdjRibQ_.push(std::move(evt));
 

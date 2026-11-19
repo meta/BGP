@@ -30,6 +30,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigManager.h"
 #include "neteng/fboss/bgp/cpp/lib/BgpStructs.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
@@ -268,7 +269,8 @@ TEST_F(
 
     mockPeerMgr->ribInitialAnnouncementStarted_ = true;
     // Send egressEoR from one static peer without ingressEoR sent
-    AdjRib::ObservableMessageT eoRToStaticPeer1{kPeerId3, AdjRib::EgressEoR{}};
+    AdjRib::ObservableMessageT eoRToStaticPeer1{
+        fboss::kDefaultVrf, kPeerId3, AdjRib::EgressEoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(eoRToStaticPeer1)));
 
@@ -334,8 +336,10 @@ TEST_F(PeerManagerInitializationTestFixture, ProcessAdjRibMsgLoopTest) {
   auto& fm =
       folly::fibers::getFiberManager(mockPeerMgr->getEventBase(), options_);
   auto task = fm.addTaskFuture([&]() {
-    AdjRib::ObservableMessageT eoRPeerId3{kPeerId3, AdjRib::EoR{}};
-    AdjRib::ObservableMessageT eoRPeerId4{kPeerId4, AdjRib::EoR{}};
+    AdjRib::ObservableMessageT eoRPeerId3{
+        fboss::kDefaultVrf, kPeerId3, AdjRib::EoR{}};
+    AdjRib::ObservableMessageT eoRPeerId4{
+        fboss::kDefaultVrf, kPeerId4, AdjRib::EoR{}};
 
     // inject both eoRs into the queue
     mockPeerMgr->fromAdjRibQ_.push(eoRPeerId3);
@@ -416,7 +420,8 @@ TEST_F(PeerManagerInitializationTestFixture, InitializedSignalPublicationTest) {
             apache::thrift::util::enumNameSafe(
                 BgpInitializationEvent::ALL_EOR_RECEIVED))));
 
-    AdjRib::ObservableMessageT EoRFromStaticPeer1{kPeerId3, AdjRib::EoR{}};
+    AdjRib::ObservableMessageT EoRFromStaticPeer1{
+        fboss::kDefaultVrf, kPeerId3, AdjRib::EoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(EoRFromStaticPeer1)));
 
@@ -430,7 +435,8 @@ TEST_F(PeerManagerInitializationTestFixture, InitializedSignalPublicationTest) {
             apache::thrift::util::enumNameSafe(
                 BgpInitializationEvent::ALL_EOR_RECEIVED))));
 
-    AdjRib::ObservableMessageT EoRFromStaticPeer2{kPeerId4, AdjRib::EoR{}};
+    AdjRib::ObservableMessageT EoRFromStaticPeer2{
+        fboss::kDefaultVrf, kPeerId4, AdjRib::EoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(EoRFromStaticPeer2)));
 
@@ -456,12 +462,14 @@ TEST_F(PeerManagerInitializationTestFixture, InitializedSignalPublicationTest) {
 
     mockPeerMgr->ribInitialAnnouncementStarted_ = true;
     // Send egressEoR from one static peer
-    AdjRib::ObservableMessageT eoRToStaticPeer1{kPeerId3, AdjRib::EgressEoR{}};
+    AdjRib::ObservableMessageT eoRToStaticPeer1{
+        fboss::kDefaultVrf, kPeerId3, AdjRib::EgressEoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(eoRToStaticPeer1)));
 
     // Send egressEoR from another static peer
-    AdjRib::ObservableMessageT eoRToStaticPeer2{kPeerId4, AdjRib::EgressEoR{}};
+    AdjRib::ObservableMessageT eoRToStaticPeer2{
+        fboss::kDefaultVrf, kPeerId4, AdjRib::EgressEoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(eoRToStaticPeer2)));
 

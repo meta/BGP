@@ -849,7 +849,7 @@ folly::coro::Task<void> AdjRib::processPeerEoR(
 
     // GR helper will cleanup stale path after receiving peer EoR
     co_await cleanupStaleRoutes(true /* GR helper */);
-    fromAdjRibQ_.push({*remotePeerId_, EoR{}});
+    fromAdjRibQ_.push({peeringParams_.vrfId, *remotePeerId_, EoR{}});
   }
 }
 
@@ -926,7 +926,8 @@ bool AdjRib::triggerOutboundRedump(BgpUpdateAfi afi) noexcept {
       "Triggering route re-announcement for peer {} AFI={}",
       remotePeerId_->str(),
       static_cast<int>(afi));
-  fromAdjRibQ_.push({*remotePeerId_, RouteRefreshReceived{afi}});
+  fromAdjRibQ_.push(
+      {peeringParams_.vrfId, *remotePeerId_, RouteRefreshReceived{afi}});
   return true;
 }
 
@@ -1335,7 +1336,7 @@ void AdjRib::triggerSafeMode() noexcept {
   setSafeModeOn();
   XLOG(INFO, "Prefixes/paths over limit. Safe mode on.");
   BgpStats::setIsSafeModeOn(true);
-  fromAdjRibQ_.push({*remotePeerId_, TriggerSafeMode{}});
+  fromAdjRibQ_.push({peeringParams_.vrfId, *remotePeerId_, TriggerSafeMode{}});
 }
 
 bool AdjRib::canApplyGoldenPrefixPolicyMode() const noexcept {
@@ -1496,7 +1497,7 @@ bool AdjRib::capRoutesPerPeer(uint64_t routeCnt, bool isPrefilter) {
   }
 
   // we will tear down the session if warning only is not set
-  fromAdjRibQ_.push({*remotePeerId_, Shutdown{}});
+  fromAdjRibQ_.push({peeringParams_.vrfId, *remotePeerId_, Shutdown{}});
   XLOGF(
       ERR,
       "Tearing down peer {}, because of exceeding {} max limit {} and warning only is not set",

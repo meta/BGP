@@ -1151,10 +1151,12 @@ TEST_F(PeerManagerTestFixture, StatefulGrConfigEnabled) {
   auto fiber = fm.addTaskFuture([&] {
     fiberSleepFor(10ms);
 
-    AdjRib::ObservableMessageT EoRFromStaticPeer1{kPeerId3, AdjRib::EoR{}};
+    AdjRib::ObservableMessageT EoRFromStaticPeer1{
+        fboss::kDefaultVrf, kPeerId3, AdjRib::EoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(EoRFromStaticPeer1)));
-    AdjRib::ObservableMessageT EoRFromStaticPeer2{kPeerId4, AdjRib::EoR{}};
+    AdjRib::ObservableMessageT EoRFromStaticPeer2{
+        fboss::kDefaultVrf, kPeerId4, AdjRib::EoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(EoRFromStaticPeer2)));
   });
@@ -1224,10 +1226,12 @@ TEST_F(PeerManagerTestFixture, StatefulGrConfigDisabled) {
   auto fiber = fm.addTaskFuture([&] {
     fiberSleepFor(10ms);
 
-    AdjRib::ObservableMessageT EoRFromStaticPeer1{kPeerId3, AdjRib::EoR{}};
+    AdjRib::ObservableMessageT EoRFromStaticPeer1{
+        fboss::kDefaultVrf, kPeerId3, AdjRib::EoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(EoRFromStaticPeer1)));
-    AdjRib::ObservableMessageT EoRFromStaticPeer2{kPeerId4, AdjRib::EoR{}};
+    AdjRib::ObservableMessageT EoRFromStaticPeer2{
+        fboss::kDefaultVrf, kPeerId4, AdjRib::EoR{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(EoRFromStaticPeer2)));
   });
@@ -1278,7 +1282,7 @@ TEST_F(PeerManagerTestFixture, ShutdownPeerMsgTest) {
     EXPECT_EQ(2, sessions.size());
 
     AdjRib::ObservableMessageT shutDownMsgFromStaticPeer1{
-        kPeerId3, AdjRib::Shutdown{}};
+        fboss::kDefaultVrf, kPeerId3, AdjRib::Shutdown{}};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(shutDownMsgFromStaticPeer1)));
 
@@ -1333,7 +1337,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest1) {
       EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
       // Verify that EOR timer has not yet expired
       EXPECT_FALSE(mockPeerMgr->eorTimerExpired_);
-      AdjRib::ObservableMessageT EoRFromPeer{peerId, AdjRib::EoR()};
+      AdjRib::ObservableMessageT EoRFromPeer{
+          fboss::kDefaultVrf, peerId, AdjRib::EoR()};
       folly::coro::blockingWait(
           mockPeerMgr->processAdjRibEvent(std::move(EoRFromPeer)));
     }
@@ -1398,7 +1403,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest2) {
 
     EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
 
-    AdjRib::ObservableMessageT EoRFromStaticPeer1{kPeerId3, AdjRib::EoR()};
+    AdjRib::ObservableMessageT EoRFromStaticPeer1{
+        fboss::kDefaultVrf, kPeerId3, AdjRib::EoR()};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(EoRFromStaticPeer1)));
 
@@ -1409,7 +1415,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest2) {
      */
     EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
 
-    AdjRib::ObservableMessageT EoRFromStaticPeer2{kPeerId4, AdjRib::EoR()};
+    AdjRib::ObservableMessageT EoRFromStaticPeer2{
+        fboss::kDefaultVrf, kPeerId4, AdjRib::EoR()};
     folly::coro::blockingWait(
         mockPeerMgr->processAdjRibEvent(std::move(EoRFromStaticPeer2)));
 
@@ -1471,7 +1478,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest3) {
       // Verify EoR won't be sent when only subset of EORs are received
       EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
 
-      AdjRib::ObservableMessageT EoRFromPeer{peerId, AdjRib::EoR()};
+      AdjRib::ObservableMessageT EoRFromPeer{
+          fboss::kDefaultVrf, peerId, AdjRib::EoR()};
       folly::coro::blockingWait(
           mockPeerMgr->processAdjRibEvent(std::move(EoRFromPeer)));
     }
@@ -1674,7 +1682,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTest) {
   fm.addTask([&] {
     XLOG(INFO, "Waiting for adjRibReady baton");
     facebook::bgp::test::boundedBatonWait(adjRibReadyBaton, "adjRibReadyBaton");
-    nbrRouteChangeQ_->push(NeighborEventMsg(kPeerId3.peerAddr, false));
+    nbrRouteChangeQ_->push(
+        NeighborEventMsg(fboss::kDefaultVrf, kPeerId3.peerAddr, false));
     // Sleep so that processNeighborRouteChangeLoop can run
     fiberSleepFor(10ms);
     XLOG(INFO, "Posting nbrDownSent Baton");
@@ -1768,7 +1777,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor) {
         EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
         // Verify that EOR timer has not yet expired
         EXPECT_FALSE(peerMgr->eorTimerExpired_);
-        AdjRib::ObservableMessageT EoRFromPeer{peerId, AdjRib::EoR()};
+        AdjRib::ObservableMessageT EoRFromPeer{
+            fboss::kDefaultVrf, peerId, AdjRib::EoR()};
         folly::coro::blockingWait(
             peerMgr->processAdjRibEvent(std::move(EoRFromPeer)));
       }
@@ -1808,7 +1818,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor) {
      * Initiate neighbor down event for a peer that was not present in previous
      * incarnation
      */
-    nbrRouteChangeQ_->push(NeighborEventMsg(kPeerId3.peerAddr, false));
+    nbrRouteChangeQ_->push(
+        NeighborEventMsg(fboss::kDefaultVrf, kPeerId3.peerAddr, false));
     // Sleep so that processNeighborRouteChangeLoop can run
     fiberSleepFor(10ms);
     XLOG(INFO, "Posting nbrDownSent Baton");
@@ -1897,7 +1908,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
         EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
         // Verify that EOR timer has not yet expired
         EXPECT_FALSE(peerMgr->eorTimerExpired_);
-        AdjRib::ObservableMessageT EoRFromPeer{peerId, AdjRib::EoR()};
+        AdjRib::ObservableMessageT EoRFromPeer{
+            fboss::kDefaultVrf, peerId, AdjRib::EoR()};
         folly::coro::blockingWait(
             peerMgr->processAdjRibEvent(std::move(EoRFromPeer)));
       }
@@ -1914,7 +1926,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
        * Initiate neighbor down event for a peer that was not present in
        * previous incarnation
        */
-      nbrRouteChangeQ_->push(NeighborEventMsg(kPeerId3.peerAddr, false));
+      nbrRouteChangeQ_->push(
+          NeighborEventMsg(fboss::kDefaultVrf, kPeerId3.peerAddr, false));
       // Sleep so that processNeighborRouteChangeLoop can run
       fiberSleepFor(10ms);
       XLOG(INFO, "Posting nbrDownSent Baton");
@@ -1931,7 +1944,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
 
     peerMgr->ribInitialAnnouncementStarted_ = true;
     for (const auto& peerId : {kPeerId3}) {
-      AdjRib::ObservableMessageT peerEgressEoR{peerId, AdjRib::EgressEoR()};
+      AdjRib::ObservableMessageT peerEgressEoR{
+          fboss::kDefaultVrf, peerId, AdjRib::EgressEoR()};
       folly::coro::blockingWait(
           peerMgr->processAdjRibEvent(std::move(peerEgressEoR)));
     }
@@ -2634,7 +2648,8 @@ TEST_F(PeerManagerTestFixture, NbrDownAfterGRTest) {
   fm.addTask([&] {
     XLOG(INFO, "Waiting for adjRibReady baton");
     facebook::bgp::test::boundedBatonWait(adjRibReadyBaton, "adjRibReadyBaton");
-    nbrRouteChangeQ_->push(NeighborEventMsg(kPeerId1.peerAddr, false));
+    nbrRouteChangeQ_->push(
+        NeighborEventMsg(fboss::kDefaultVrf, kPeerId1.peerAddr, false));
     // Sleep so that processNeighborRouteChangeLoop can run
     fiberSleepFor(10ms);
     XLOG(INFO, "Posting nbrDownSent Baton");
@@ -5247,7 +5262,7 @@ TEST_F(PeerManagerTestFixture, TriggerSafeModeMsgTest) {
 
     // Trigger SafeMode from peerId1
     AdjRib::ObservableMessageT triggerSafeModeMsg{
-        kPeerId1, AdjRib::TriggerSafeMode{}};
+        fboss::kDefaultVrf, kPeerId1, AdjRib::TriggerSafeMode{}};
     folly::coro::blockingWait(
         peerMgr->processAdjRibEvent(std::move(triggerSafeModeMsg)));
 
@@ -7740,6 +7755,7 @@ TEST_F(
     folly::coro::blockingWait(mockPeerMgr->sessionEstablished(stateEvent));
 
     AdjRib::ObservableMessageT rrFromPeer{
+        fboss::kDefaultVrf,
         kPeerId3,
         AdjRib::RouteRefreshReceived{nettools::bgplib::BgpUpdateAfi::AFI_IPv4}};
     folly::coro::blockingWait(

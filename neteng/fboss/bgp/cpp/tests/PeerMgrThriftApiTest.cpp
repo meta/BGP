@@ -51,6 +51,7 @@
 #include <gtest/gtest.h>
 
 #include "fb303/ServiceData.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/PeerManagerTestUtils.h"
 
 using ::testing::_;
@@ -367,8 +368,10 @@ TEST_F(PeerManagerTestFixture, StopPeerToSessionMgrTest) {
     asyncScope.add(
         co_withExecutor(&evb, mockPeerMgr->processNeighborRouteChangeLoop()));
 
-    nbrRouteChangeQ_->push(NeighborEventMsg(kPeerAddr3, false));
-    nbrRouteChangeQ_->push(NeighborEventMsg(kPeerAddr4, false));
+    nbrRouteChangeQ_->push(
+        NeighborEventMsg(fboss::kDefaultVrf, kPeerAddr3, false));
+    nbrRouteChangeQ_->push(
+        NeighborEventMsg(fboss::kDefaultVrf, kPeerAddr4, false));
 
     // Wait for both stopPeer calls to complete
     stopPeerBaton->wait();

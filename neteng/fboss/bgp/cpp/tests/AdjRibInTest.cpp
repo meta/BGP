@@ -172,6 +172,7 @@
 #include <folly/io/async/EventBase.h>
 #include <folly/logging/xlog.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRib.h"
 #include "neteng/fboss/bgp/cpp/adjrib/facebook/RouteFilterLogger.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
@@ -9205,6 +9206,7 @@ TEST_F(AdjRibInboundFixture, ProcessPeerRouteRefresh_NoCapability_Ignored) {
         std::holds_alternative<AdjRib::RouteRefreshReceived>(msg.message))
         << "Route Refresh should have been dropped: gate not negotiated";
     EXPECT_TRUE(std::holds_alternative<AdjRib::EoR>(msg.message));
+    EXPECT_EQ(fboss::kDefaultVrf, msg.vrfId);
     terminateAdjRib();
   });
 

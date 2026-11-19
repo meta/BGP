@@ -116,6 +116,7 @@
       ProcessInterfaceMapChanges_CacheUpdatedEvenWithNoChanges);
 
 #include "common/services/cpp/TLSConfig.h"
+#include "fboss/agent/Constants.h"
 #include "fboss/lib/thrift_service_client/ConnectionOptions.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/RibMessage.h"
@@ -613,6 +614,7 @@ TYPED_TEST(NeighborWatcherTestFixture, nbrWatcherUseFsdb) {
         this->neighborEventQ_, "neighborEventQ_");
     EXPECT_FALSE(std::get<NeighborEventMsg>(msg).isUp);
     EXPECT_EQ(std::get<NeighborEventMsg>(msg).nbrAddr.str(), ipaddr);
+    EXPECT_EQ(std::get<NeighborEventMsg>(msg).vrfId, fboss::kDefaultVrf);
   }
 
   // Verify the contents of the two messages in ribInQ_

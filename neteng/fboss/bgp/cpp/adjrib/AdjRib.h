@@ -341,6 +341,8 @@ class AdjRib : boost::noncopyable,
       RouteRefreshReceived>;
   // Used to pass message from adjRib to PeerManagerBase
   struct ObservableMessageT {
+    // Routing table of the owning peer; copied from peeringParams_.vrfId.
+    VrfId vrfId;
     nettools::bgplib::BgpPeerId peerId;
     MessageToPeerManager message;
   };

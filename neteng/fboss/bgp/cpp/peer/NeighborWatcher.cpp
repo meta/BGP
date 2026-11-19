@@ -21,6 +21,7 @@
 #include <gflags/gflags.h>
 #include <re2/re2.h>
 #include <thrift/lib/cpp2/protocol/Serializer.h>
+#include "fboss/agent/Constants.h"
 #include "fboss/fsdb/client/FsdbSubscriber.h"
 #include "fboss/lib/AlertLogger.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
@@ -454,7 +455,8 @@ folly::coro::Task<void> FsdbNeighborWatcher::processInterfaceMapChanges(
           INFO,
           "FSDB: neighbor disappeared: {}: enqueue to PeerManagerBase",
           ipAddress.str());
-      neighborEventQ_.push(NeighborEventMsg(ipAddress, false));
+      neighborEventQ_.push(
+          NeighborEventMsg(fboss::kDefaultVrf, ipAddress, false));
     }
   }
 

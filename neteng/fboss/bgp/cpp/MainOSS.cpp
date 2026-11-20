@@ -236,6 +236,12 @@ int main(int argc, char** argv) {
   // tracking dependencies can be derived from the configured global settings.
   std::shared_ptr<Config> config = std::make_shared<Config>(FLAGS_config);
 
+  if (config->getBgpGlobalConfig()->enableNextHopTracking &&
+      !FLAGS_enable_fsdb_patch_subscriber) {
+    throw BgpError(
+        "Next-hop tracking requires enable_fsdb_patch_subscriber=true");
+  }
+
   std::shared_ptr<NexthopCache> nexthopCache;
   std::shared_ptr<fboss::fsdb::FsdbCowStateSubManager> sharedFsdbSubMgr;
   if (config->getBgpGlobalConfig()->enableNextHopTracking) {

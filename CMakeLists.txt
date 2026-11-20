@@ -50,3 +50,34 @@ if (BGP_BUILD_VARIANT STREQUAL "dc")
 else()
   include(${CMAKE_CURRENT_LIST_DIR}/cmake/BgpBB.cmake)
 endif()
+
+# Executables only, hence after every target is defined; libraries stay
+# allocator-agnostic.
+option(BGP_WITH_JEMALLOC "Link bgp executables against jemalloc" ON)
+if (BGP_WITH_JEMALLOC)
+  find_library(BGP_JEMALLOC_LIBRARY NAMES jemalloc)
+  if (NOT BGP_JEMALLOC_LIBRARY)
+    message(FATAL_ERROR
+      "jemalloc is required (jemalloc-devel / libjemalloc-dev); "
+      "configure with -DBGP_WITH_JEMALLOC=OFF to build against glibc malloc")
+  endif()
+
+  add_library(bgp_jemalloc_config OBJECT
+    neteng/fboss/bgp/cpp/JemallocConfig.cpp
+  )
+
+  get_property(BGP_BUILD_TARGETS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(BGP_BUILD_TARGET ${BGP_BUILD_TARGETS})
+    get_target_property(BGP_BUILD_TARGET_TYPE ${BGP_BUILD_TARGET} TYPE)
+    if (BGP_BUILD_TARGET_TYPE STREQUAL "EXECUTABLE")
+      target_sources(
+        ${BGP_BUILD_TARGET}
+        PRIVATE $<TARGET_OBJECTS:bgp_jemalloc_config>
+      )
+      target_link_libraries(
+        ${BGP_BUILD_TARGET}
+        ${BGP_JEMALLOC_LIBRARY}
+      )
+    endif()
+  endforeach()
+endif()

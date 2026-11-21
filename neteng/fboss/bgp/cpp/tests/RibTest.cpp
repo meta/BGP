@@ -3162,13 +3162,13 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteUnchangedBumpsVersion) {
     entry.commitMultipaths();
     entry.commitMultipathNexthops();
     entry.commitBestpath();
-    const auto versionBefore = rib_->ribVersion_;
+    const auto versionBefore = rib_->defaultVrf_.ribVersion();
     RibOutAnnouncement announcement;
     RibOutAnnouncement announcementAddPath;
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3178,8 +3178,8 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteUnchangedBumpsVersion) {
     EXPECT_TRUE(announcement.entries.empty());
     EXPECT_TRUE(announcementAddPath.addPathEntries.empty());
     EXPECT_TRUE(withdrawalAddPath.addPathEntries.empty());
-    EXPECT_EQ(versionBefore + 1, rib_->ribVersion_);
-    EXPECT_EQ(rib_->ribVersion_, entry.getRibVersion());
+    EXPECT_EQ(versionBefore + 1, rib_->defaultVrf_.ribVersion());
+    EXPECT_EQ(rib_->defaultVrf_.ribVersion(), entry.getRibVersion());
   });
 }
 
@@ -3201,7 +3201,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteNewPrefixNewlyInstalled) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3248,7 +3248,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAnnouncesBestpathChange) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3263,7 +3263,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAnnouncesBestpathChange) {
         (peer1WasBest ? eBgpPeer2_ : eBgpPeer1_).addr, bestEntry.peer.addr);
     EXPECT_EQ(peer1WasBest ? attrs2 : attrs1, bestEntry.attrs);
     EXPECT_FALSE(bestEntry.newlyInstalledInLocalRib);
-    EXPECT_EQ(rib_->ribVersion_, bestEntry.ribVersion);
+    EXPECT_EQ(rib_->defaultVrf_.ribVersion(), bestEntry.ribVersion);
   });
 }
 
@@ -3296,7 +3296,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAnnouncesMultipaths) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3345,7 +3345,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawsDroppedNexthop) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3357,7 +3357,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawsDroppedNexthop) {
     EXPECT_EQ(kV4Prefix1, withdrawn.prefix);
     EXPECT_EQ(kPlaceholderPathID, withdrawn.pathIdToSend);
     EXPECT_EQ(kV4Nexthop2, withdrawn.nh);
-    EXPECT_EQ(rib_->ribVersion_, withdrawn.ribVersion);
+    EXPECT_EQ(rib_->defaultVrf_.ribVersion(), withdrawn.ribVersion);
   });
 }
 
@@ -3387,7 +3387,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteNoAddPathWithoutBestpath) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3428,10 +3428,10 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAddPathSpansChunks) {
     for (const auto& [pathId, path] : entry.getMultipaths()) {
       expected.emplace(pathId, path->attrs->getNexthop());
     }
-    versionBefore = rib_->ribVersion_;
+    versionBefore = rib_->defaultVrf_.ribVersion();
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3439,7 +3439,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAddPathSpansChunks) {
         withdrawalAddPath);
 
     // One bump for the prefix, one for the chunk flush.
-    EXPECT_EQ(versionBefore + 2, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 2, rib_->defaultVrf_.ribVersion());
     EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
   });
 
@@ -3503,10 +3503,10 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawalSpansChunks) {
     RibBase::selectBestPath(
         entry, multipathSelector, bestpathSelector, false, 0);
     ASSERT_EQ(1, entry.getMultipaths().size());
-    versionBefore = rib_->ribVersion_;
+    versionBefore = rib_->defaultVrf_.ribVersion();
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3514,7 +3514,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawalSpansChunks) {
         withdrawalAddPath);
 
     // One bump for the prefix, one for the chunk flush.
-    EXPECT_EQ(versionBefore + 2, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 2, rib_->defaultVrf_.ribVersion());
     EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
   });
 
@@ -3573,13 +3573,13 @@ TEST_F(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion) {
          std::make_shared<const WeightedNexthopMap>(
              *staleEntry.getMultipathWeightedNexthops())},
         {kV4Prefix3, programmedEntry.getMultipathWeightedNexthops()}};
-    versionBefore = rib_->ribVersion_;
+    versionBefore = rib_->defaultVrf_.ribVersion();
 
     rib_->handleFibProgrammedMessage(
         Fib::FibProgrammedMessage(
             fboss::kDefaultVrf, std::move(fibProgrammedPfxs), false));
 
-    EXPECT_EQ(versionBefore + 1, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 1, rib_->defaultVrf_.ribVersion());
     EXPECT_FALSE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
     EXPECT_EQ(0, rib_->defaultVrf_.ribEntries().at(kV4Prefix2).getRibVersion());
     EXPECT_EQ(
@@ -3733,7 +3733,7 @@ TEST_F(
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3794,7 +3794,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaSkipsUnchangedPaths) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3849,7 +3849,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaReannouncesUpdatedPath) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3904,7 +3904,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawsDroppedPathId) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3916,7 +3916,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawsDroppedPathId) {
     EXPECT_EQ(kV4Prefix1, withdrawn.prefix);
     EXPECT_EQ(*droppedPathId, withdrawn.pathIdToSend);
     EXPECT_EQ(kV4Nexthop2, withdrawn.nh);
-    EXPECT_EQ(rib_->ribVersion_, withdrawn.ribVersion);
+    EXPECT_EQ(rib_->defaultVrf_.ribVersion(), withdrawn.ribVersion);
     EXPECT_TRUE(announcementAddPath.addPathEntries.empty());
   });
 }
@@ -3960,7 +3960,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaSharedNexthopWithdrawsPathId) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3993,12 +3993,12 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaNoChangeSendsNothing) {
     entry.commitMultipaths();
     entry.commitMultipathNexthops();
     entry.commitBestpath();
-    uint64_t currentRibVersion = rib_->ribVersion_;
+    uint64_t currentRibVersion = rib_->defaultVrf_.ribVersion();
     RibOutAnnouncement announcementAddPath;
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedMultipathDelta(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         false /* newlyInstalledInLocalRib */,
@@ -4043,12 +4043,12 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaNoBestpathSkipsCommit) {
     ASSERT_EQ(3, entry.getMultipaths().size());
     const auto advertisedBefore = entry.getAdvertisedMultipaths();
     entry.bestpath_ = nullptr;
-    uint64_t currentRibVersion = rib_->ribVersion_;
+    uint64_t currentRibVersion = rib_->defaultVrf_.ribVersion();
     RibOutAnnouncement announcementAddPath;
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedMultipathDelta(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         false /* newlyInstalledInLocalRib */,
@@ -4091,10 +4091,10 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaAddPathSpansChunks) {
     for (const auto& [pathId, path] : entry.getMultipaths()) {
       expected.emplace(pathId, path->attrs->getNexthop());
     }
-    versionBefore = rib_->ribVersion_;
+    versionBefore = rib_->defaultVrf_.ribVersion();
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -4102,7 +4102,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaAddPathSpansChunks) {
         withdrawalAddPath);
 
     // One bump for the prefix, one for the chunk flush.
-    EXPECT_EQ(versionBefore + 2, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 2, rib_->defaultVrf_.ribVersion());
     EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
   });
 
@@ -4172,10 +4172,10 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawalSpansChunks) {
     RibBase::selectBestPath(
         entry, multipathSelector, bestpathSelector, false, 0);
     ASSERT_EQ(1, entry.getMultipaths().size());
-    versionBefore = rib_->ribVersion_;
+    versionBefore = rib_->defaultVrf_.ribVersion();
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -4183,7 +4183,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawalSpansChunks) {
         withdrawalAddPath);
 
     // One bump for the prefix, one for the chunk flush.
-    EXPECT_EQ(versionBefore + 2, rib_->ribVersion_);
+    EXPECT_EQ(versionBefore + 2, rib_->defaultVrf_.ribVersion());
     EXPECT_EQ(versionBefore + 2, entry.getRibVersion());
   });
 
@@ -4365,7 +4365,7 @@ TEST_F(
       RibOutWithdrawal withdrawalAddPath;
 
       rib_->handleAddUpdatedUnicastRoute(
-          fboss::kDefaultVrf,
+          rib_->defaultVrf_,
           entry,
           false /* sendWithEoR */,
           announcement,
@@ -4431,7 +4431,7 @@ TEST_F(
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -4487,7 +4487,7 @@ TEST_F(
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
-        fboss::kDefaultVrf,
+        rib_->defaultVrf_,
         entry,
         false /* sendWithEoR */,
         announcement,

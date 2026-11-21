@@ -418,47 +418,14 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * uint64_t, so the frequent per-prefix bumps on the hot path remain a plain
    * increment rather than an atomic read-modify-write.
    */
-  uint64_t getRibVersion() {
+  uint64_t getRibVersion(VrfId vrfId = fboss::kDefaultVrf) {
     uint64_t version = 0;
-    evb_.runImmediatelyOrRunInEventBaseThreadAndWait(
-        [&]() { version = ribVersion_; });
+    evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+      if (const auto* vrf = findVrf(vrfId)) {
+        version = vrf->ribVersion();
+      }
+    });
     return version;
-  }
-
-  /**
-   * Bump the RIB version counter and return the new value. Called at
-   * queue-emission time -- once per emitted prefix, and again at each
-   * kRibChunkSize chunk boundary. Also advances the published RIB table-version
-   * stat.
-   *
-   * ribVersion is stamped on every RibOut{Announcement,Withdrawal} entry and
-   * consumed by AdjRib / AdjRibOutGroup (notably AdjRibGroup::isEntryShared) to
-   * decide how caught-up each peer/group is. It is stamped at emission time
-   * (here, and in handleFibProgrammedMessage / prepareFibProgramming), NOT at
-   * path selection, so a prefix's version reflects the order its entries are
-   * pushed onto ribOutQ_. The emit sites in RibBase.cpp reference three rules
-   * by name; they are defined here:
-   *
-   *   Rule 1: a prefix's paths emitted within one chunk share one version.
-   *   Rule 2: a prefix whose paths span more than one chunk strictly increases
-   *           across those chunks.
-   *   Rule 3: different prefixes within a message strictly increase.
-   *
-   * Net: non-decreasing within a chunk, strictly increasing across
-   * chunks/messages. This is what isEntryShared relies on so a detached peer is
-   * never wrongly treated as having already seen a post-detach entry.
-   */
-  uint64_t incrementRibVersion() {
-    /*
-     * Temporarily commented out until we fix the RIB versioning in RIB. The
-     * bgpcpp.rib.tableVersion counter is advanced by
-     * PeerManagerBase::incrementMaxRibVersion() in the meantime, so it reports
-     * the sequence peers' cached versions are stamped from.
-     *
-     * RibStats::incrementRibTableVersion();
-     */
-    // Plain increment: ribVersion_ is mutated only on the RIB event base.
-    return ++ribVersion_;
   }
 
   /**
@@ -556,7 +523,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       VrfId vrfId,
       bool fullSync = false) noexcept;
   void handleFullAddPathWithdrawal(
-      VrfId vrfId,
+      RibVrf& vrf,
       RibEntry& ribEntry,
       RibOutWithdrawal& withdrawalAddPath,
       uint64_t& currentRibVersion);
@@ -570,12 +537,12 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * ribOutQ_ push order are unchanged.
    */
   void flushAnnouncementChunk(
-      VrfId vrfId,
+      RibVrf& vrf,
       RibOutAnnouncement& announcement,
       bool reserveAddPath,
       bool sendWithEoR);
   void flushWithdrawalChunk(
-      VrfId vrfId,
+      RibVrf& vrf,
       RibOutWithdrawal& withdrawal,
       bool reserveAddPath,
       bool logAsAddPath);
@@ -1020,14 +987,14 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       const std::shared_ptr<const WeightedNexthopMap>&
           weightedNexthops) noexcept;
   void handleAddUpdatedUnicastRoute(
-      VrfId vrfId,
+      RibVrf& vrf,
       RibEntry& entry,
       bool sendWithEoR,
       RibOutAnnouncement& announcement,
       RibOutAnnouncement& announcementAddPath,
       RibOutWithdrawal& withdrawalAddPath) noexcept;
   void handleAddUpdatedMultipaths(
-      VrfId vrfId,
+      RibVrf& vrf,
       RibEntry& entry,
       bool sendWithEoR,
       bool newlyInstalledInLocalRib,
@@ -1035,7 +1002,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       RibOutAnnouncement& announcementAddPath,
       RibOutWithdrawal& withdrawalAddPath) noexcept;
   void handleAddUpdatedMultipathDelta(
-      VrfId vrfId,
+      RibVrf& vrf,
       RibEntry& entry,
       bool sendWithEoR,
       bool newlyInstalledInLocalRib,
@@ -1438,17 +1405,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   RibVrf& quarantineVrf_;
 
   uint32_t ribOutQHighWatermark_{kRibOutQueueSizePauseThreshold};
-
-  /*
-   * RIB version counter - monotonically increasing value bumped once per prefix
-   * at queue-emission time (see incrementRibVersion). Used for tracking how
-   * caught up each peer is with RIB state. Written only on the RIB event base
-   * (incrementRibVersion); the sole cross-thread reader (the thrift
-   * getRibVersion handler) hops onto the RIB evb, so a plain uint64_t is
-   * race-free -- no atomic needed, which keeps the per-prefix bumps a plain
-   * increment on the hot path.
-   */
-  uint64_t ribVersion_{0};
 
 /*
  * per class placeholder for test code injection

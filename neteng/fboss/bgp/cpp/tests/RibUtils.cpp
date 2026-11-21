@@ -1173,7 +1173,6 @@ void RibFixture::runLbwCommunityBestPathTest(bool computeUcmpFromLbwComm) {
   auto fibFuture = fib_->getFibProgramFuture();
   sendInitialPathComputation();
   fibFuture.wait();
-  rib_->setFibBatchTime(std::chrono::milliseconds(2));
   fibFuture = fib_->getFibProgramFuture();
   sendAnnouncement(prefixBatch, eBgpPeer1_, attrs1);
   sendAnnouncement(prefixBatch, eBgpPeer2_, attrs2);

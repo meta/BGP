@@ -470,13 +470,36 @@ TEST_F(RibFibNexthopDatabaseFixture, TracksSubmittedNexthopSets) {
   EXPECT_EQ(
       *updatedPrefix.entries()->front().fib_out()->nexthop_set_ref_count(), 1);
 
-  fibFuture = fib_->getFibProgramFuture();
+  /*
+   * The withdrawn prefix releases its nexthop set only when the RIB handles its
+   * FibProgrammedMessage, which can happen after fibFuture is fulfilled. Move
+   * kV4Prefix2 to kV4Nexthop2 along with the withdrawal: the RIB queues
+   * kV4Prefix2's announcement to ribOutQ_ while handling a FibProgrammedMessage
+   * at or after the withdrawal's, so popping it means the release happened.
+   */
   sendWithdrawal(PrefixPathIds{{kV4Prefix1, kDefaultPathID}}, eBgpPeer1_);
-  fibFuture.wait();
+  sendAnnouncement(
+      PrefixPathIds{{kV4Prefix2, kDefaultPathID}}, eBgpPeer1_, updatedAttrs);
+  bool movedPrefixAnnounced = false;
+  while (!movedPrefixAnnounced) {
+    auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
+    const auto* announcement = std::get_if<RibOutAnnouncement>(&msg);
+    if (!announcement) {
+      continue;
+    }
+    for (const auto* entries :
+         {&announcement->entries, &announcement->addPathEntries}) {
+      for (const auto& entry : *entries) {
+        if (entry.prefix == kV4Prefix2 &&
+            entry.attrs->getNexthop() == kV4Nexthop2) {
+          movedPrefixAnnounced = true;
+        }
+      }
+    }
+  }
   const std::vector<TFibNexthopSet> expectedOnePrefix{
-      makeExpectedFibNexthopSet({makeExpectedFibNexthop(kV4Nexthop1)}, 1)};
-  database = rib_->getFibNexthopDatabase();
-  EXPECT_EQ(*database.nexthop_sets(), expectedOnePrefix);
+      makeExpectedFibNexthopSet({makeExpectedFibNexthop(kV4Nexthop2)}, 1)};
+  EXPECT_EQ(*rib_->getFibNexthopDatabase().nexthop_sets(), expectedOnePrefix);
 
   fibFuture = fib_->getFibProgramFuture();
   sendWithdrawal(PrefixPathIds{{kV4Prefix2, kDefaultPathID}}, eBgpPeer1_);

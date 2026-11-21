@@ -168,7 +168,9 @@ RibBase::RibBase(
       nexthopCache_(nexthopCache),
       fibAgentPort_(fibAgentPort),
       fibAgentRecvTimeout_(fibAgentRecvTimeout),
-      enableRibAllocatedPathId_(globalConfig.enableRibAllocatedPathId) {
+      enableRibAllocatedPathId_(globalConfig.enableRibAllocatedPathId),
+      defaultVrf_(createVrf(fboss::kDefaultVrf)),
+      quarantineVrf_(createVrf(fboss::kQuarantineVrfId)) {
   // init switchId best effort if deviceName is set in global config
   switchId_ = facebook::bgp::getSwitchId(globalConfig_.deviceName);
   // add monitoring for inter-thread queues
@@ -223,6 +225,19 @@ RibBase::RibBase(
       "Created Rib with fibBatchTime_= {}ms, computeUcmpFromLbwComm:{}",
       fibBatchTime_.count(),
       static_cast<bool>(globalConfig_.computeUcmpFromLbwComm));
+}
+
+RibVrf& RibBase::createVrf(VrfId vrfId) {
+  auto& ribVrf = ribVrfs_[vrfId];
+  if (!ribVrf) {
+    ribVrf = std::make_unique<RibVrf>(vrfId);
+  }
+  return *ribVrf;
+}
+
+RibVrf* FOLLY_NULLABLE RibBase::findVrf(VrfId vrfId) noexcept {
+  auto it = ribVrfs_.find(vrfId);
+  return it == ribVrfs_.end() ? nullptr : it->second.get();
 }
 
 RibBase::~RibBase() {

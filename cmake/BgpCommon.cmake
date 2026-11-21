@@ -562,6 +562,7 @@ add_library(bgp_rib_base
   neteng/fboss/bgp/cpp/rib/RibEntry.cpp
   neteng/fboss/bgp/cpp/rib/RibPolicy.cpp
   neteng/fboss/bgp/cpp/rib/RibPolicyLogger.cpp
+  neteng/fboss/bgp/cpp/rib/RibVrf.cpp
   neteng/fboss/bgp/cpp/rib/RouteInfoFilter.cpp
   neteng/fboss/bgp/cpp/rib/RouteInfoSelector.cpp
   neteng/fboss/bgp/cpp/rib/Utils.cpp

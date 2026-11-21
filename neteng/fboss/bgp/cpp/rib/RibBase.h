@@ -54,6 +54,7 @@
 #include "neteng/fboss/bgp/cpp/rib/RibCounters.h"
 #include "neteng/fboss/bgp/cpp/rib/RibEntry.h"
 #include "neteng/fboss/bgp/cpp/rib/RibPolicy.h"
+#include "neteng/fboss/bgp/cpp/rib/RibVrf.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
 #include "neteng/fboss/bgp/cpp/watchdog/MonitoredModule.h"
 #include "neteng/fboss/bgp/cpp/watchdog/MonitoredQueue.h"
@@ -274,6 +275,12 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   bool isFibOutTrackingEnabled() const noexcept {
     return globalConfig_.enableFibOutTracking;
   }
+
+  // Create the routing table for `vrfId`, or return it if it already exists.
+  RibVrf& createVrf(VrfId vrfId);
+
+  // Return the routing table for `vrfId`, or nullptr if it does not exist.
+  RibVrf* FOLLY_NULLABLE findVrf(VrfId vrfId) noexcept;
 
   /*
    * Get a compact summary (total prefixes + per-prefix-length histogram) of the
@@ -1395,6 +1402,11 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   const bool enableRibAllocatedPathId_{false};
 
  private:
+  // Routing tables owned by this RIB, keyed by VRF ID.
+  folly::F14NodeMap<VrfId, std::unique_ptr<RibVrf>> ribVrfs_;
+  RibVrf& defaultVrf_;
+  RibVrf& quarantineVrf_;
+
   uint32_t ribOutQHighWatermark_{kRibOutQueueSizePauseThreshold};
 
   /*

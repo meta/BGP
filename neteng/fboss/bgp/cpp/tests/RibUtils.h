@@ -213,7 +213,8 @@ class MockRib : public RibDC {
       (),
       (const, noexcept, override));
 
-  void prepareFibProgramming(bool fullSync = false) noexcept override;
+  void prepareFibProgramming(VrfId vrfId, bool fullSync = false) noexcept
+      override;
 
   void createFib() override;
 

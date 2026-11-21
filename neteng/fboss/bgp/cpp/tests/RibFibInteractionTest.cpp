@@ -93,7 +93,7 @@ TEST_F(FibOutRibFixture, FibOutPrefixReturnsOnlyExactMatch) {
   auto fibFuture = fib_->getFibProgramFuture();
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdateForTest(eBgpPeer1_, attr_, prefixPathId);
-    rib_->prepareFibProgramming(true);
+    rib_->prepareFibProgramming(fboss::kDefaultVrf, true);
   });
   fibFuture.wait();
 
@@ -155,7 +155,7 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
   {
     InSequence sequence;
     EXPECT_CALL(*fib_, program_(true)).WillOnce([this, &firstExpected](bool) {
-      const auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+      const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
       EXPECT_FALSE(entry.isOnFibBatchList());
       const auto* fibOut = rib_->findFibOut(entry);
       ASSERT_NE(fibOut, nullptr);
@@ -178,7 +178,7 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
       EXPECT_EQ(*database.nexthop_sets()->front().ref_count(), 1);
     });
     EXPECT_CALL(*fib_, program_(false)).WillOnce([this, &secondExpected](bool) {
-      const auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+      const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
       EXPECT_FALSE(entry.isOnFibBatchList());
       const auto* fibOut = rib_->findFibOut(entry);
       ASSERT_NE(fibOut, nullptr);
@@ -204,8 +204,8 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
   auto fibFuture = fib_->getFibProgramFuture();
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdateForTest(eBgpPeer1_, firstAttrs, prefixPathId);
-    rib_->prepareFibProgramming(true);
-    const auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->prepareFibProgramming(fboss::kDefaultVrf, true);
+    const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     EXPECT_TRUE(entry.isOnFibBatchList());
     EXPECT_EQ(rib_->findFibOut(entry), nullptr);
     const auto table =
@@ -221,8 +221,8 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdateForTest(
         eBgpPeer1_, secondAttrs, prefixPathId);
-    rib_->prepareFibProgramming(false);
-    const auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->prepareFibProgramming(fboss::kDefaultVrf, false);
+    const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     EXPECT_TRUE(entry.isOnFibBatchList());
     const auto* fibOut = rib_->findFibOut(entry);
     ASSERT_NE(fibOut, nullptr);
@@ -243,7 +243,7 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
   fibFuture.wait();
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    const auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     EXPECT_FALSE(entry.isOnFibBatchList());
     const auto* fibOut = rib_->findFibOut(entry);
     ASSERT_NE(fibOut, nullptr);
@@ -288,7 +288,7 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
 
     Fib::FibProgrammedMessage fibMsg(
         fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
-    rib_->ribEntries_.emplace(kV4Prefix1, entry);
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, entry);
     inputQ.push(std::move(fibMsg));
 
     auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -414,8 +414,9 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    rib_->ribEntries_.clear();
-    rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry)));
+    rib_->defaultVrf_.ribEntries().clear();
+    rib_->defaultVrf_.ribEntries().emplace(
+        make_pair(kV4Prefix1, std::move(entry)));
     Fib::FibProgrammedMessage fibMsg(
         fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
     inputQ.push(std::move(fibMsg));
@@ -451,10 +452,11 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
         *buildBgpPathFields(5, 4, 4, 4));
     newAttr2->setNexthop(kV4Nexthop2);
     newAttr2->publish();
-    rib_->ribEntries_.find(kV4Prefix1)
+    rib_->defaultVrf_.ribEntries()
+        .find(kV4Prefix1)
         ->second.updatePath(eBgpPeer2_, newAttr2, false);
     RibBase::selectBestPath(
-        rib_->ribEntries_.find(kV4Prefix1)->second,
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second,
         multipathSelector,
         bestpathSelector,
         false,
@@ -462,7 +464,8 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
 
     prefixToNexthops = {
         {kV4Prefix1,
-         rib_->ribEntries_.find(kV4Prefix1)
+         rib_->defaultVrf_.ribEntries()
+             .find(kV4Prefix1)
              ->second.getMultipathWeightedNexthops()}};
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
@@ -522,7 +525,7 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
 
     Fib::FibProgrammedMessage fibMsg(
         fboss::kDefaultVrf, FibProgrammedPfxs, true /* fullSync */);
-    rib_->ribEntries_.emplace(kV6Prefix1, entry2);
+    rib_->defaultVrf_.ribEntries().emplace(kV6Prefix1, entry2);
     inputQ.push(std::move(fibMsg));
 
     // Expect RibInitialAnnouncementStart before initial announcement.
@@ -648,9 +651,11 @@ TEST_F(RibFixture, RibWithdrawalDuringPauseBestPathAndFibProgrammingTest) {
     WITH_RETRIES({
       rib_->evb_.runInEventBaseThreadAndWait([&]() {
         ASSERT_EVENTUALLY_TRUE(
-            rib_->ribEntries_.find(kV4Prefix1) == rib_->ribEntries_.end());
+            rib_->defaultVrf_.ribEntries().find(kV4Prefix1) ==
+            rib_->defaultVrf_.ribEntries().end());
         EXPECT_TRUE(
-            rib_->ribEntries_.find(kV6Prefix1) != rib_->ribEntries_.end());
+            rib_->defaultVrf_.ribEntries().find(kV6Prefix1) !=
+            rib_->defaultVrf_.ribEntries().end());
       });
     });
   }
@@ -760,7 +765,9 @@ TEST_F(RibFixture, PauseAndResumeBestPathAndFibProgrammingTest) {
     sendResumeBestPathAndFibProgramming(RibPauseResumeCause::SAFE_MODE);
 
     fibFuture.wait();
-    EXPECT_TRUE(rib_->ribEntries_.find(kV4Prefix1) == rib_->ribEntries_.end());
+    EXPECT_TRUE(
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1) ==
+        rib_->defaultVrf_.ribEntries().end());
 
     fibFuture = fib_->getFibProgramFuture();
     // Step 6: Send PauseBestPathAndFibProgramming message to rib
@@ -977,7 +984,7 @@ TEST_F(RibFixture, FibFlushedCounterTest) {
   // Set up test state with ribEntries_.size() (2) > localRoutes_.size() (1)
   auto localPrefix = folly::CIDRNetwork(IPAddress("10.0.0.0"), 24);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.clear();
+    rib_->defaultVrf_.ribEntries().clear();
     rib_->localRoutes_.clear();
 
     // Set up a local route
@@ -991,18 +998,18 @@ TEST_F(RibFixture, FibFlushedCounterTest) {
     localEntry.updatePath(eBgpPeer1_, attr_, false);
     RibBase::selectBestPath(
         localEntry, multipathSelector, bestpathSelector, false, 0);
-    rib_->ribEntries_.emplace(localPrefix, localEntry);
+    rib_->defaultVrf_.ribEntries().emplace(localPrefix, localEntry);
 
     /*
      * Add a non-local rib entry WITHOUT a path (getAllPathsCnt() == 0)
      * This simulates a route that has been withdrawn but not yet erased
      */
     RibEntry nonLocalEntry(kV4Prefix1);
-    rib_->ribEntries_.emplace(kV4Prefix1, nonLocalEntry);
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, nonLocalEntry);
   });
 
   // Verify setup: ribEntries_.size() > localRoutes_.size()
-  EXPECT_EQ(2, rib_->ribEntries_.size());
+  EXPECT_EQ(2, rib_->defaultVrf_.ribEntries().size());
   EXPECT_EQ(1, rib_->localRoutes_.size());
 
   /*
@@ -1021,7 +1028,8 @@ TEST_F(RibFixture, FibFlushedCounterTest) {
     // Get nexthops for local entry only
     std::shared_ptr<const WeightedNexthopMap> localNexthops;
     rib_->evb_.runInEventBaseThreadAndWait([&]() {
-      localNexthops = rib_->ribEntries_.find(localPrefix)
+      localNexthops = rib_->defaultVrf_.ribEntries()
+                          .find(localPrefix)
                           ->second.getMultipathWeightedNexthops();
     });
 

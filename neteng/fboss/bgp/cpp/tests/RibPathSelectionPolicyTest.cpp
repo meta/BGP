@@ -165,8 +165,8 @@ TEST_F(RibFixtureAddPathTestSuite, PathSelectionReadOnlyTest) {
   sendInitialPathComputation();
   ribFuture.wait();
 
-  const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-  EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+  const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+  EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
   const auto& ribEntry = ribEntryIter->second;
 
   /*
@@ -291,7 +291,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionReplaceTest) {
 
   ribFuture.wait();
 
-  const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
+  const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
   const auto& ribEntry = ribEntryIter->second;
 
   // Now we should have a match and the best path is selected
@@ -341,7 +341,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionExpirationTest) {
   rib_->waitForPathSelectionPolicyUpdate();
   ribFuture.wait();
 
-  const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
+  const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
   const auto& ribEntry = ribEntryIter->second;
   auto oldPath = ribEntry.getBestPath();
 
@@ -410,16 +410,16 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMultipleUpdateTest) {
 
   {
     // kV6Prefix1 rib should be altered by rib policy
-    const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+    const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
     const auto& ribEntry = ribEntryIter->second;
 
     EXPECT_EQ(nullptr, ribEntry.getBestPath());
   }
   {
     // kV6Prefix2 rib should not be altered by rib policy
-    const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix2);
-    EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+    const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix2);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
     const auto& ribEntry = ribEntryIter->second;
 
     EXPECT_NE(nullptr, ribEntry.getBestPath());
@@ -495,8 +495,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionClearTest) {
 
   {
     // rib should be altered by rib policy
-    const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+    const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
     const auto& ribEntry = ribEntryIter->second;
 
     EXPECT_EQ(nullptr, ribEntry.getBestPath());
@@ -512,7 +512,7 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionClearTest) {
   ribFuture.wait();
 
   {
-    const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
+    const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
     const auto& ribEntry = ribEntryIter->second;
 
     // The rib policy no longer exists. The best path is now selected
@@ -597,8 +597,8 @@ TEST_P(
   sendAnnouncement(prefixBatch, eBgpPeer2_, attr);
   ribFuture.wait();
 
-  const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-  EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+  const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+  EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
   const auto& ribEntry = ribEntryIter->second;
 
   // two paths
@@ -794,8 +794,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionRollOutBackTest) {
   sendAnnouncement(prefixBatch, eBgpPeer2_, attr);
   ribFuture.wait();
 
-  const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-  EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+  const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+  EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
   const auto& ribEntry = ribEntryIter->second;
 
   // No path
@@ -960,8 +960,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsRelaxTest) {
   sendAnnouncement(prefixBatch, eBgpPeer2_, attr);
   ribFuture.wait();
 
-  const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-  EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+  const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+  EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
   const auto& ribEntry = ribEntryIter->second;
 
   // two paths
@@ -1241,8 +1241,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsTest) {
   sendAnnouncement(prefixBatch, eBgpPeer2_, attr);
   ribFuture.wait();
 
-  const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-  EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+  const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+  EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
   const auto& ribEntry = ribEntryIter->second;
 
   // no multipath paths selected (below threshold)
@@ -1368,8 +1368,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathSelectionMinAggLbwbpsMissingLbwTest) {
   sendAnnouncement(prefixBatch, eBgpPeer2_, attr);
   ribFuture.wait();
 
-  const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-  EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+  const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+  EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
   const auto& ribEntry = ribEntryIter->second;
 
   // two paths (BGP fallback, no LBW check since paths missing LBW)
@@ -1451,8 +1451,8 @@ TEST_P(RibFixtureAddPathTestSuite, AnnouncementTest) {
 
   {
     // rib should be altered by rib policy
-    const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), ribEntryIter);
+    const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntryIter);
     const auto& ribEntry = ribEntryIter->second;
 
     EXPECT_EQ(nullptr, ribEntry.getBestPath());
@@ -1474,7 +1474,7 @@ TEST_P(RibFixtureAddPathTestSuite, AnnouncementTest) {
   ribFuture.wait();
 
   {
-    const auto& ribEntryIter = rib_->ribEntries_.find(kV6Prefix1);
+    const auto& ribEntryIter = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
     const auto& ribEntry = ribEntryIter->second;
 
     // The rib policy no longer exists. The best path is now selected

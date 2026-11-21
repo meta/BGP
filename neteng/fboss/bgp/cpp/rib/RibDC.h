@@ -88,19 +88,24 @@ class RibDC : public RibBase {
   void setCrfFileModeEnabled(bool fileModeActive);
 
   neteng::fboss::bgp::thrift::TCanonicalRibState getRibEntriesCanonical(
-      neteng::fboss::bgp_attr::TBgpAfi afi);
+      neteng::fboss::bgp_attr::TBgpAfi afi,
+      VrfId vrfId = fboss::kDefaultVrf);
   neteng::fboss::bgp::thrift::TCanonicalRibState getRibPrefixCanonical(
-      std::unique_ptr<std::string> prefix);
+      std::unique_ptr<std::string> prefix,
+      VrfId vrfId = fboss::kDefaultVrf);
   neteng::fboss::bgp::thrift::TCanonicalRibState
   getRibEntriesForCommunitiesCanonical(
       neteng::fboss::bgp_attr::TBgpAfi afi,
-      const std::vector<nettools::bgplib::BgpAttrCommunityC>& communities);
+      const std::vector<nettools::bgplib::BgpAttrCommunityC>& communities,
+      VrfId vrfId = fboss::kDefaultVrf);
   neteng::fboss::bgp::thrift::TCanonicalRibState
   getRibEntriesForCommunityCanonical(
       neteng::fboss::bgp_attr::TBgpAfi afi,
-      std::unique_ptr<std::string> community);
+      std::unique_ptr<std::string> community,
+      VrfId vrfId = fboss::kDefaultVrf);
   neteng::fboss::bgp::thrift::TCanonicalRibState getRibSubprefixesCanonical(
-      std::unique_ptr<std::string> prefix);
+      std::unique_ptr<std::string> prefix,
+      VrfId vrfId = fboss::kDefaultVrf);
   /*
    * Result of resolving the file-based CRF artifact against the cached
    * RibPolicy at startup, returned by resolveCrfPolicy(). Bundles the two
@@ -156,7 +161,7 @@ class RibDC : public RibBase {
   neteng::fboss::bgp::thrift::TPartialDrainState getPartialDrainState()
       const override;
   std::vector<neteng::fboss::bgp::thrift::TPartiallyDrainedPrefix>
-  getPartiallyDrainedPrefixes() const override;
+  getPartiallyDrainedPrefixes(VrfId vrfId = fboss::kDefaultVrf) const override;
 
  protected:
   void createFib() override;
@@ -214,6 +219,7 @@ class RibDC : public RibBase {
       bool isBootstrap = false) override;
 
   void overwriteRouteAttributes(
+      RibVrf& vrf,
       const folly::F14FastSet<folly::CIDRNetwork>& prefixes) override;
 
   folly::coro::Task<void> processRibPolicyMsgLoop() noexcept override;
@@ -355,6 +361,11 @@ class RibDC : public RibBase {
   FsdbSyncer* fsdbSyncer_{nullptr};
 
  private:
+  // Whether the VRF's routes are published to canonical FSDB.
+  static bool isVrfCanonicalFsdbCapable(VrfId vrfId) noexcept {
+    return vrfId == fboss::kDefaultVrf;
+  }
+
   /* FSDB reconnect notification and canonical update-queue wiring. */
   void configureCanonicalRibExport(FsdbSyncer& fsdbSyncer);
   folly::coro::Task<void> consumeCanonicalRibSnapshotRequests(

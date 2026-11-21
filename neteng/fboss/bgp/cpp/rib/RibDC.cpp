@@ -227,7 +227,8 @@ bool RibDC::addCanonicalGetterEntry(
  * the legacy getRibEntries / RibDC::createTRibEntryWithFilter path.
  */
 neteng::fboss::bgp::thrift::TCanonicalRibState RibDC::getRibEntriesCanonical(
-    TBgpAfi afi) {
+    TBgpAfi afi,
+    VrfId vrfId) {
   if (afi != TBgpAfi::AFI_IPV4 && afi != TBgpAfi::AFI_IPV6) {
     return neteng::fboss::bgp::thrift::TCanonicalRibState{};
   }
@@ -235,8 +236,12 @@ neteng::fboss::bgp::thrift::TCanonicalRibState RibDC::getRibEntriesCanonical(
   CanonicalRibBuilder builder;
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
     auto expectIPv4 = afi == TBgpAfi::AFI_IPV4;
-    for (const auto& [prefix, ribEntry] : ribEntries_) {
+    for (const auto& [prefix, ribEntry] : vrf->ribEntries()) {
       auto isIPv4 = prefix.first.family() == AF_INET;
       if (expectIPv4 != isIPv4) {
         continue;
@@ -249,7 +254,8 @@ neteng::fboss::bgp::thrift::TCanonicalRibState RibDC::getRibEntriesCanonical(
 }
 
 neteng::fboss::bgp::thrift::TCanonicalRibState RibDC::getRibPrefixCanonical(
-    std::unique_ptr<std::string> prefix) {
+    std::unique_ptr<std::string> prefix,
+    VrfId vrfId) {
   CanonicalRibBuilder builder;
   if (!prefix) {
     return builder.build();
@@ -264,8 +270,13 @@ neteng::fboss::bgp::thrift::TCanonicalRibState RibDC::getRibPrefixCanonical(
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    auto entry = ribEntries_.find(network);
-    if (entry != ribEntries_.end()) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    const auto& ribEntries = vrf->ribEntries();
+    auto entry = ribEntries.find(network);
+    if (entry != ribEntries.end()) {
       addCanonicalGetterEntry(
           builder, entry->first, entry->second, [](const RouteInfo&) {
             return true;
@@ -279,7 +290,8 @@ neteng::fboss::bgp::thrift::TCanonicalRibState RibDC::getRibPrefixCanonical(
 neteng::fboss::bgp::thrift::TCanonicalRibState
 RibDC::getRibEntriesForCommunitiesCanonical(
     TBgpAfi afi,
-    const std::vector<nettools::bgplib::BgpAttrCommunityC>& communities) {
+    const std::vector<nettools::bgplib::BgpAttrCommunityC>& communities,
+    VrfId vrfId) {
   CanonicalRibBuilder builder;
 
   if (communities.empty()) {
@@ -291,7 +303,11 @@ RibDC::getRibEntriesForCommunitiesCanonical(
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    for (const auto& [prefix, ribEntry] : ribEntries_) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    for (const auto& [prefix, ribEntry] : vrf->ribEntries()) {
       if (((afi == TBgpAfi::AFI_IPV4) && (prefix.first.family() != AF_INET)) ||
           ((afi == TBgpAfi::AFI_IPV6) && (prefix.first.family() != AF_INET6))) {
         continue;
@@ -320,7 +336,8 @@ RibDC::getRibEntriesForCommunitiesCanonical(
 neteng::fboss::bgp::thrift::TCanonicalRibState
 RibDC::getRibEntriesForCommunityCanonical(
     TBgpAfi afi,
-    std::unique_ptr<std::string> community) {
+    std::unique_ptr<std::string> community,
+    VrfId vrfId) {
   CanonicalRibBuilder builder;
   if (!community) {
     XLOG(ERR, "No community is provided");
@@ -338,11 +355,13 @@ RibDC::getRibEntriesForCommunityCanonical(
   }
   std::vector<nettools::bgplib::BgpAttrCommunityC> communities{*comm};
 
-  return getRibEntriesForCommunitiesCanonical(afi, communities);
+  return getRibEntriesForCommunitiesCanonical(afi, communities, vrfId);
 }
 
 neteng::fboss::bgp::thrift::TCanonicalRibState
-RibDC::getRibSubprefixesCanonical(std::unique_ptr<std::string> prefix) {
+RibDC::getRibSubprefixesCanonical(
+    std::unique_ptr<std::string> prefix,
+    VrfId vrfId) {
   CanonicalRibBuilder builder;
   if (!prefix) {
     XLOG(ERR, "No prefix is provided");
@@ -358,7 +377,11 @@ RibDC::getRibSubprefixesCanonical(std::unique_ptr<std::string> prefix) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    for (const auto& [subPrefix, ribEntry] : ribEntries_) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    for (const auto& [subPrefix, ribEntry] : vrf->ribEntries()) {
       /*
        * isSubnet matches the parent prefix itself too, mirroring the legacy
        * getRibEntriesForSubprefixes (the parent is included in the result).
@@ -686,16 +709,17 @@ void RibDC::enqueueCanonicalRibFullSnapshot(std::string_view reason) {
     return;
   }
   canonicalSnapshotPending_ = false;
+  const auto& ribEntries = defaultVrf_.ribEntries();
   const auto start = std::chrono::steady_clock::now();
   XLOGF(
       INFO,
       "[CanonicalRib] Starting full RIB walk: reason={}, ribEntries={}",
       reason,
-      ribEntries_.size());
+      ribEntries.size());
   RibStatsDC::STATS_canonicalRibExportReconnectRebuildStart.add(1);
   CanonicalRibFullSnapshotInput snapshot;
-  snapshot.entries.reserve(ribEntries_.size());
-  for (const auto& [prefix, entry] : ribEntries_) {
+  snapshot.entries.reserve(ribEntries.size());
+  for (const auto& [prefix, entry] : ribEntries) {
     auto entryInput = buildCanonicalRibEntryInput(entry);
     if (!entryInput) {
       continue;
@@ -747,7 +771,10 @@ void RibDC::processNexthopResolutionUpdate(
               "Announcing conditional route {}",
               folly::IPAddress::networkToString(prefix));
           processRibInAnnouncement(
-              kV4LocalPeerInfo, localRoutes_.at(prefix).attrs, pfxPathIds);
+              defaultVrf_,
+              kV4LocalPeerInfo,
+              localRoutes_.at(prefix).attrs,
+              pfxPathIds);
         });
     processConditionalRoutesForNexthops(
         nexthopResolutionUpdate.unresolved,
@@ -756,7 +783,7 @@ void RibDC::processNexthopResolutionUpdate(
               INFO,
               "Withdrawing conditional route {}",
               folly::IPAddress::networkToString(prefix));
-          processRibInWithdrawal(kV4LocalPeerInfo, pfxPathIds);
+          processRibInWithdrawal(defaultVrf_, kV4LocalPeerInfo, pfxPathIds);
         });
   }
 
@@ -892,7 +919,7 @@ void RibDC::handleRouteAttributePolicyTimerMsg() noexcept {
   XLOG(
       INFO,
       "Received RouteAttributePolicyTimerMsg, triggering FIB programming...");
-  for (auto& [_, ribEntry] : ribEntries_) {
+  for (auto& [_, ribEntry] : defaultVrf_.ribEntries()) {
     ribEntry.requirePathSelection();
   }
   schedulePrepareFibProgrammingTimer();
@@ -1220,6 +1247,7 @@ bool RibDC::replaceRouteAttributePolicy(
   if (needsReEvaluation && ribEoRReceived_) {
     XLOG(INFO)
         << "[CTE] needsReEvaluation and ribEoRReceived, triggering path selection";
+    auto& ribEntries = defaultVrf_.ribEntries();
 
     /*
      * Selective re-evaluation: instead of iterating ALL ribEntries_, only
@@ -1229,8 +1257,8 @@ bool RibDC::replaceRouteAttributePolicy(
     if (!prefixesNeedingReEvaluation.empty()) {
       // Selective re-evaluation: only affected prefixes
       for (const auto& prefix : prefixesNeedingReEvaluation) {
-        auto ribIt = ribEntries_.find(prefix);
-        if (ribIt != ribEntries_.end()) {
+        auto ribIt = ribEntries.find(prefix);
+        if (ribIt != ribEntries.end()) {
           ribIt->second.requirePathSelection();
         }
       }
@@ -1247,15 +1275,15 @@ bool RibDC::replaceRouteAttributePolicy(
        * prefix matched it (e.g., cache not fully populated, BGP just
        * restarted, or policy was cleared).
        */
-      for (auto& [_, ribEntry] : ribEntries_) {
+      for (auto& [_, ribEntry] : ribEntries) {
         ribEntry.requirePathSelection();
       }
       XLOGF(
           INFO,
           "[CTE] Full re-evaluation fallback: {} prefixes, "
           "affectedPrefixes empty, cache may not have been fully populated",
-          ribEntries_.size());
-      RibStatsDC::STATS_raPolicyReEvalPrefixes.add(ribEntries_.size());
+          ribEntries.size());
+      RibStatsDC::STATS_raPolicyReEvalPrefixes.add(ribEntries.size());
     }
 
     schedulePrepareFibProgrammingTimer();
@@ -1380,7 +1408,7 @@ bool RibDC::replacePathSelectionPolicy(
      * recompute all the paths, similar to fullSync but will send out the
      * update announcement to the peers
      */
-    for (auto& [prefix, ribEntry] : ribEntries_) {
+    for (auto& [prefix, ribEntry] : defaultVrf_.ribEntries()) {
       ribEntry.requirePathSelection();
     }
     schedulePrepareFibProgrammingTimer();
@@ -1394,7 +1422,9 @@ bool RibDC::replacePathSelectionPolicy(
  * entries.
  */
 void RibDC::overwriteRouteAttributes(
+    RibVrf& vrf,
     const folly::F14FastSet<folly::CIDRNetwork>& prefixes) {
+  auto& ribEntries = vrf.ribEntries();
   auto overwriteStartTime = std::chrono::steady_clock::now();
 
   // trigger rib policy calculation
@@ -1408,8 +1438,8 @@ void RibDC::overwriteRouteAttributes(
    *  - Otherwise, we let rib policy overwrite the route attributes
    */
   for (const auto& prefix : prefixes) {
-    auto ribIt = ribEntries_.find(prefix);
-    XCHECK(ribIt != ribEntries_.end());
+    auto ribIt = ribEntries.find(prefix);
+    XCHECK(ribIt != ribEntries.end());
     auto& ribEntry = ribIt->second;
     auto startTime = std::chrono::steady_clock::now();
 
@@ -1434,15 +1464,15 @@ void RibDC::overwriteRouteAttributes(
 
   // update fib batch list
   for (const auto& prefix : ribChange.updatedRoutes) {
-    auto ribIt = ribEntries_.find(prefix);
-    XCHECK(ribIt != ribEntries_.end());
+    auto ribIt = ribEntries.find(prefix);
+    XCHECK(ribIt != ribEntries.end());
     auto& ribEntry = ribIt->second;
     if (!ribEntry.isOnFibBatchList()) {
       fibBatchList_.push_back(ribEntry);
     }
   }
 
-  if (prefixes.size() == ribEntries_.size()) {
+  if (prefixes.size() == ribEntries.size()) {
     auto routeAttributeOverwriteTimeMs =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - overwriteStartTime);
@@ -1450,13 +1480,16 @@ void RibDC::overwriteRouteAttributes(
     XLOGF(
         INFO,
         "Route attribute overwrite in a FullRibWalk for {} ribEntries took {} ms",
-        ribEntries_.size(),
+        ribEntries.size(),
         routeAttributeOverwriteTimeMs.count());
     RibStatsDC::STATS_ribFullSyncRouteAttributeOverwriteTimeMs.addValue(
         routeAttributeOverwriteTimeMs.count());
   }
 
-  enqueueCanonicalRibUpdatesAfterCompute(prefixes);
+  // Canonical FSDB publication covers the default VRF only.
+  if (isVrfCanonicalFsdbCapable(vrf.vrfId())) {
+    enqueueCanonicalRibUpdatesAfterCompute(prefixes);
+  }
 }
 
 std::pair<bool, bool> RibDC::runBestPathSelection(RibEntry& entry) noexcept {
@@ -1550,11 +1583,12 @@ void RibDC::enqueueCanonicalRibUpdatesAfterCompute(
     return;
   }
 
+  const auto& ribEntries = defaultVrf_.ribEntries();
   for (const auto& prefix : processedPrefixes) {
     CanonicalRibPrefixUpdate update;
     update.prefix = prefix;
-    auto entryIt = ribEntries_.find(prefix);
-    if (entryIt != ribEntries_.end()) {
+    auto entryIt = ribEntries.find(prefix);
+    if (entryIt != ribEntries.end()) {
       auto entryInput = buildCanonicalRibEntryInput(entryIt->second);
       if (entryInput) {
         update.entry = std::move(*entryInput);
@@ -1986,12 +2020,16 @@ TPartiallyDrainedPrefix RibDC::buildPartialDrainPrefixEntry(
   return entry;
 }
 
-std::vector<TPartiallyDrainedPrefix> RibDC::getPartiallyDrainedPrefixes()
-    const {
+std::vector<TPartiallyDrainedPrefix> RibDC::getPartiallyDrainedPrefixes(
+    VrfId vrfId) const {
   std::vector<TPartiallyDrainedPrefix> result;
+  const auto* vrf = findVrf(vrfId);
+  if (!vrf) {
+    return result;
+  }
   result.reserve(
       static_cast<size_t>(std::max<int64_t>(0, drainedPrefixCount_)));
-  for (const auto& [prefix, ribEntry] : ribEntries_) {
+  for (const auto& [prefix, ribEntry] : vrf->ribEntries()) {
     if (!ribEntry.getIsPartialDrain()) {
       continue;
     }

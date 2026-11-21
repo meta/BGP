@@ -333,9 +333,9 @@ void MockFib::fulfillFibProgramPromise() {
  * MOCK RIB
  */
 
-void MockRib::prepareFibProgramming(bool fullSync) noexcept {
+void MockRib::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
   prepareFibProgramming_();
-  RibDC::prepareFibProgramming(fullSync);
+  RibDC::prepareFibProgramming(vrfId, fullSync);
   fibItems.clear();
   for (auto it = fibBatchList_.begin(); it != fibBatchList_.end(); ++it) {
     auto [snapshot, inserted] = fibItems.emplace(it->getPrefix(), *it);
@@ -433,7 +433,7 @@ void MockRib::processSingleRibInUpdateForTest(
     const TinyPeerInfo& peer,
     std::shared_ptr<const BgpPath> attrs,
     const PrefixPathId& prefixPathId) {
-  processSingleRibInUpdate(peer, std::move(attrs), prefixPathId);
+  processSingleRibInUpdate(defaultVrf_, peer, std::move(attrs), prefixPathId);
 }
 
 void MockRib::enqueueCanonicalRibFullSnapshotForTest() {
@@ -601,8 +601,9 @@ std::shared_ptr<RouteInfo> MockRib::getBestPath(
     const folly::CIDRNetwork& prefix) {
   std::shared_ptr<RouteInfo> bestPath = nullptr;
   evb_.runInEventBaseThreadAndWait([&]() {
-    auto ribEntry = ribEntries_.find(prefix);
-    if (ribEntry != ribEntries_.end()) {
+    const auto& ribEntries = defaultVrf_.ribEntries();
+    auto ribEntry = ribEntries.find(prefix);
+    if (ribEntry != ribEntries.end()) {
       bestPath = ribEntry->second.getBestPath();
     }
   });
@@ -613,8 +614,9 @@ folly::F14NodeMap<uint32_t, std::shared_ptr<RouteInfo>> MockRib::getMultipath(
     const folly::CIDRNetwork& prefix) {
   folly::F14NodeMap<uint32_t, std::shared_ptr<RouteInfo>> multipath;
   evb_.runInEventBaseThreadAndWait([&]() {
-    auto ribEntry = ribEntries_.find(prefix);
-    if (ribEntry != ribEntries_.end()) {
+    const auto& ribEntries = defaultVrf_.ribEntries();
+    auto ribEntry = ribEntries.find(prefix);
+    if (ribEntry != ribEntries.end()) {
       multipath = ribEntry->second.getMultipaths();
     }
   });
@@ -1199,7 +1201,8 @@ void RibFixture::runLbwCommunityBestPathTest(bool computeUcmpFromLbwComm) {
       *rejPaths[0].next_hop()->prefix_bin(),
       network::toBinaryAddress(kV4Nexthop4).addr()->toStdString());
   {
-    const auto& ribEntry = (rib_->ribEntries_.find(kV4Prefix1))->second;
+    const auto& ribEntry =
+        (rib_->defaultVrf_.ribEntries().find(kV4Prefix1))->second;
     EXPECT_EQ(
         static_cast<uint32_t>(
             ribEntry.getAggregateReceivedUcmpWeight().value() / LbwToUcmpWt),
@@ -1281,7 +1284,7 @@ void RibFixture::runLbwCommunityBestPathTest(bool computeUcmpFromLbwComm) {
   fibFuture.wait();
   // Check ribentry has 3 nhs with appropriate weights
   {
-    auto& ribEntry = (rib_->ribEntries_.find(kV4Prefix1))->second;
+    auto& ribEntry = (rib_->defaultVrf_.ribEntries().find(kV4Prefix1))->second;
     EXPECT_EQ(
         ribEntry.getAggregateReceivedUcmpWeight().value(),
         (kLbw10G + kLbw5G + kLbw1G));

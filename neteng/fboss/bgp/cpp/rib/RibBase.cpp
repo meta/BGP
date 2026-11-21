@@ -214,7 +214,7 @@ RibBase::RibBase(
 
   // initialize fibBatchTimer_ for batch processing of fib programming requests
   fibBatchTimer_ = folly::AsyncTimeout::make(
-      evb_, [this]() noexcept { prepareFibProgramming(); });
+      evb_, [this]() noexcept { prepareFibProgramming(fboss::kDefaultVrf); });
 
   // bounds the deferred initial full-sync's wait for nexthop resolution
   nexthopResolutionTimer_ = folly::AsyncTimeout::make(
@@ -236,6 +236,17 @@ RibVrf& RibBase::createVrf(VrfId vrfId) {
 }
 
 RibVrf* FOLLY_NULLABLE RibBase::findVrf(VrfId vrfId) noexcept {
+  if (vrfId == fboss::kDefaultVrf) {
+    return &defaultVrf_;
+  }
+  auto it = ribVrfs_.find(vrfId);
+  return it == ribVrfs_.end() ? nullptr : it->second.get();
+}
+
+const RibVrf* FOLLY_NULLABLE RibBase::findVrf(VrfId vrfId) const noexcept {
+  if (vrfId == fboss::kDefaultVrf) {
+    return &defaultVrf_;
+  }
   auto it = ribVrfs_.find(vrfId);
   return it == ribVrfs_.end() ? nullptr : it->second.get();
 }
@@ -340,9 +351,15 @@ void RibBase::cleanupCommon() noexcept {
    * Clearing here while nexthopInfoMap_ is still valid lets RouteInfo
    * destructors unlink from their NexthopInfo association lists.
    */
-  XLOGF(
-      INFO, "[Exit] Clearing ribEntries_ ({} entries)...", ribEntries_.size());
-  ribEntries_.clear();
+  for (auto& [vrfId, ribVrf] : ribVrfs_) {
+    auto& ribEntries = ribVrf->ribEntries();
+    XLOGF(
+        INFO,
+        "[Exit] Clearing ribEntries_ for VRF {} ({} entries)...",
+        vrfId,
+        ribEntries.size());
+    ribEntries.clear();
+  }
   fibNexthopSets_.clear();
   ribCounters_.reset();
   XLOG(INFO, "[Exit] ribEntries_ cleared");
@@ -648,11 +665,30 @@ folly::coro::Task<void> RibBase::processRibInMsgLoop() noexcept {
     folly::variant_match(
         *msg,
         [this](const RibInAnnouncement& announcement) {
+          auto* vrf = findVrf(announcement.vrfId);
+          if (!vrf) {
+            XLOGF(
+                ERR,
+                "Ignoring RibInAnnouncement for non-existent VRF {}",
+                announcement.vrfId);
+            return;
+          }
           processRibInAnnouncement(
-              announcement.peer, announcement.attrs, announcement.pfxPathIds);
+              *vrf,
+              announcement.peer,
+              announcement.attrs,
+              announcement.pfxPathIds);
         },
         [this](const RibInWithdrawal& withdrawal) {
-          processRibInWithdrawal(withdrawal.peer, withdrawal.pfxPathIds);
+          auto* vrf = findVrf(withdrawal.vrfId);
+          if (!vrf) {
+            XLOGF(
+                ERR,
+                "Ignoring RibInWithdrawal for non-existent VRF {}",
+                withdrawal.vrfId);
+            return;
+          }
+          processRibInWithdrawal(*vrf, withdrawal.peer, withdrawal.pfxPathIds);
         },
         [this](const RibInInitialPathComputation& initialPathComputation) {
           processRibInInitialPathComputation(
@@ -706,6 +742,7 @@ folly::coro::Task<void> RibBase::processLocalRoutesRoutine() noexcept {
 }
 
 void RibBase::processRibInAnnouncement(
+    RibVrf& vrf,
     const TinyPeerInfo& peer,
     std::shared_ptr<const BgpPath> attrs,
     const PrefixPathIds& pfxPathIds) noexcept {
@@ -724,14 +761,14 @@ void RibBase::processRibInAnnouncement(
      * can be advertised to peers before we send EoR. Process the aggregate
      * routes first
      */
-    auto aggs = processSingleRibInUpdate(peer, attrs, pfxPathId);
+    auto aggs = processSingleRibInUpdate(vrf, peer, attrs, pfxPathId);
     for (auto& [network, bgpAttrs] : aggs) {
       /*
        * aggs iterated here MUST be local originated routes, not received
        * routes. Hence they always use default path ID
        */
       PrefixPathId aggPfxPid{network, kDefaultPathID};
-      processSingleRibInUpdate(kV4LocalPeerInfo, bgpAttrs, aggPfxPid);
+      processSingleRibInUpdate(vrf, kV4LocalPeerInfo, bgpAttrs, aggPfxPid);
     }
   }
   ribCounters_.publishTotalPathCounters();
@@ -773,6 +810,7 @@ const FibOutState* RibBase::findFibOut(const RibEntry& entry) {
 }
 
 void RibBase::checkWithdrawalBeforeRouteProgrammed(
+    RibVrf& vrf,
     folly::CIDRNetwork& prefix,
     RibEntry& entry) noexcept {
   /*
@@ -788,11 +826,12 @@ void RibBase::checkWithdrawalBeforeRouteProgrammed(
     ribCounters_.onPrefixRemoved(
         prefix.first.isV4(), prefix.second, entry.getInactivePathCnt());
     eraseFibOut(entry);
-    ribEntries_.erase(prefix);
+    vrf.ribEntries().erase(prefix);
   }
 }
 
 void RibBase::processRibInWithdrawal(
+    RibVrf& vrf,
     const TinyPeerInfo& peer,
     const PrefixPathIds& pfxPathIds) noexcept {
   XLOGF(
@@ -810,7 +849,7 @@ void RibBase::processRibInWithdrawal(
      * can be advertised to peers before we send EoR. Process the aggregate
      * routes first
      */
-    auto aggs = processSingleRibInUpdate(peer, nullptr, pfxPathId);
+    auto aggs = processSingleRibInUpdate(vrf, peer, nullptr, pfxPathId);
 
     for (auto& [network, bgpAttrs] : aggs) {
       /*
@@ -818,7 +857,7 @@ void RibBase::processRibInWithdrawal(
        * routes. Hence they always use default path ID
        */
       PrefixPathId aggPfxPid{network, kDefaultPathID};
-      processSingleRibInUpdate(kV4LocalPeerInfo, bgpAttrs, aggPfxPid);
+      processSingleRibInUpdate(vrf, kV4LocalPeerInfo, bgpAttrs, aggPfxPid);
     }
   }
   ribCounters_.publishTotalPathCounters();
@@ -835,6 +874,7 @@ void RibBase::processRibInWithdrawal(
 
 std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
 RibBase::processSingleRibInUpdate(
+    RibVrf& vrf,
     const TinyPeerInfo& peer,
     std::shared_ptr<const BgpPath> attrs,
     const PrefixPathId& pfxPid) noexcept {
@@ -852,15 +892,16 @@ RibBase::processSingleRibInUpdate(
    * This should be considered as if the prefix does not exist before.
    */
 
+  auto& ribEntries = vrf.ribEntries();
   // check whether prefix exists in ribEntries_
-  auto kv = ribEntries_.find(prefix);
-  if (kv == ribEntries_.cend()) {
+  auto kv = ribEntries.find(prefix);
+  if (kv == ribEntries.cend()) {
     // withdraw route of a prefix that does not exist, nothing to do
     if (!attrs) {
       return {};
     }
     // add prefix to ribEntries_
-    kv = ribEntries_.emplace(std::make_pair(prefix, RibEntry(prefix))).first;
+    kv = ribEntries.emplace(std::make_pair(prefix, RibEntry(prefix))).first;
     ribCounters_.onPrefixAdded(prefix.first.isV4(), prefix.second);
   }
   auto& entry = kv->second;
@@ -924,7 +965,7 @@ RibBase::processSingleRibInUpdate(
           static_cast<int64_t>(oldAllPathCnt));
 
   if (!attrs) {
-    checkWithdrawalBeforeRouteProgrammed(prefix, entry);
+    checkWithdrawalBeforeRouteProgrammed(vrf, prefix, entry);
   }
 
   XLOGF(
@@ -1043,7 +1084,7 @@ void RibBase::runInitialPathComputation() noexcept {
   ribEoRReceived_ = true;
 
   // best path selection + notify programming FIB
-  prepareFibProgramming(true /* fullSync */);
+  prepareFibProgramming(fboss::kDefaultVrf, true /* fullSync */);
 
   // log BGP++ initialization event
   BgpStats::logInitializationEvent("Rib", BgpInitializationEvent::RIB_COMPUTED);
@@ -1278,8 +1319,10 @@ void RibBase::mayResumeBestPathAndFibProgramming(
   RibStats::STATS_ribBestPathAndFibProgrammingPauseTimeMs.addValue(
       ribPauseTimeMs.count());
 
-  for (auto& [_, ribEntry] : ribEntries_) {
-    ribEntry.requirePathSelection();
+  for (auto& [_, ribVrf] : ribVrfs_) {
+    for (auto& [prefix, ribEntry] : ribVrf->ribEntries()) {
+      ribEntry.requirePathSelection();
+    }
   }
 
   if (ribEoRReceived_) {
@@ -1293,7 +1336,7 @@ void RibBase::mayResumeBestPathAndFibProgramming(
         fullSync);
 
     // Best path selection + notify programming FIB (fullSync if pending)
-    prepareFibProgramming(fullSync);
+    prepareFibProgramming(fboss::kDefaultVrf, fullSync);
 
     schedulePrepareFibProgrammingTimer();
   }
@@ -1897,9 +1940,14 @@ std::pair<bool, bool> RibBase::runBestPathSelection(RibEntry& entry) noexcept {
   return result;
 }
 
-void RibBase::prepareFibProgramming(bool fullSync) noexcept {
+void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
   ScopedProfile profile("RibBase::prepareFibProgramming");
-  // TODO: take a vrfId; RIB-out and FIB messages below use kDefaultVrf.
+  auto* vrf = findVrf(vrfId);
+  if (!vrf) {
+    XLOGF(ERR, "Cancelling FIB programming for non-existent VRF {}", vrfId);
+    return;
+  }
+  auto& ribEntries = vrf->ribEntries();
   BgpStats::incrDecisionProcessRunsCount();
 
   XLOGF(DBG1, "Trigger Fib programming with fullSync = {}", fullSync);
@@ -1919,7 +1967,7 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
     XLOGF(
         DBG4,
         "Start full sync best path selection for {} ribEntries",
-        ribEntries_.size());
+        ribEntries.size());
   }
   /*
    * record rib entries that "needPathSelection", which need to go through
@@ -1928,7 +1976,7 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
   folly::F14FastSet<folly::CIDRNetwork> prefixesToOverwriteRouteAttributes;
   // record start time before we perform path selection
   auto ribPolicyProcessingStartTime = std::chrono::steady_clock::now();
-  for (auto& [prefix, ribEntry] : ribEntries_) {
+  for (auto& [prefix, ribEntry] : ribEntries) {
     /*
      * Check if there was any update to the prefix; if not, continue. Note
      * that the change could be something that does not affect bestpath or
@@ -2019,7 +2067,7 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
               kRibChunkSize);
 
           ribOutQPushAndMayPauseBestPathAndFibProgramming(
-              fboss::kDefaultVrf, std::move(withdrawal));
+              vrfId, std::move(withdrawal));
           withdrawal = RibOutWithdrawal();
           withdrawal.entries.reserve(kRibChunkSize);
         }
@@ -2035,7 +2083,7 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
          */
         uint64_t currentRibVersion = incrementRibVersion();
         handleFullAddPathWithdrawal(
-            fboss::kDefaultVrf, ribEntry, withdrawalAddPath, currentRibVersion);
+            vrfId, ribEntry, withdrawalAddPath, currentRibVersion);
         withdrawal.entries.emplace_back(
             prefix, kDefaultPathID, std::nullopt, currentRibVersion);
         ribEntry.setRibVersion(currentRibVersion);
@@ -2062,14 +2110,14 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
       fibBatchList_.push_back(ribEntry);
     }
   }
-  if (prefixesToOverwriteRouteAttributes.size() == ribEntries_.size()) {
+  if (prefixesToOverwriteRouteAttributes.size() == ribEntries.size()) {
     auto pathSelectionTimeMs =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - ribPolicyProcessingStartTime);
     XLOGF(
         INFO,
         "Path Selection in a FullRibWalk for {} ribEntries took {} ms",
-        ribEntries_.size(),
+        ribEntries.size(),
         pathSelectionTimeMs.count());
     RibStats::STATS_ribFullSyncPathSelectionTimeMs.addValue(
         pathSelectionTimeMs.count());
@@ -2080,7 +2128,7 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
   if (withdrawal.entries.size() || withdrawal.addPathEntries.size()) {
     XLOGF(DBG1, "{}", formatRibOutWithdrawalLog(withdrawal));
     ribOutQPushAndMayPauseBestPathAndFibProgramming(
-        fboss::kDefaultVrf, std::move(withdrawal));
+        vrfId, std::move(withdrawal));
   }
 
   // ods logging whether at least 1 rib entry actively uses ucmp
@@ -2088,7 +2136,10 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
 
   /* Virtual hook: subclasses override to apply CTE route attribute overwrites.
      Timing and full-sync stats are handled inside the override. */
-  overwriteRouteAttributes(prefixesToOverwriteRouteAttributes);
+  // Route attribute policy applies to VRF 0 only.
+  if (isVrfCTECapable(vrfId)) {
+    overwriteRouteAttributes(*vrf, prefixesToOverwriteRouteAttributes);
+  }
 
   /*
    * Generic post-path-selection hook, invoked once per pass after path
@@ -2106,7 +2157,7 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
   }
 
   RibStats::addFibBatchListSize(fibBatchList_.size());
-  toFibMessageQ_.push(TriggerFibProgMessage(fboss::kDefaultVrf, fullSync));
+  toFibMessageQ_.push(TriggerFibProgMessage(vrfId, fullSync));
 }
 
 void RibBase::flushAnnouncementChunk(
@@ -2248,6 +2299,16 @@ void RibBase::schedulePrepareFibProgrammingTimer() noexcept {
  */
 void RibBase::handleFibProgrammedMessage(
     const Fib::FibProgrammedMessage& msg) noexcept {
+  auto* vrf = findVrf(msg.vrfId);
+  if (!vrf) {
+    XLOGF(
+        ERR,
+        "Ignoring FibProgrammedMessage for non-existent VRF {}",
+        msg.vrfId);
+    return;
+  }
+  auto& ribEntries = vrf->ribEntries();
+
   // Initial dump to all established peers
   auto sendWithEoR = msg.isSync && !initialEorSent_;
   if (sendWithEoR) {
@@ -2301,8 +2362,8 @@ void RibBase::handleFibProgrammedMessage(
       const auto& prefix = elem->first;
       const auto& weightedNexthops = elem->second;
 
-      auto kv = ribEntries_.find(prefix);
-      if (kv == ribEntries_.cend()) {
+      auto kv = ribEntries.find(prefix);
+      if (kv == ribEntries.cend()) {
         XLOGF(
             ERR,
             "Cannot find RibEntry for {}",
@@ -2312,7 +2373,7 @@ void RibBase::handleFibProgrammedMessage(
       auto& entry = kv->second;
 
       /* Handle prefix removed from Fib by deleteUnicastRoutes. */
-      if (handleDeletedUnicastRoute(entry, weightedNexthops)) {
+      if (handleDeletedUnicastRoute(ribEntries, entry, weightedNexthops)) {
         continue;
       }
       /* Handle prefix whose FIB programmed nexthops are outdated. */
@@ -2358,10 +2419,13 @@ void RibBase::handleFibProgrammedMessage(
   }
 
   // publish unicast routes size.
-  FibStats::publishTotalUCastRoutes(ribEntries_.size());
+  // TODO(T298290036): Publish the unicast route count of every VRF.
+  if (msg.vrfId == fboss::kDefaultVrf) {
+    FibStats::publishTotalUCastRoutes(ribEntries.size());
+  }
 
   // Check if FIB is flushed (only local routes remain)
-  if (ribEntries_.size() <= localRoutes_.size()) {
+  if (ribEntries.size() <= localRoutes_.size()) {
     FibStats::incrFibFlushed();
   }
 }
@@ -2372,6 +2436,7 @@ void RibBase::handleFibProgrammedMessage(
  * from Fib.
  */
 bool RibBase::handleDeletedUnicastRoute(
+    folly::F14NodeMap<folly::CIDRNetwork, RibEntry>& ribEntries,
     RibEntry& entry,
     const std::shared_ptr<const WeightedNexthopMap>&
         weightedNexthops) noexcept {
@@ -2394,7 +2459,7 @@ bool RibBase::handleDeletedUnicastRoute(
       ribCounters_.onPrefixRemoved(
           prefix.first.isV4(), prefix.second, entry.getInactivePathCnt());
       eraseFibOut(entry);
-      ribEntries_.erase(prefix);
+      ribEntries.erase(prefix);
     } else {
       XLOGF(
           DBG1,
@@ -2760,10 +2825,10 @@ void RibBase::handleFibSyncReq(const Fib::FibSyncReq& /* unused */) noexcept {
         "Setting FibSyncReqPending_ flag to trigger fullSync when resumed.");
     return;
   }
-  prepareFibProgramming(true /* fullSync */);
+  prepareFibProgramming(fboss::kDefaultVrf, true /* fullSync */);
 }
 
-std::vector<TRibEntry> RibBase::getRibEntries(TBgpAfi afi) {
+std::vector<TRibEntry> RibBase::getRibEntries(TBgpAfi afi, VrfId vrfId) {
   std::vector<TRibEntry> tRibEntries;
 
   if (afi != TBgpAfi::AFI_IPV4 && afi != TBgpAfi::AFI_IPV6) {
@@ -2771,8 +2836,12 @@ std::vector<TRibEntry> RibBase::getRibEntries(TBgpAfi afi) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
     auto expectIPv4 = afi == TBgpAfi::AFI_IPV4;
-    for (const auto& entry : ribEntries_) {
+    for (const auto& entry : vrf->ribEntries()) {
       const auto& prefix = entry.first;
       auto isIPv4 = prefix.first.family() == AF_INET;
       if ((expectIPv4 && !isIPv4) || (!expectIPv4 && isIPv4)) {
@@ -2784,7 +2853,9 @@ std::vector<TRibEntry> RibBase::getRibEntries(TBgpAfi afi) {
   return tRibEntries;
 }
 
-TFibOutTable RibBase::getFibOutPrefix(const std::string& prefixString) {
+TFibOutTable RibBase::getFibOutPrefix(
+    const std::string& prefixString,
+    VrfId vrfId) {
   folly::CIDRNetwork prefix;
   try {
     prefix =
@@ -2802,8 +2873,13 @@ TFibOutTable RibBase::getFibOutPrefix(const std::string& prefixString) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    const auto ribEntry = ribEntries_.find(prefix);
-    if (ribEntry == ribEntries_.end()) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    const auto& ribEntries = vrf->ribEntries();
+    const auto ribEntry = ribEntries.find(prefix);
+    if (ribEntry == ribEntries.end()) {
       return;
     }
     TFibOutEntry entry;
@@ -2858,11 +2934,16 @@ uint64_t RibBase::getNumPrefixes() {
 }
 std::vector<TRibEntry> RibBase::getRibEntriesForCommunities(
     TBgpAfi afi,
-    const std::vector<nettools::bgplib::BgpAttrCommunityC>& communities) {
+    const std::vector<nettools::bgplib::BgpAttrCommunityC>& communities,
+    VrfId vrfId) {
   std::vector<TRibEntry> tRibEntries;
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    for (const auto& entry : ribEntries_) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    for (const auto& entry : vrf->ribEntries()) {
       const auto& prefix = entry.first;
       if (((afi == TBgpAfi::AFI_IPV4) && (prefix.first.family() != AF_INET)) ||
           ((afi == TBgpAfi::AFI_IPV6) && (prefix.first.family() != AF_INET6))) {
@@ -2898,7 +2979,8 @@ std::vector<TRibEntry> RibBase::getRibEntriesForCommunities(
 }
 
 std::vector<TRibEntry> RibBase::getRibEntryForPrefix(
-    std::unique_ptr<std::string> prefix) {
+    std::unique_ptr<std::string> prefix,
+    VrfId vrfId) {
   std::vector<TRibEntry> tRibEntries;
   if (!prefix) {
     return tRibEntries;
@@ -2916,8 +2998,13 @@ std::vector<TRibEntry> RibBase::getRibEntryForPrefix(
    * on Rib's evb (e.g., called via folly::via from co_runOnEvbWithTimeout),
    * otherwise dispatches and waits. Avoids deadlock in both contexts. */
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    auto entry = ribEntries_.find(network);
-    if (entry != ribEntries_.end()) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    const auto& ribEntries = vrf->ribEntries();
+    auto entry = ribEntries.find(network);
+    if (entry != ribEntries.end()) {
       tRibEntries.emplace_back(createTRibEntry(*entry));
     }
   });
@@ -2926,7 +3013,8 @@ std::vector<TRibEntry> RibBase::getRibEntryForPrefix(
 }
 
 std::vector<TRibEntry> RibBase::getRibEntriesForSubprefixes(
-    std::unique_ptr<std::string> prefix) {
+    std::unique_ptr<std::string> prefix,
+    VrfId vrfId) {
   std::vector<TRibEntry> tRibEntries;
   if (!prefix) {
     XLOG(ERR, "No prefix is provided");
@@ -2942,7 +3030,11 @@ std::vector<TRibEntry> RibBase::getRibEntriesForSubprefixes(
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    for (const auto& entry : ribEntries_) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    for (const auto& entry : vrf->ribEntries()) {
       const auto& subPrefix = entry.first;
       if (!isSubnet(subPrefix, parentPrefix)) {
         continue;
@@ -3359,7 +3451,7 @@ rib_policy::TRibPolicy RibBase::getRibPolicy() {
 }
 
 void RibBase::updateEntryStats(TEntryStats& stats) noexcept {
-  stats.total_ucast_routes() = ribEntries_.size();
+  stats.total_ucast_routes() = defaultVrf_.ribEntries().size();
   stats.total_originated_routes() = localRoutes_.size();
 
   /*

@@ -67,7 +67,7 @@ TEST_F(CanonicalRibProducerFixture, PreCycleChangesPublishOnlyTheFinalState) {
 
   rib_->getEventBase().runInEventBaseThreadAndWait([this, &prefixPathId]() {
     rib_->processSingleRibInUpdateForTest(eBgpPeer1_, attr_, prefixPathId);
-    rib_->prepareFibProgramming();
+    rib_->prepareFibProgramming(fboss::kDefaultVrf);
   });
 
   ASSERT_EQ(updateQueue_->size(), 1);
@@ -90,7 +90,7 @@ TEST_F(
   EXPECT_TRUE(updateQueue_->empty());
 
   rib_->getEventBase().runInEventBaseThreadAndWait(
-      [this]() { rib_->prepareFibProgramming(); });
+      [this]() { rib_->prepareFibProgramming(fboss::kDefaultVrf); });
 
   EXPECT_TRUE(updateQueue_->empty());
 }
@@ -101,7 +101,7 @@ TEST_F(CanonicalRibProducerFixture, ComputedWithdrawalPublishesAtNextCycle) {
   rib_->getEventBase().runInEventBaseThreadAndWait([this, &prefixPathId]() {
     rib_->processSingleRibInUpdateForTest(eBgpPeer1_, attr_, prefixPathId);
     EXPECT_TRUE(updateQueue_->empty());
-    rib_->prepareFibProgramming(/* fullSync */ true);
+    rib_->prepareFibProgramming(fboss::kDefaultVrf, /* fullSync */ true);
   });
   fibFuture.wait();
 
@@ -118,7 +118,7 @@ TEST_F(CanonicalRibProducerFixture, ComputedWithdrawalPublishesAtNextCycle) {
   rib_->getEventBase().runInEventBaseThreadAndWait([this, &prefixPathId]() {
     rib_->processSingleRibInUpdateForTest(eBgpPeer1_, nullptr, prefixPathId);
     EXPECT_TRUE(updateQueue_->empty());
-    rib_->prepareFibProgramming();
+    rib_->prepareFibProgramming(fboss::kDefaultVrf);
   });
   fibFuture.wait();
 

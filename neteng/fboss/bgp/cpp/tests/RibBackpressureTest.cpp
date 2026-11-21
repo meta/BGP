@@ -301,7 +301,9 @@ TEST_F(
     sendResumeBestPathAndFibProgramming(RibPauseResumeCause::BACKPRESSURE);
 
     fibFuture.wait();
-    EXPECT_TRUE(rib_->ribEntries_.find(kV4Prefix1) == rib_->ribEntries_.end());
+    EXPECT_TRUE(
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1) ==
+        rib_->defaultVrf_.ribEntries().end());
 
     fibFuture = fib_->getFibProgramFuture();
     // Step 6: Send PauseBestPathAndFibProgramming message to rib
@@ -792,7 +794,8 @@ TEST(RibBackpressureTest, RibInQueueConsumerScopeExceptionPathTest) {
   WITH_RETRIES({
     bool found = false;
     evb.runInEventBaseThreadAndWait([&]() {
-      found = mockRib->ribEntries_.find(prefix1) != mockRib->ribEntries_.end();
+      found = mockRib->defaultVrf_.ribEntries().find(prefix1) !=
+          mockRib->defaultVrf_.ribEntries().end();
     });
     ASSERT_EVENTUALLY_TRUE(found);
   });

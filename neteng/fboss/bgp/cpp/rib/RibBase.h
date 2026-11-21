@@ -259,7 +259,8 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   /** Return current RIB entries for one address family. */
   std::vector<neteng::fboss::bgp::thrift::TRibEntry> getRibEntries(
-      neteng::fboss::bgp_attr::TBgpAfi afi);
+      neteng::fboss::bgp_attr::TBgpAfi afi,
+      VrfId vrfId = fboss::kDefaultVrf);
 
   /**
    * Return compact FIB-out state for one exact prefix.
@@ -269,7 +270,8 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * prefix text raises `std::invalid_argument`.
    */
   neteng::fboss::bgp::thrift::TFibOutTable getFibOutPrefix(
-      const std::string& prefix);
+      const std::string& prefix,
+      VrfId vrfId = fboss::kDefaultVrf);
 
   /** Return the immutable FIB-out tracking configuration value. */
   bool isFibOutTrackingEnabled() const noexcept {
@@ -281,6 +283,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   // Return the routing table for `vrfId`, or nullptr if it does not exist.
   RibVrf* FOLLY_NULLABLE findVrf(VrfId vrfId) noexcept;
+  const RibVrf* FOLLY_NULLABLE findVrf(VrfId vrfId) const noexcept;
 
   /*
    * Get a compact summary (total prefixes + per-prefix-length histogram) of the
@@ -303,7 +306,8 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * prefix: prefix to match from the ribEntries.
    */
   std::vector<neteng::fboss::bgp::thrift::TRibEntry> getRibEntryForPrefix(
-      std::unique_ptr<std::string> prefix);
+      std::unique_ptr<std::string> prefix,
+      VrfId vrfId = fboss::kDefaultVrf);
 
   /*
    * Get ribEntries by community
@@ -315,14 +319,17 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   std::vector<neteng::fboss::bgp::thrift::TRibEntry>
   getRibEntriesForCommunities(
       neteng::fboss::bgp_attr::TBgpAfi afi,
-      const std::vector<nettools::bgplib::BgpAttrCommunityC>& comms);
+      const std::vector<nettools::bgplib::BgpAttrCommunityC>& comms,
+      VrfId vrfId = fboss::kDefaultVrf);
 
   /*
    * Get ribEntries whose prefix is within a given prefix:
    * prefix: prefix to match from the ribEntries.
    */
   std::vector<neteng::fboss::bgp::thrift::TRibEntry>
-  getRibEntriesForSubprefixes(std::unique_ptr<std::string> prefix);
+  getRibEntriesForSubprefixes(
+      std::unique_ptr<std::string> prefix,
+      VrfId vrfId = fboss::kDefaultVrf);
 
   void injectLocalRoutes(
       const std::map<
@@ -393,7 +400,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
     return {};
   }
   virtual std::vector<neteng::fboss::bgp::thrift::TPartiallyDrainedPrefix>
-  getPartiallyDrainedPrefixes() const {
+  getPartiallyDrainedPrefixes(VrfId /* vrfId */ = fboss::kDefaultVrf) const {
     return {};
   }
 
@@ -545,7 +552,9 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   virtual void cleanupPlatform() noexcept = 0;
 
   virtual void createFib();
-  virtual void prepareFibProgramming(bool fullSync = false) noexcept;
+  virtual void prepareFibProgramming(
+      VrfId vrfId,
+      bool fullSync = false) noexcept;
   void handleFullAddPathWithdrawal(
       VrfId vrfId,
       RibEntry& ribEntry,
@@ -726,9 +735,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   std::unique_ptr<RouteInfoSelector> multipathSelector_{nullptr};
   std::unique_ptr<RouteInfoSelector> bestpathSelector_{nullptr};
 
-  // prefix -> RibEntry map
-  folly::F14NodeMap<folly::CIDRNetwork, RibEntry> ribEntries_;
-
   // Canonical immutable nexthop sets referenced by FIB-out route state.
   FibNexthopSets fibNexthopSets_;
   /*
@@ -866,13 +872,16 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   folly::coro::Task<void> processRibInMsgLoop() noexcept;
 
   void processRibInAnnouncement(
+      RibVrf& vrf,
       const TinyPeerInfo& peer,
       std::shared_ptr<const BgpPath> attr,
       const PrefixPathIds& pfxPathIds) noexcept;
   void checkWithdrawalBeforeRouteProgrammed(
+      RibVrf& vrf,
       folly::CIDRNetwork& prefix,
       RibEntry& entry) noexcept;
   void processRibInWithdrawal(
+      RibVrf& vrf,
       const TinyPeerInfo& peer,
       const PrefixPathIds& pfxPathIds) noexcept;
   /*
@@ -966,6 +975,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    */
   std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
   processSingleRibInUpdate(
+      RibVrf& vrf,
       const TinyPeerInfo& peer,
       std::shared_ptr<const BgpPath> attrs,
       const PrefixPathId& pfxPid) noexcept;
@@ -1001,6 +1011,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   // Steps of handleFibProgrammedMessage for one Fib-programmed prefix.
   bool handleDeletedUnicastRoute(
+      folly::F14NodeMap<folly::CIDRNetwork, RibEntry>& ribEntries,
       RibEntry& entry,
       const std::shared_ptr<const WeightedNexthopMap>&
           weightedNexthops) noexcept;
@@ -1091,7 +1102,17 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   void enqueueRibPolicyMsg(RibPolicyMessage msg) noexcept;
 
   virtual void overwriteRouteAttributes(
+      RibVrf& /* vrf */,
       const folly::F14FastSet<folly::CIDRNetwork>& /* prefixes */) {}
+
+  /*
+   * Whether route attribute policy (CTE) applies to the VRF. Only the default
+   * VRF for now: the CTE affected-prefix cache is keyed by prefix alone, so it
+   * cannot describe more than one VRF.
+   */
+  static bool isVrfCTECapable(VrfId vrfId) noexcept {
+    return vrfId == fboss::kDefaultVrf;
+  }
 
   /**
    * Replace RibPolicy: save to disk, then trigger fib programming when there

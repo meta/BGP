@@ -16,7 +16,11 @@
 
 #pragma once
 
+#include <folly/IPAddress.h>
+#include <folly/container/F14Map.h>
+
 #include "neteng/fboss/bgp/cpp/common/Types.h"
+#include "neteng/fboss/bgp/cpp/rib/RibEntry.h"
 
 namespace facebook::bgp {
 
@@ -34,11 +38,24 @@ class RibVrf final {
     return vrfId_;
   }
 
+  folly::F14NodeMap<folly::CIDRNetwork, RibEntry>& ribEntries() noexcept {
+    return ribEntries_;
+  }
+  const folly::F14NodeMap<folly::CIDRNetwork, RibEntry>& ribEntries()
+      const noexcept {
+    return ribEntries_;
+  }
+
  private:
   // ======================== Identity ========================
 
   // Identifies the routing table owned by this context.
   const VrfId vrfId_;
+
+  // ======================== RIB state =======================
+
+  // prefix -> RibEntry map
+  folly::F14NodeMap<folly::CIDRNetwork, RibEntry> ribEntries_;
 };
 
 } // namespace facebook::bgp

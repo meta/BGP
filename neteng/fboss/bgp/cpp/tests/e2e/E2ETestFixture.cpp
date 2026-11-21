@@ -930,8 +930,8 @@ size_t E2ETestFixture::getMultipathNexthopCount(const std::string& prefixStr) {
   auto prefix = folly::IPAddress::createNetwork(prefixStr);
 
   rib_->getEventBase().runInEventBaseThreadAndWait([&]() {
-    auto ribEntry = rib_->ribEntries_.find(prefix);
-    if (ribEntry != rib_->ribEntries_.end()) {
+    auto ribEntry = rib_->defaultVrf_.ribEntries().find(prefix);
+    if (ribEntry != rib_->defaultVrf_.ribEntries().end()) {
       auto weightedNexthops = ribEntry->second.getMultipathWeightedNexthops();
       if (weightedNexthops) {
         nexthopCount = weightedNexthops->size();
@@ -958,8 +958,8 @@ bool E2ETestFixture::waitForMultipathNexthopCount(
   WITH_RETRIES_N(maxRetries, {
     size_t nexthopCount = 0;
     rib_->getEventBase().runInEventBaseThreadAndWait([&]() {
-      auto ribEntry = rib_->ribEntries_.find(prefix);
-      if (ribEntry != rib_->ribEntries_.end()) {
+      auto ribEntry = rib_->defaultVrf_.ribEntries().find(prefix);
+      if (ribEntry != rib_->defaultVrf_.ribEntries().end()) {
         auto weightedNexthops = ribEntry->second.getMultipathWeightedNexthops();
         if (weightedNexthops) {
           nexthopCount = weightedNexthops->size();
@@ -1000,8 +1000,8 @@ std::map<folly::IPAddress, uint32_t> E2ETestFixture::getWeightedNexthops(
   auto prefix = folly::IPAddress::createNetwork(prefixStr);
 
   rib_->getEventBase().runInEventBaseThreadAndWait([&]() {
-    auto ribEntry = rib_->ribEntries_.find(prefix);
-    if (ribEntry != rib_->ribEntries_.end()) {
+    auto ribEntry = rib_->defaultVrf_.ribEntries().find(prefix);
+    if (ribEntry != rib_->defaultVrf_.ribEntries().end()) {
       auto weightedNexthops = ribEntry->second.getMultipathWeightedNexthops();
       if (weightedNexthops) {
         for (const auto& [nexthop, weight] : *weightedNexthops) {
@@ -3596,8 +3596,8 @@ std::shared_ptr<RouteInfo> E2ETestFixture::getBestPath(
   std::shared_ptr<RouteInfo> bestPath = nullptr;
 
   rib_->getEventBase().runInEventBaseThreadAndWait([&]() {
-    auto ribEntry = rib_->ribEntries_.find(prefix);
-    if (ribEntry != rib_->ribEntries_.end()) {
+    auto ribEntry = rib_->defaultVrf_.ribEntries().find(prefix);
+    if (ribEntry != rib_->defaultVrf_.ribEntries().end()) {
       bestPath = ribEntry->second.getBestPath();
     }
   });

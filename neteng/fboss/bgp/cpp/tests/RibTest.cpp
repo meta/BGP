@@ -517,11 +517,11 @@ TEST_F(RibFibNexthopDatabaseFixture, KeepsCompleteNexthopSetsDistinct) {
         },
     });
     auto& firstEntry =
-        rib_->ribEntries_
+        rib_->defaultVrf_.ribEntries()
             .emplace(std::make_pair(kV4Prefix1, RibEntry(kV4Prefix1)))
             .first->second;
     auto& secondEntry =
-        rib_->ribEntries_
+        rib_->defaultVrf_.ribEntries()
             .emplace(std::make_pair(kV4Prefix2, RibEntry(kV4Prefix2)))
             .first->second;
     rib_->replaceFibOut(
@@ -561,20 +561,22 @@ TEST_F(RibFibNexthopDatabaseFixture, KeepsCompleteNexthopSetsDistinct) {
   EXPECT_EQ(
       *prefixFibOut.entries()->front().fib_out()->nexthop_set_ref_count(), 1);
 
-  rib_->evb_.runInEventBaseThreadAndWait(
-      [&]() { rib_->eraseFibOut(rib_->ribEntries_.at(kV4Prefix1)); });
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    rib_->eraseFibOut(rib_->defaultVrf_.ribEntries().at(kV4Prefix1));
+  });
   const std::vector<TFibNexthopSet> expectedSecondOnly{expected.back()};
   EXPECT_EQ(*rib_->getFibNexthopDatabase().nexthop_sets(), expectedSecondOnly);
 
-  rib_->evb_.runInEventBaseThreadAndWait(
-      [&]() { rib_->eraseFibOut(rib_->ribEntries_.at(kV4Prefix2)); });
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    rib_->eraseFibOut(rib_->defaultVrf_.ribEntries().at(kV4Prefix2));
+  });
   EXPECT_TRUE(rib_->getFibNexthopDatabase().nexthop_sets()->empty());
 }
 
 TEST_F(RibFibNexthopDatabaseFixture, TracksEmptySubmittedNexthopSet) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     auto emptyNexthops = rib_->fibNexthopSets_.getOrCreate({});
-    auto& entry = rib_->ribEntries_
+    auto& entry = rib_->defaultVrf_.ribEntries()
                       .emplace(std::make_pair(kV4Prefix1, RibEntry(kV4Prefix1)))
                       .first->second;
     rib_->replaceFibOut(
@@ -610,7 +612,7 @@ TEST_F(RibFibNexthopDatabaseFixture, PropagatesConversionFailure) {
             .role = static_cast<FibOutNexthopRole>(-1),
         },
     });
-    auto& entry = rib_->ribEntries_
+    auto& entry = rib_->defaultVrf_.ribEntries()
                       .emplace(std::make_pair(kV4Prefix1, RibEntry(kV4Prefix1)))
                       .first->second;
     rib_->replaceFibOut(
@@ -1057,8 +1059,8 @@ TEST_F(RibFixture, NoBestPathNexthopChangeAddPath) {
   // Use the default attributes, which sets nexthop to kV4Nexthop1
   entry.updatePath(eBgpPeer1_, attr_, false);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.clear();
-    rib_->ribEntries_.emplace(kV4Prefix1, std::move(entry));
+    rib_->defaultVrf_.ribEntries().clear();
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, std::move(entry));
     /*
      * Now simulate a second route to same prefix received from eBgpPeer2_ with
      * different nexthop kV4Nexthop2
@@ -1067,10 +1069,11 @@ TEST_F(RibFixture, NoBestPathNexthopChangeAddPath) {
         *buildBgpPathFields(4, 4, 4, 4));
     newAttr->setNexthop(kV4Nexthop2);
     newAttr->publish();
-    rib_->ribEntries_.find(kV4Prefix1)
+    rib_->defaultVrf_.ribEntries()
+        .find(kV4Prefix1)
         ->second.updatePath(eBgpPeer2_, newAttr, false);
     RibBase::selectBestPath(
-        rib_->ribEntries_.find(kV4Prefix1)->second,
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second,
         multipathSelector,
         bestpathSelector,
         false,
@@ -1131,8 +1134,8 @@ TEST_F(RibFixture, NoBestPathNexthopChangeAddPathWithRibPolicyMNHTest) {
   // Use the default attributes, which sets nexthop to kV4Nexthop1
   entry.updatePath(eBgpPeer1_, attr_, false);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.clear();
-    rib_->ribEntries_.emplace(kV4Prefix1, std::move(entry));
+    rib_->defaultVrf_.ribEntries().clear();
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, std::move(entry));
     /*
      * Now simulate a second route to same prefix received from eBgpPeer2_ with
      * different nexthop kV4Nexthop2
@@ -1141,10 +1144,11 @@ TEST_F(RibFixture, NoBestPathNexthopChangeAddPathWithRibPolicyMNHTest) {
         *buildBgpPathFields(4, 4, 4, 4));
     newAttr->setNexthop(kV4Nexthop2);
     newAttr->publish();
-    rib_->ribEntries_.find(kV4Prefix1)
+    rib_->defaultVrf_.ribEntries()
+        .find(kV4Prefix1)
         ->second.updatePath(eBgpPeer2_, newAttr, false);
     RibBase::selectBestPath(
-        rib_->ribEntries_.find(kV4Prefix1)->second,
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second,
         multipathSelector,
         bestpathSelector,
         false,
@@ -1259,7 +1263,7 @@ TEST_F(RibFixture, PartialDrainAnnouncesWhenBestpathPointerUnchanged) {
    */
   std::shared_ptr<RouteInfo> bestpathBefore;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto& entry = rib_->ribEntries_.find(kV4Prefix1)->second;
+    auto& entry = rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second;
     bestpathBefore = entry.getBestPath();
     EXPECT_FALSE(entry.getIsPartialDrain());
   });
@@ -1299,7 +1303,7 @@ TEST_F(RibFixture, PartialDrainAnnouncesWhenBestpathPointerUnchanged) {
    * the bestpath shared_ptr is unchanged.
    */
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto& entry = rib_->ribEntries_.find(kV4Prefix1)->second;
+    auto& entry = rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second;
     EXPECT_TRUE(entry.getIsPartialDrain());
     EXPECT_TRUE(entry.getInstallToFib());
     EXPECT_EQ(entry.getBestPath(), bestpathBefore);
@@ -1746,10 +1750,10 @@ TEST_F(RibFixture, BestPathWithAddPathEnabled_OnlyPathIdChange) {
 
   // Trigger bestpath computation.
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.clear();
-    rib_->ribEntries_.emplace(kV4Prefix1, std::move(entry));
+    rib_->defaultVrf_.ribEntries().clear();
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, std::move(entry));
     RibBase::selectBestPath(
-        rib_->ribEntries_.find(kV4Prefix1)->second,
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second,
         multipathSelector,
         bestpathSelector,
         false,
@@ -1772,7 +1776,8 @@ TEST_F(RibFixture, BestPathWithAddPathEnabled_OnlyPathIdChange) {
   ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(msg));
 
   // Verify that the bestpath is equivalent to attr_ (or attr).
-  auto routeInfo = rib_->ribEntries_.find(kV4Prefix1)->second.getBestPath();
+  auto routeInfo =
+      rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second.getBestPath();
   auto& bestpath = routeInfo->attrs;
   EXPECT_TRUE(*attr == *bestpath);
 
@@ -2081,7 +2086,7 @@ TEST_F(RibFixture, RibAnnouncementFromSamePeerWithoutBestPathChange) {
   auto bestPath = rib_->getBestPath(kV6Prefix1);
   EXPECT_EQ(injector1_, bestPath->peer);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto& ribEntries = rib_->ribEntries_;
+    auto& ribEntries = rib_->defaultVrf_.ribEntries();
     EXPECT_EQ(1, ribEntries.size());
     auto& ribEntry = ribEntries.at(kV6Prefix1);
     auto routeInfos = ribEntry.getRouteInfos(
@@ -2099,7 +2104,7 @@ TEST_F(RibFixture, RibAnnouncementFromSamePeerWithoutBestPathChange) {
   bestPath = rib_->getBestPath(kV6Prefix1);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     EXPECT_EQ(injector1_, bestPath->peer);
-    auto& ribEntries = rib_->ribEntries_;
+    auto& ribEntries = rib_->defaultVrf_.ribEntries();
     auto& ribEntry = ribEntries.at(kV6Prefix1);
     auto routeInfos = ribEntry.getRouteInfos(
         nettools::bgplib::BgpPeerId(injector1_.addr, injector1_.routerId));
@@ -2170,7 +2175,7 @@ TEST_F(RibFixture, RibVersionIncrementsOnBestpathChange) {
 
   // Verify RibEntry has the version set
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto& ribEntries = rib_->ribEntries_;
+    auto& ribEntries = rib_->defaultVrf_.ribEntries();
     auto& ribEntry = ribEntries.at(kV6Prefix1);
     EXPECT_EQ(versionAfterFirstRoute, ribEntry.getRibVersion());
   });
@@ -2208,7 +2213,7 @@ TEST_F(RibFixture, RibVersionIncrementsOnBestpathChange) {
 
   // Verify RibEntry version updated
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto& ribEntries = rib_->ribEntries_;
+    auto& ribEntries = rib_->defaultVrf_.ribEntries();
     auto& ribEntry = ribEntries.at(kV6Prefix1);
     EXPECT_EQ(versionAfterBetterRoute, ribEntry.getRibVersion());
   });
@@ -2245,7 +2250,7 @@ TEST_F(RibFixture, RibVersionIncrementsOnBestpathChange) {
 
   // Verify RibEntry version updated again
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto& ribEntries = rib_->ribEntries_;
+    auto& ribEntries = rib_->defaultVrf_.ribEntries();
     auto& ribEntry = ribEntries.at(kV6Prefix1);
     EXPECT_EQ(versionAfterWithdrawal, ribEntry.getRibVersion());
   });
@@ -2550,8 +2555,8 @@ TEST_F(RibFixture, RibVersionDistinctPerPrefixInWithdrawal) {
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     for (const auto& prefix : {kV4Prefix1, kV4Prefix2}) {
-      rib_->ribEntries_.emplace(prefix, RibEntry(prefix));
-      auto& entry = rib_->ribEntries_.at(prefix);
+      rib_->defaultVrf_.ribEntries().emplace(prefix, RibEntry(prefix));
+      auto& entry = rib_->defaultVrf_.ribEntries().at(prefix);
       auto pathAttr = std::make_shared<facebook::bgp::BgpPath>(
           *buildBgpPathFields(4, 4, 4, 4));
       pathAttr->publish();
@@ -2568,7 +2573,7 @@ TEST_F(RibFixture, RibVersionDistinctPerPrefixInWithdrawal) {
       entry.updatePath(eBgpPeer1_, nullptr, true, 0);
       entry.requirePathSelection();
     }
-    rib_->prepareFibProgramming();
+    rib_->prepareFibProgramming(fboss::kDefaultVrf);
   });
 
   auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -2968,8 +2973,8 @@ TEST_F(RibFixture, RibVersionAddPathWithdrawalsSpanningChunksBumpAcrossChunks) {
   constexpr int kNexthopBase = 0x0B010000; // 11.1.0.0
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
-    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     for (uint32_t i = 0; i < kNumPaths; i++) {
       auto attr = std::make_shared<facebook::bgp::BgpPath>(
           *buildBgpPathFields(4, 4, 4, 4));
@@ -2997,7 +3002,7 @@ TEST_F(RibFixture, RibVersionAddPathWithdrawalsSpanningChunksBumpAcrossChunks) {
       entry.updatePath(eBgpPeer1_, nullptr, true, i + 1);
     }
     entry.requirePathSelection();
-    rib_->prepareFibProgramming();
+    rib_->prepareFibProgramming(fboss::kDefaultVrf);
   });
 
   std::vector<uint64_t> chunkVersions;
@@ -3034,13 +3039,14 @@ TEST_F(RibFixture, RibVersionAddPathWithdrawalsSpanningChunksBumpAcrossChunks) {
  */
 TEST_F(RibFixture, HandleDeletedUnicastRouteIgnoresProgrammedRoute) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
-    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     auto nexthops = std::make_shared<const WeightedNexthopMap>(
         WeightedNexthopMap{{kV4Nexthop1, 1}});
 
-    EXPECT_FALSE(rib_->handleDeletedUnicastRoute(entry, nexthops));
-    EXPECT_TRUE(rib_->ribEntries_.contains(kV4Prefix1));
+    EXPECT_FALSE(rib_->handleDeletedUnicastRoute(
+        rib_->defaultVrf_.ribEntries(), entry, nexthops));
+    EXPECT_TRUE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
   });
 }
 
@@ -3050,13 +3056,14 @@ TEST_F(RibFixture, HandleDeletedUnicastRouteIgnoresProgrammedRoute) {
  */
 TEST_F(RibFixture, HandleDeletedUnicastRouteErasesEntryWithNoPaths) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
     rib_->ribCounters_.onPrefixAdded(true, kV4Prefix1.second);
-    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     const auto prefixesBefore = rib_->ribCounters_.totalPrefixes(true);
 
-    EXPECT_TRUE(rib_->handleDeletedUnicastRoute(entry, nullptr));
-    EXPECT_FALSE(rib_->ribEntries_.contains(kV4Prefix1));
+    EXPECT_TRUE(rib_->handleDeletedUnicastRoute(
+        rib_->defaultVrf_.ribEntries(), entry, nullptr));
+    EXPECT_FALSE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
     EXPECT_EQ(prefixesBefore - 1, rib_->ribCounters_.totalPrefixes(true));
   });
 }
@@ -3067,12 +3074,13 @@ TEST_F(RibFixture, HandleDeletedUnicastRouteErasesEntryWithNoPaths) {
  */
 TEST_F(RibFixture, HandleDeletedUnicastRouteKeepsEntryOnFibBatchList) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
-    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     rib_->fibBatchList_.push_back(entry);
 
-    EXPECT_TRUE(rib_->handleDeletedUnicastRoute(entry, nullptr));
-    EXPECT_TRUE(rib_->ribEntries_.contains(kV4Prefix1));
+    EXPECT_TRUE(rib_->handleDeletedUnicastRoute(
+        rib_->defaultVrf_.ribEntries(), entry, nullptr));
+    EXPECT_TRUE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
 
     rib_->fibBatchList_.clear();
   });
@@ -3543,12 +3551,12 @@ TEST_F(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion) {
   uint64_t versionBefore = 0;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     // kV4Prefix1 is deleted from Fib and has no paths left.
-    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
     rib_->ribCounters_.onPrefixAdded(true, kV4Prefix1.second);
     // kV4Prefix2 is stale and kV4Prefix3 is up to date.
     for (const auto& prefix : {kV4Prefix2, kV4Prefix3}) {
-      rib_->ribEntries_.emplace(prefix, RibEntry(prefix));
-      auto& entry = rib_->ribEntries_.at(prefix);
+      rib_->defaultVrf_.ribEntries().emplace(prefix, RibEntry(prefix));
+      auto& entry = rib_->defaultVrf_.ribEntries().at(prefix);
       auto attrs = std::make_shared<facebook::bgp::BgpPath>(
           *buildBgpPathFields(4, 4, 4, 4));
       attrs->publish();
@@ -3556,8 +3564,8 @@ TEST_F(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion) {
       RibBase::selectBestPath(
           entry, multipathSelector, bestpathSelector, false, 0);
     }
-    const auto& staleEntry = rib_->ribEntries_.at(kV4Prefix2);
-    const auto& programmedEntry = rib_->ribEntries_.at(kV4Prefix3);
+    const auto& staleEntry = rib_->defaultVrf_.ribEntries().at(kV4Prefix2);
+    const auto& programmedEntry = rib_->defaultVrf_.ribEntries().at(kV4Prefix3);
     Fib::FibProgrammedPfxs fibProgrammedPfxs;
     fibProgrammedPfxs[nullptr] = {
         {kV4Prefix1, nullptr},
@@ -3572,10 +3580,11 @@ TEST_F(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion) {
             fboss::kDefaultVrf, std::move(fibProgrammedPfxs), false));
 
     EXPECT_EQ(versionBefore + 1, rib_->ribVersion_);
-    EXPECT_FALSE(rib_->ribEntries_.contains(kV4Prefix1));
-    EXPECT_EQ(0, rib_->ribEntries_.at(kV4Prefix2).getRibVersion());
+    EXPECT_FALSE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
+    EXPECT_EQ(0, rib_->defaultVrf_.ribEntries().at(kV4Prefix2).getRibVersion());
     EXPECT_EQ(
-        versionBefore + 1, rib_->ribEntries_.at(kV4Prefix3).getRibVersion());
+        versionBefore + 1,
+        rib_->defaultVrf_.ribEntries().at(kV4Prefix3).getRibVersion());
   });
 
   auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -3601,8 +3610,8 @@ TEST_F(RibAllocatedPathIdFixture, FullAddPathWithdrawalUsesAdvertisedPathIds) {
   std::set<std::pair<uint32_t, folly::IPAddress>> expected;
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
-    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     for (uint32_t i = 0; i < nexthops.size(); i++) {
       auto attr = std::make_shared<facebook::bgp::BgpPath>(
           *buildBgpPathFields(4, 4, 4, 4));
@@ -3625,7 +3634,7 @@ TEST_F(RibAllocatedPathIdFixture, FullAddPathWithdrawalUsesAdvertisedPathIds) {
       entry.updatePath(eBgpPeer1_, nullptr, true, i + 1);
     }
     entry.requirePathSelection();
-    rib_->prepareFibProgramming();
+    rib_->prepareFibProgramming(fboss::kDefaultVrf);
   });
 
   auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -3655,8 +3664,8 @@ TEST_F(
   std::set<std::pair<uint32_t, folly::IPAddress>> expected;
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
-    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     // Same peer and nexthop, different received path IDs
     for (uint32_t i = 0; i < kNumPaths; i++) {
       auto attr = std::make_shared<facebook::bgp::BgpPath>(
@@ -3680,7 +3689,7 @@ TEST_F(
       entry.updatePath(eBgpPeer1_, nullptr, true, i + 1);
     }
     entry.requirePathSelection();
-    rib_->prepareFibProgramming();
+    rib_->prepareFibProgramming(fboss::kDefaultVrf);
   });
 
   auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -4235,8 +4244,8 @@ TEST_F(
   auto multipathIds = [&](bool advertised) {
     std::set<uint32_t> pathIds;
     rib_->evb_.runInEventBaseThreadAndWait([&]() {
-      auto it = rib_->ribEntries_.find(kV4Prefix1);
-      if (it == rib_->ribEntries_.end()) {
+      auto it = rib_->defaultVrf_.ribEntries().find(kV4Prefix1);
+      if (it == rib_->defaultVrf_.ribEntries().end()) {
         return;
       }
       for (const auto& [pathId, _] : advertised
@@ -4839,8 +4848,8 @@ TEST_F(RibFixture, MultipleFullSyncRequest) {
      * call prepareFibProgramming() multiple times(>1) to mimic the full-sync
      * requests being piled up scenario
      */
-    rib_->prepareFibProgramming(true);
-    rib_->prepareFibProgramming(true);
+    rib_->prepareFibProgramming(fboss::kDefaultVrf, true);
+    rib_->prepareFibProgramming(fboss::kDefaultVrf, true);
 
     /*
      * ATTN: this cb will NOT yield to other fiber tasks, which can read the
@@ -4886,7 +4895,7 @@ TEST_F(RibFixture, InitialDumpChunkTest) {
     // initialise a FibProgrammedMessage with same routes in ribEntries
     prefixToNexthops.emplace(
         make_pair(prefix, entry.getMultipathWeightedNexthops()));
-    rib_->ribEntries_.emplace(make_pair(prefix, std::move(entry)));
+    rib_->defaultVrf_.ribEntries().emplace(make_pair(prefix, std::move(entry)));
   }
 
   folly::F14FastMap<
@@ -6721,8 +6730,9 @@ TEST_F(RibFixture, RibInAddPath) {
   }
   std::unordered_set<folly::IPAddress> nhsetExpect({kV4Nexthop1, kV4Nexthop2});
   EXPECT_EQ(nhsetActual, nhsetExpect);
-  auto routeInfos = rib_->ribEntries_.find(prefix1)->second.getRouteInfos(
-      BgpPeerId{eBgpPeer1_.addr, eBgpPeer1_.routerId});
+  auto routeInfos =
+      rib_->defaultVrf_.ribEntries().find(prefix1)->second.getRouteInfos(
+          BgpPeerId{eBgpPeer1_.addr, eBgpPeer1_.routerId});
   EXPECT_NE(routeInfos.find(0), routeInfos.end());
   EXPECT_NE(routeInfos.find(1), routeInfos.end());
 
@@ -6739,8 +6749,9 @@ TEST_F(RibFixture, RibInAddPath) {
   multiPath = rib_->getMultipath(prefix1);
   EXPECT_EQ(multiPath.size(), 1);
   EXPECT_EQ(multiPath.begin()->second->attrs->getNexthop(), kV4Nexthop2);
-  auto routeInfos2 = rib_->ribEntries_.find(prefix1)->second.getRouteInfos(
-      BgpPeerId{eBgpPeer1_.addr, eBgpPeer1_.routerId});
+  auto routeInfos2 =
+      rib_->defaultVrf_.ribEntries().find(prefix1)->second.getRouteInfos(
+          BgpPeerId{eBgpPeer1_.addr, eBgpPeer1_.routerId});
   EXPECT_EQ(routeInfos2.find(0), routeInfos.end());
   EXPECT_NE(routeInfos2.find(1), routeInfos.end());
 }
@@ -6874,8 +6885,10 @@ TEST_F(RibFixture, GetRibEntries) {
       entry3, multipathSelector, bestpathSelector, false, 0);
 
   // not putting v6 entry in entries for now
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry1)));
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry2)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1, std::move(entry1)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix2, std::move(entry2)));
 
   auto output1 = rib_->getRibEntries(TBgpAfi::AFI_IPV4);
   auto output2 = rib_->getRibEntries(TBgpAfi::AFI_IPV6);
@@ -6883,8 +6896,10 @@ TEST_F(RibFixture, GetRibEntries) {
   EXPECT_THAT(
       output1,
       UnorderedElementsAre(
-          rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1)),
-          rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix2))));
+          rib_->createTRibEntry(
+              *rib_->defaultVrf_.ribEntries().find(kV4Prefix1)),
+          rib_->createTRibEntry(
+              *rib_->defaultVrf_.ribEntries().find(kV4Prefix2))));
   EXPECT_EQ(output2.size(), 0);
 
   /*
@@ -6973,12 +6988,13 @@ TEST_F(RibFixture, GetRibEntries) {
   }
 
   // putting v6 entry to RIB
-  rib_->ribEntries_.emplace(make_pair(kV6Prefix1, std::move(entry3)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV6Prefix1, std::move(entry3)));
   output2 = rib_->getRibEntries(TBgpAfi::AFI_IPV6);
   EXPECT_THAT(
       output2,
-      UnorderedElementsAre(
-          rib_->createTRibEntry(*rib_->ribEntries_.find(kV6Prefix1))));
+      UnorderedElementsAre(rib_->createTRibEntry(
+          *rib_->defaultVrf_.ribEntries().find(kV6Prefix1))));
   {
     // get entry for kV6Prefix1
     auto entry = output2[0];
@@ -7017,7 +7033,7 @@ TEST_F(RibFixture, LocalRouteIgpCostSerialization) {
   RibEntry entry(kV4Prefix1);
   entry.updatePath(kV4LocalPeerInfo, attrs, false);
   RibBase::selectBestPath(entry, multipathSelector, bestpathSelector, false, 0);
-  rib_->ribEntries_.emplace(kV4Prefix1, std::move(entry));
+  rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, std::move(entry));
 
   const auto expectedIgpCost =
       static_cast<int64_t>(std::numeric_limits<uint32_t>::max());
@@ -7073,9 +7089,12 @@ TEST_F(RibFixture, GetRibEntriesCanonical) {
   RibBase::selectBestPath(
       entry3, multipathSelector, bestpathSelector, false, 0);
 
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry1)));
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry2)));
-  rib_->ribEntries_.emplace(make_pair(kV6Prefix1, std::move(entry3)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1, std::move(entry1)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix2, std::move(entry2)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV6Prefix1, std::move(entry3)));
 
   /* Fetch both legacy and canonical */
   auto legacy = rib_->getRibEntries(TBgpAfi::AFI_IPV4);
@@ -7182,17 +7201,21 @@ TEST_F(RibFixture, CreateTRibEntryBestGroupReflectsBestPathPresence) {
   withBest.updatePath(eBgpPeer1_, attrs, false);
   RibBase::selectBestPath(
       withBest, multipathSelector, bestpathSelector, false, 0);
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(withBest)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1, std::move(withBest)));
 
-  auto resolved = rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1));
+  auto resolved =
+      rib_->createTRibEntry(*rib_->defaultVrf_.ribEntries().find(kV4Prefix1));
   EXPECT_EQ(kBestPathGroup, *resolved.best_group());
   EXPECT_NE(resolved.paths()->end(), resolved.paths()->find(kBestPathGroup));
 
   // Entry with NO best path -> best_group empty, no "best" group in paths.
   RibEntry noBest(kV4Prefix2);
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(noBest)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix2, std::move(noBest)));
 
-  auto unresolved = rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix2));
+  auto unresolved =
+      rib_->createTRibEntry(*rib_->defaultVrf_.ribEntries().find(kV4Prefix2));
   EXPECT_TRUE(unresolved.best_group()->empty());
   EXPECT_EQ(
       unresolved.paths()->end(), unresolved.paths()->find(kBestPathGroup));
@@ -7203,9 +7226,12 @@ TEST_F(RibFixture, UpdateEntryStatsTest) {
   RibEntry entry2(kV4Prefix2);
   RibEntry entry3(kV6Prefix1);
 
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry1)));
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry2)));
-  rib_->ribEntries_.emplace(make_pair(kV6Prefix1, std::move(entry3)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1, std::move(entry1)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix2, std::move(entry2)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV6Prefix1, std::move(entry3)));
 
   uint32_t expectedPathId = 135;
   PrefixPathIds prefixBatch{{kV4Prefix1, expectedPathId}};
@@ -7215,11 +7241,11 @@ TEST_F(RibFixture, UpdateEntryStatsTest) {
   rib_->updateEntryStats(stats);
 
   uint64_t totalRibPaths = 0;
-  for (const auto& [_, ribEntry] : rib_->ribEntries_) {
+  for (const auto& [_, ribEntry] : rib_->defaultVrf_.ribEntries()) {
     totalRibPaths += ribEntry.getAllPathsCnt();
   }
 
-  EXPECT_EQ(*stats.total_ucast_routes(), rib_->ribEntries_.size());
+  EXPECT_EQ(*stats.total_ucast_routes(), rib_->defaultVrf_.ribEntries().size());
   EXPECT_EQ(*stats.total_originated_routes(), rib_->localRoutes_.size());
   EXPECT_EQ(*stats.total_rib_paths(), totalRibPaths);
 }
@@ -7268,8 +7294,10 @@ TEST_F(RibFixture, GetRibEntriesWithCommunityFilter) {
       entry3, multipathSelector, bestpathSelector, false, 0);
 
   // not putting v6 entry (entry3) in entries for now
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry1)));
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry2)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1, std::move(entry1)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix2, std::move(entry2)));
 
   /*
    * With a matched filter for community 65530:15800
@@ -7280,8 +7308,10 @@ TEST_F(RibFixture, GetRibEntriesWithCommunityFilter) {
   EXPECT_THAT(
       output1,
       UnorderedElementsAre(
-          rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1)),
-          rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix2))));
+          rib_->createTRibEntry(
+              *rib_->defaultVrf_.ribEntries().find(kV4Prefix1)),
+          rib_->createTRibEntry(
+              *rib_->defaultVrf_.ribEntries().find(kV4Prefix2))));
 
   // With thrift API it should give the same output as direct api call
   auto communitiesStr = std::make_unique<std::vector<std::string>>();
@@ -7324,8 +7354,10 @@ TEST_F(RibFixture, GetRibEntriesWithCommunityFilter) {
   EXPECT_THAT(
       output4,
       UnorderedElementsAre(
-          rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1)),
-          rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix2))));
+          rib_->createTRibEntry(
+              *rib_->defaultVrf_.ribEntries().find(kV4Prefix1)),
+          rib_->createTRibEntry(
+              *rib_->defaultVrf_.ribEntries().find(kV4Prefix2))));
 
   // With an emtpy communities list, no entry should return
   auto output5 = rib_->getRibEntriesForCommunities(TBgpAfi::AFI_IPV4, {});
@@ -7441,13 +7473,14 @@ TEST_F(RibFixture, GetRibEntriesWithCommunityFilter) {
   verifyV4Entry2(firstIsPrefix1 ? output1[1] : output1[0]);
 
   // putting v6 entry to RIB
-  rib_->ribEntries_.emplace(make_pair(kV6Prefix1, std::move(entry3)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV6Prefix1, std::move(entry3)));
   output2 = rib_->getRibEntriesForCommunities(
       TBgpAfi::AFI_IPV6, {nettools::bgplib::BgpAttrCommunityC(65530, 15800)});
   EXPECT_THAT(
       output2,
-      UnorderedElementsAre(
-          rib_->createTRibEntry(*rib_->ribEntries_.find(kV6Prefix1))));
+      UnorderedElementsAre(rib_->createTRibEntry(
+          *rib_->defaultVrf_.ribEntries().find(kV6Prefix1))));
   /*
    * Lambda to verify a ribentry and associated attributes.
    * param bestPathPresent controls whether the rib-entry is expected
@@ -7608,11 +7641,16 @@ TEST_F(RibFixture, GetRibEntriesForSubprefixes) {
       entry5, multipathSelector, bestpathSelector, false, 0);
 
   // put all entries into the rib
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry1)));
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry2)));
-  rib_->ribEntries_.emplace(make_pair(kV6Prefix1, std::move(entry3)));
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1Slash23, std::move(entry4)));
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1Slash25, std::move(entry5)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1, std::move(entry1)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix2, std::move(entry2)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV6Prefix1, std::move(entry3)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1Slash23, std::move(entry4)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1Slash25, std::move(entry5)));
 
   // with null prefixes
   auto output1 = rib_->getRibEntriesForSubprefixes(nullptr);
@@ -7625,8 +7663,8 @@ TEST_F(RibFixture, GetRibEntriesForSubprefixes) {
     auto output = rib_->getRibEntriesForSubprefixes(std::move(prefix));
     EXPECT_THAT(
         output,
-        UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix2))));
+        UnorderedElementsAre(rib_->createTRibEntry(
+            *rib_->defaultVrf_.ribEntries().find(kV4Prefix2))));
   }
 
   {
@@ -7636,8 +7674,8 @@ TEST_F(RibFixture, GetRibEntriesForSubprefixes) {
     auto output = rib_->getRibEntriesForSubprefixes(std::move(prefix));
     EXPECT_THAT(
         output,
-        UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV6Prefix1))));
+        UnorderedElementsAre(rib_->createTRibEntry(
+            *rib_->defaultVrf_.ribEntries().find(kV6Prefix1))));
   }
 
   {
@@ -7651,10 +7689,14 @@ TEST_F(RibFixture, GetRibEntriesForSubprefixes) {
     EXPECT_THAT(
         output,
         UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1)),
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix2)),
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1Slash23)),
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1Slash25))));
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix1)),
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix2)),
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix1Slash23)),
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix1Slash25))));
   }
 
   {
@@ -7668,9 +7710,12 @@ TEST_F(RibFixture, GetRibEntriesForSubprefixes) {
     EXPECT_THAT(
         output,
         UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1)),
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1Slash23)),
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1Slash25))));
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix1)),
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix1Slash23)),
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix1Slash25))));
   }
 
   {
@@ -7684,8 +7729,10 @@ TEST_F(RibFixture, GetRibEntriesForSubprefixes) {
     EXPECT_THAT(
         output,
         UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1)),
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1Slash25))));
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix1)),
+            rib_->createTRibEntry(
+                *rib_->defaultVrf_.ribEntries().find(kV4Prefix1Slash25))));
   }
 
   {
@@ -7697,8 +7744,8 @@ TEST_F(RibFixture, GetRibEntriesForSubprefixes) {
     auto output = rib_->getRibEntriesForSubprefixes(std::move(prefix));
     EXPECT_THAT(
         output,
-        UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV6Prefix1))));
+        UnorderedElementsAre(rib_->createTRibEntry(
+            *rib_->defaultVrf_.ribEntries().find(kV6Prefix1))));
   }
 
   {
@@ -7748,9 +7795,12 @@ TEST_F(RibFixture, GetRibEntryForPrefix) {
   RibBase::selectBestPath(
       entry3, multipathSelector, bestpathSelector, false, 0);
 
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry1)));
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry2)));
-  rib_->ribEntries_.emplace(make_pair(kV6Prefix1, std::move(entry3)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1, std::move(entry1)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix2, std::move(entry2)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV6Prefix1, std::move(entry3)));
 
   // with null prefixes
   auto output1 = rib_->getRibEntryForPrefix(nullptr);
@@ -7777,8 +7827,8 @@ TEST_F(RibFixture, GetRibEntryForPrefix) {
     auto output = rib_->getRibEntryForPrefix(std::move(prefix));
     EXPECT_THAT(
         output,
-        UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1))));
+        UnorderedElementsAre(rib_->createTRibEntry(
+            *rib_->defaultVrf_.ribEntries().find(kV4Prefix1))));
   }
 
   {
@@ -7788,8 +7838,8 @@ TEST_F(RibFixture, GetRibEntryForPrefix) {
     auto output = rib_->getRibEntryForPrefix(std::move(prefix));
     EXPECT_THAT(
         output,
-        UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix2))));
+        UnorderedElementsAre(rib_->createTRibEntry(
+            *rib_->defaultVrf_.ribEntries().find(kV4Prefix2))));
   }
 
   {
@@ -7799,8 +7849,8 @@ TEST_F(RibFixture, GetRibEntryForPrefix) {
     auto output = rib_->getRibEntryForPrefix(std::move(prefix));
     EXPECT_THAT(
         output,
-        UnorderedElementsAre(
-            rib_->createTRibEntry(*rib_->ribEntries_.find(kV6Prefix1))));
+        UnorderedElementsAre(rib_->createTRibEntry(
+            *rib_->defaultVrf_.ribEntries().find(kV6Prefix1))));
   }
 
   {
@@ -7841,8 +7891,9 @@ TEST_F(RibFixture, GetRibEntryWeightedNexthopsTest) {
         1024 /* ucmp-width */);
     WeightedNexthopMap nhWts = {{kPeerAddr1, 511}, {kPeerAddr2, 513}};
     EXPECT_EQ(nhWts, *ribEntry.getMultipathWeightedNexthops());
-    rib_->ribEntries_.emplace(kV4Prefix1, std::move(ribEntry));
-    auto tRibEntry = rib_->createTRibEntry(*rib_->ribEntries_.find(kV4Prefix1));
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, std::move(ribEntry));
+    auto tRibEntry =
+        rib_->createTRibEntry(*rib_->defaultVrf_.ribEntries().find(kV4Prefix1));
     for (const auto& [_, pathGrps] : *tRibEntry.paths()) {
       for (const auto& path : pathGrps) {
         if (*path.peer_id() == createTIpPrefix(kPeerAddr1)) {
@@ -8085,7 +8136,8 @@ TEST_F(RibFixture, AggregateUcmpWeight) {
   auto prefix = std::make_unique<std::string>(
       folly::IPAddress::networkToString(kV4Prefix1));
   auto output = rib_->getRibEntryForPrefix(std::move(prefix));
-  const auto& ribEntry = (rib_->ribEntries_.find(kV4Prefix1))->second;
+  const auto& ribEntry =
+      (rib_->defaultVrf_.ribEntries().find(kV4Prefix1))->second;
   // EXPECT_TRUE(ribEntry.getHonorUcmpWeights());
   // Verify aggregated received UCMP weight
   EXPECT_EQ(
@@ -8173,7 +8225,8 @@ TEST_F(RibFixture, ProgramTopoInfoTest) {
           network::toBinaryAddress(kV4Nexthop1).addr()->toStdString(),
           network::toBinaryAddress(kV4Nexthop2).addr()->toStdString()));
   {
-    const auto& ribEntry = (rib_->ribEntries_.find(kV4Prefix1))->second;
+    const auto& ribEntry =
+        (rib_->defaultVrf_.ribEntries().find(kV4Prefix1))->second;
     auto topoInfoMap = ribEntry.getNexthopTopoInfoMap();
     EXPECT_EQ(topoInfoMap->size(), 2);
     for (const auto& [nh, topoInfo] : *topoInfoMap) {
@@ -8283,7 +8336,8 @@ TEST_F(RibFixture, NoLbwECMP) {
   auto prefix = std::make_unique<std::string>(
       folly::IPAddress::networkToString(kV4Prefix1));
   auto output = rib_->getRibEntryForPrefix(std::move(prefix));
-  const auto& ribEntry = (rib_->ribEntries_.find(kV4Prefix1))->second;
+  const auto& ribEntry =
+      (rib_->defaultVrf_.ribEntries().find(kV4Prefix1))->second;
   // EXPECT_FALSE(ribEntry.getHonorUcmpWeights());
   EXPECT_FALSE(ribEntry.getAggregateReceivedUcmpWeight().has_value());
 }
@@ -8333,7 +8387,8 @@ TEST_F(RibFixture, LbwCommunityForward) {
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
     Fib::FibProgrammedMessage msg(fboss::kDefaultVrf, FibProgrammedPfxs, false);
-    rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry)));
+    rib_->defaultVrf_.ribEntries().emplace(
+        make_pair(kV4Prefix1, std::move(entry)));
     inputQ.push(std::move(msg));
 
     auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -8422,7 +8477,8 @@ TEST_F(RibFixture, LbwCommunitySuppression1) {
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
     Fib::FibProgrammedMessage msg(fboss::kDefaultVrf, FibProgrammedPfxs, false);
-    rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry)));
+    rib_->defaultVrf_.ribEntries().emplace(
+        make_pair(kV4Prefix2, std::move(entry)));
     inputQ.push(std::move(msg));
 
     auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -8511,7 +8567,8 @@ TEST_F(RibFixture, LbwCommunitySuppression2) {
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
     Fib::FibProgrammedMessage msg(fboss::kDefaultVrf, FibProgrammedPfxs, false);
-    rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry)));
+    rib_->defaultVrf_.ribEntries().emplace(
+        make_pair(kV4Prefix2, std::move(entry)));
     inputQ.push(std::move(msg));
 
     auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -8682,7 +8739,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathRemovedAndRibDumpReqTest) {
 
   fibFuture.wait();
   {
-    auto& kV4Prefix1Entry = rib_->ribEntries_.find(kV4Prefix1)->second;
+    auto& kV4Prefix1Entry =
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second;
     ASSERT_NE(nullptr, kV4Prefix1Entry.getMultipathWeightedNexthops());
     ASSERT_NE(
         nullptr, kV4Prefix1Entry.getAdvertisedMultipathWeightedNexthops());
@@ -8703,7 +8761,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathRemovedAndRibDumpReqTest) {
     /*
      * Simulate FIB has been programmed and acks back to Rib
      */
-    auto& kV4Prefix1Entry = rib_->ribEntries_.find(kV4Prefix1)->second;
+    auto& kV4Prefix1Entry =
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second;
     auto& fromFibToRibQ = rib_->fromFibMessageQ_;
 
     /*
@@ -8752,8 +8811,11 @@ TEST_P(RibFixtureAddPathTestSuite, PathRemovedAndRibDumpReqTest) {
      * Verify that kV4Prefix1 entry is still in the ribEntries_, but with only 1
      * path left
      */
-    ASSERT_NE(rib_->ribEntries_.find(kV4Prefix1), rib_->ribEntries_.end());
-    auto& kV4Prefix1Entry = rib_->ribEntries_.find(kV4Prefix1)->second;
+    ASSERT_NE(
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1),
+        rib_->defaultVrf_.ribEntries().end());
+    auto& kV4Prefix1Entry =
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second;
     /*
      * Verify that kV4Prefix1 entry advertisedWeightedNexthops_ is updated to
      * multipathWeightedNexthops
@@ -8762,7 +8824,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathRemovedAndRibDumpReqTest) {
         kV4Prefix1Entry.getAdvertisedMultipathWeightedNexthops(),
         kV4Prefix1Entry.getMultipathWeightedNexthops());
     std::shared_ptr<const WeightedNexthopMap> nextHopMap =
-        rib_->ribEntries_.find(kV4Prefix1)
+        rib_->defaultVrf_.ribEntries()
+            .find(kV4Prefix1)
             ->second.getAdvertisedMultipathWeightedNexthops();
     /*
      * Verify that nextHopMap is not nullptr since there is still a path through
@@ -8821,7 +8884,8 @@ TEST_P(RibFixtureAddPathTestSuite, RouteWithdrawnAndRibDumpReqTest) {
 
   fibFuture.wait();
   {
-    auto& kV4Prefix1Entry = rib_->ribEntries_.find(kV4Prefix1)->second;
+    auto& kV4Prefix1Entry =
+        rib_->defaultVrf_.ribEntries().find(kV4Prefix1)->second;
     ASSERT_NE(nullptr, kV4Prefix1Entry.getMultipathWeightedNexthops());
     ASSERT_NE(
         nullptr, kV4Prefix1Entry.getAdvertisedMultipathWeightedNexthops());
@@ -8900,7 +8964,8 @@ TEST_F(RibFixture, GetSelectionFilterCriteriaTest) {
   entry0.updatePath(eBgpPeer1_, attrs5, false);
   RibBase::selectBestPath(
       entry0, multipathSelector, bestpathSelector, false, 0);
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry0)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix1, std::move(entry0)));
   auto prefix0 = std::make_unique<std::string>(
       folly::IPAddress::networkToString(kV4Prefix1));
   auto output0 = rib_->getRibEntryForPrefix(std::move(prefix0));
@@ -8920,7 +8985,8 @@ TEST_F(RibFixture, GetSelectionFilterCriteriaTest) {
   entry1.updatePath(eBgpPeer2_, attrs2, false);
   RibBase::selectBestPath(
       entry1, multipathSelector, bestpathSelector, false, 0);
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry1)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix2, std::move(entry1)));
   auto prefix1 = std::make_unique<std::string>(
       folly::IPAddress::networkToString(kV4Prefix2));
   {
@@ -8970,7 +9036,8 @@ TEST_F(RibFixture, GetSelectionFilterCriteriaTest) {
 
   RibBase::selectBestPath(
       entry2, multipathSelector, bestpathSelector, false, 0);
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix3, std::move(entry2)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix3, std::move(entry2)));
   auto prefix2 = std::make_unique<std::string>(
       folly::IPAddress::networkToString(kV4Prefix3));
   auto output2 = rib_->getRibEntryForPrefix(std::move(prefix2));
@@ -9054,7 +9121,8 @@ TEST_F(RibFixture, GetSelectionFilterCriteriaTest) {
 
   RibBase::selectBestPath(
       entry3, multipathSelector, bestpathSelector, false, 0);
-  rib_->ribEntries_.emplace(make_pair(kV4Prefix4, std::move(entry3)));
+  rib_->defaultVrf_.ribEntries().emplace(
+      make_pair(kV4Prefix4, std::move(entry3)));
   auto prefix3 = std::make_unique<std::string>(
       folly::IPAddress::networkToString(kV4Prefix4));
   auto output3 = rib_->getRibEntryForPrefix(std::move(prefix3));
@@ -9714,7 +9782,7 @@ TEST_F(RibFixture, AnnounceIncludesPathIdOnRouteInfo) {
   PrefixPathIds prefixBatch{{kV4Prefix1, expectedPathId}};
   sendAnnouncement(prefixBatch, iBgpPeer_, attr_);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto& ribEntries = rib_->ribEntries_;
+    auto& ribEntries = rib_->defaultVrf_.ribEntries();
     EXPECT_EQ(1, ribEntries.size());
     auto& ribEntry = ribEntries.at(kV4Prefix1);
     EXPECT_EQ(1, ribEntry.getAllPathsCnt());
@@ -9829,8 +9897,8 @@ TEST_F(RibNexthopTrackingFixture, RibInAnnouncementWithNexthopTracking) {
   fibFuture.wait();
 
   // Verify that the route was added to the Rib
-  auto entry = rib_->ribEntries_.find(prefix1);
-  ASSERT_NE(entry, rib_->ribEntries_.end());
+  auto entry = rib_->defaultVrf_.ribEntries().find(prefix1);
+  ASSERT_NE(entry, rib_->defaultVrf_.ribEntries().end());
 
   // Verify that the NexthopInfo was created in the nexthopInfoMap_
   auto nexthopInfoIt = rib_->nexthopInfoMap_.find(kPeerAddr1);
@@ -9872,9 +9940,9 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   std::shared_ptr<RouteInfo> initialRouteInfo;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, initialAttrs, prefixBatch.front());
-    auto entry = rib_->ribEntries_.find(kV4Prefix1);
-    ASSERT_NE(entry, rib_->ribEntries_.end());
+        rib_->defaultVrf_, iBgpPeer_, initialAttrs, prefixBatch.front());
+    auto entry = rib_->defaultVrf_.ribEntries().find(kV4Prefix1);
+    ASSERT_NE(entry, rib_->defaultVrf_.ribEntries().end());
     initialRouteInfo = entry->second.getRouteInfo(peerId, kDefaultPathID);
     ASSERT_NE(initialRouteInfo, nullptr);
     auto nexthopInfo = rib_->nexthopInfoMap_.find(kPeerAddr1);
@@ -9886,8 +9954,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, initialAttrs, prefixBatch.front());
-    const auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+        rib_->defaultVrf_, iBgpPeer_, initialAttrs, prefixBatch.front());
+    const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     EXPECT_EQ(initialRouteInfo, entry.getRouteInfo(peerId, kDefaultPathID));
     EXPECT_EQ(1, rib_->nexthopInfoMap_.at(kPeerAddr1).getRouteInfoListSize());
   });
@@ -9896,8 +9964,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   std::shared_ptr<RouteInfo> refreshedRouteInfo;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, refreshedAttrs, prefixBatch.front());
-    const auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+        rib_->defaultVrf_, iBgpPeer_, refreshedAttrs, prefixBatch.front());
+    const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     refreshedRouteInfo = entry.getRouteInfo(peerId, kDefaultPathID);
     ASSERT_NE(refreshedRouteInfo, nullptr);
     EXPECT_NE(initialRouteInfo, refreshedRouteInfo);
@@ -9910,8 +9978,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   std::shared_ptr<RouteInfo> changedNexthopRouteInfo;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, changedNexthopAttrs, prefixBatch.front());
-    const auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+        rib_->defaultVrf_, iBgpPeer_, changedNexthopAttrs, prefixBatch.front());
+    const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     changedNexthopRouteInfo = entry.getRouteInfo(peerId, kDefaultPathID);
     ASSERT_NE(changedNexthopRouteInfo, nullptr);
     EXPECT_FALSE(refreshedRouteInfo->isOnNextHopList());
@@ -9925,7 +9993,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(iBgpPeer_, nullptr, prefixBatch.front());
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, nullptr, prefixBatch.front());
     EXPECT_FALSE(changedNexthopRouteInfo->isOnNextHopList());
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr2));
@@ -9938,15 +10007,18 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   const PrefixPathId secondPath{kV6Prefix1, 2};
   auto sharedNexthopAttrs = makeAttrs(4, kPeerAddr1);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(iBgpPeer_, sharedNexthopAttrs, firstPath);
-    rib_->processSingleRibInUpdate(iBgpPeer_, sharedNexthopAttrs, secondPath);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, sharedNexthopAttrs, firstPath);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, sharedNexthopAttrs, secondPath);
     EXPECT_EQ(2, rib_->nexthopInfoMap_.at(kPeerAddr1).getRouteInfoListSize());
   });
   tcData->publishStats();
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(iBgpPeer_, nullptr, firstPath);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, nullptr, firstPath);
     EXPECT_EQ(1, rib_->nexthopInfoMap_.at(kPeerAddr1).getRouteInfoListSize());
     EXPECT_TRUE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
   });
@@ -9954,7 +10026,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(iBgpPeer_, nullptr, secondPath);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, nullptr, secondPath);
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr1));
     EXPECT_FALSE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
@@ -10055,8 +10128,8 @@ TEST_F(RibNexthopTrackingFixture, RouteInfoStoresRibEntryPointer) {
   fibFuture.wait();
 
   // Get the RibEntry from the Rib
-  auto ribEntryIt = rib_->ribEntries_.find(kV4Prefix1);
-  ASSERT_NE(ribEntryIt, rib_->ribEntries_.end());
+  auto ribEntryIt = rib_->defaultVrf_.ribEntries().find(kV4Prefix1);
+  ASSERT_NE(ribEntryIt, rib_->defaultVrf_.ribEntries().end());
 
   // Get the RouteInfo from the RibEntry
   auto routeInfo = ribEntryIt->second.getRouteInfo(
@@ -10382,7 +10455,8 @@ TEST_F(RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect) {
 
   const PrefixPathId prefixPathId{kV4Prefix1, kDefaultPathID};
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(iBgpPeer_, nullptr, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, nullptr, prefixPathId);
   });
   EXPECT_FALSE(rib_->getNexthopInfoForNexthop(kPeerAddr1).has_value());
   EXPECT_FALSE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
@@ -10502,14 +10576,17 @@ TEST_F(
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus({reachable});
-    rib_->processSingleRibInUpdate(iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
     auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
     ASSERT_EQ(1, queuedStatuses.size());
 
-    rib_->processSingleRibInUpdate(iBgpPeer_, nullptr, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, nullptr, prefixPathId);
     ASSERT_TRUE(nexthopCache->addOrUpdateNextHopStatus({reachable}).empty());
-    rib_->processSingleRibInUpdate(iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
     rib_->processRibInNexthopUpdate(
         RibInNexthopUpdate(std::move(queuedStatuses)));
 
@@ -10535,14 +10612,17 @@ TEST_F(
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus({unreachable});
-    rib_->processSingleRibInUpdate(iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
     auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/100)});
     ASSERT_EQ(1, queuedStatuses.size());
 
-    rib_->processSingleRibInUpdate(iBgpPeer_, nullptr, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, nullptr, prefixPathId);
     ASSERT_TRUE(nexthopCache->addOrUpdateNextHopStatus({unreachable}).empty());
-    rib_->processSingleRibInUpdate(iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
     rib_->processRibInNexthopUpdate(
         RibInNexthopUpdate(std::move(queuedStatuses)));
 
@@ -10567,7 +10647,8 @@ TEST_F(
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
-    rib_->processSingleRibInUpdate(iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
 
     auto firstStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
@@ -10600,7 +10681,7 @@ TEST_F(RibNexthopTrackingFixture, StaleNexthopUpdateIsSkippedAndCounted) {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     auto staleStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
     auto newerStatuses = nexthopCache->addOrUpdateNextHopStatus(
@@ -10639,9 +10720,15 @@ TEST_F(RibNexthopTrackingFixture, NexthopUpdatesForTwoNexthopsApplyOutOfOrder) {
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10),
          NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr1), {kV4Prefix1, kDefaultPathID});
+        rib_->defaultVrf_,
+        iBgpPeer_,
+        pathVia(kPeerAddr1),
+        {kV4Prefix1, kDefaultPathID});
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr2), {kV4Prefix2, kDefaultPathID});
+        rib_->defaultVrf_,
+        iBgpPeer_,
+        pathVia(kPeerAddr2),
+        {kV4Prefix2, kDefaultPathID});
     auto statusesB = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/20)});
     auto statusesA = nexthopCache->addOrUpdateNextHopStatus(
@@ -10668,7 +10755,7 @@ TEST_F(RibNexthopTrackingFixture, UnstampedNexthopUpdateAlwaysRereads) {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
 
@@ -10694,7 +10781,7 @@ TEST_F(RibNexthopTrackingFixture, NexthopUpdateWithEqualEpochRereads) {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     auto statuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
     rib_->processRibInNexthopUpdate(RibInNexthopUpdate(statuses));
@@ -10720,9 +10807,15 @@ TEST_F(
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr1), {kV4Prefix1, kDefaultPathID});
+        rib_->defaultVrf_,
+        iBgpPeer_,
+        pathVia(kPeerAddr1),
+        {kV4Prefix1, kDefaultPathID});
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr2), {kV4Prefix2, kDefaultPathID});
+        rib_->defaultVrf_,
+        iBgpPeer_,
+        pathVia(kPeerAddr2),
+        {kV4Prefix2, kDefaultPathID});
     rib_->processRibInInitialPathComputation(std::chrono::seconds(60));
     ASSERT_FALSE(rib_->ribEoRReceived_);
     auto staleStatuses = nexthopCache->addOrUpdateNextHopStatus(
@@ -10791,10 +10884,10 @@ TEST_F(
              /*ifName=*/"eth1/1/1"),
          NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     rib_->processRibInInitialPathComputation(std::chrono::milliseconds(0));
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
   });
   fibFuture.wait();
 
@@ -10854,11 +10947,12 @@ TEST_F(
     // The eBGP path via N1 is the best path. The iBGP path via N2 keeps the
     // RibEntry after the withdrawal.
     rib_->processSingleRibInUpdate(
-        eBgpPeer1_, pathVia(kPeerAddr1), prefixPathId);
+        rib_->defaultVrf_, eBgpPeer1_, pathVia(kPeerAddr1), prefixPathId);
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
     rib_->processRibInInitialPathComputation(std::chrono::milliseconds(0));
-    rib_->processSingleRibInUpdate(eBgpPeer1_, nullptr, prefixPathId);
+    rib_->processSingleRibInUpdate(
+        rib_->defaultVrf_, eBgpPeer1_, nullptr, prefixPathId);
   });
   fibFuture.wait();
 
@@ -10891,14 +10985,14 @@ TEST_F(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/1),
          NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     rib_->processRibInInitialPathComputation(std::chrono::milliseconds(0));
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
     ASSERT_TRUE(rib_->nexthopInfoMap_.contains(kPeerAddr1));
     ASSERT_TRUE(rib_->nexthopInfoMap_.at(kPeerAddr1).isRouteInfoListEmpty());
     rib_->processSingleRibInUpdate(
-        iBgpPeer_, pathVia(kPeerAddr1), otherPrefixPathId);
+        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), otherPrefixPathId);
   });
   fibFuture.wait();
 
@@ -11716,7 +11810,7 @@ TEST_F(RibFixture, GetRibPrefixCanonical) {
   entry1.updatePath(eBgpPeer1_, attrs1, false);
   RibBase::selectBestPath(
       entry1, multipathSelector, bestpathSelector, false, 0);
-  rib_->ribEntries_.emplace(kV4Prefix1, std::move(entry1));
+  rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, std::move(entry1));
 
   result = rib_->getRibPrefixCanonical(
       std::make_unique<std::string>(
@@ -11766,9 +11860,9 @@ TEST_F(RibFixture, GetRibEntriesForCommunitiesCanonical) {
   RibBase::selectBestPath(
       entry3, multipathSelector, bestpathSelector, false, 0);
 
-  rib_->ribEntries_.emplace(kV4Prefix1, std::move(entry1));
-  rib_->ribEntries_.emplace(kV4Prefix2, std::move(entry2));
-  rib_->ribEntries_.emplace(kV6Prefix1, std::move(entry3));
+  rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, std::move(entry1));
+  rib_->defaultVrf_.ribEntries().emplace(kV4Prefix2, std::move(entry2));
+  rib_->defaultVrf_.ribEntries().emplace(kV6Prefix1, std::move(entry3));
 
   /* Test 1: Filter by community 100:200 on IPv4 (matches kV4Prefix1 only) */
   std::vector<nettools::bgplib::BgpAttrCommunityC> filterComms1{
@@ -11863,9 +11957,9 @@ TEST_F(RibFixture, GetRibSubprefixesCanonical) {
   RibBase::selectBestPath(
       entry3, multipathSelector, bestpathSelector, false, 0);
 
-  rib_->ribEntries_.emplace(kV4Prefix1, std::move(entry1));
-  rib_->ribEntries_.emplace(kV4Prefix1Slash25, std::move(entry2));
-  rib_->ribEntries_.emplace(kV6Prefix1, std::move(entry3));
+  rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, std::move(entry1));
+  rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1Slash25, std::move(entry2));
+  rib_->defaultVrf_.ribEntries().emplace(kV6Prefix1, std::move(entry3));
 
   /*
    * Test 1: Fetch subprefixes of kV4Prefix1
@@ -11920,8 +12014,8 @@ TEST_F(
       .Times(testing::AnyNumber());
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->ribEntries_.emplace(kV4Prefix1, RibEntry(kV4Prefix1));
-    auto& entry = rib_->ribEntries_.at(kV4Prefix1);
+    rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
+    auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     const std::vector<folly::IPAddress> nexthops{kV4Nexthop1, kV4Nexthop2};
     for (uint32_t i = 0; i < nexthops.size(); i++) {
       auto attrs = std::make_shared<facebook::bgp::BgpPath>(
@@ -11942,11 +12036,13 @@ TEST_F(
     }
     entry.requirePathSelection();
 
-    rib_->prepareFibProgramming();
+    rib_->prepareFibProgramming(fboss::kDefaultVrf);
 
-    ASSERT_TRUE(rib_->ribEntries_.contains(kV4Prefix1));
-    EXPECT_TRUE(
-        rib_->ribEntries_.at(kV4Prefix1).getAdvertisedMultipaths().empty());
+    ASSERT_TRUE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
+    EXPECT_TRUE(rib_->defaultVrf_.ribEntries()
+                    .at(kV4Prefix1)
+                    .getAdvertisedMultipaths()
+                    .empty());
   });
 
   auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;

@@ -205,8 +205,8 @@ TEST_P(RibFixtureAddPathTestSuite, LbwProgramFibTest) {
 
     // stmt1's expiry timer is now running in the background
 
-    const auto& v4Rib = rib_->ribEntries_.find(prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib);
+    const auto& v4Rib = rib_->defaultVrf_.ribEntries().find(prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib);
     const auto ribPolicyUcmpWeight = v4Rib->second.getRibPolicyUcmpWeight();
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v4Rib->second));
     EXPECT_TRUE(ribPolicyUcmpWeight.has_value());
@@ -263,8 +263,8 @@ TEST_P(RibFixtureAddPathTestSuite, LbwProgramFibTest) {
     // this wait() will be fulfilled by the push of the new policy above
     ribFuture.wait();
 
-    const auto& v4Rib = rib_->ribEntries_.find(prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib);
+    const auto& v4Rib = rib_->defaultVrf_.ribEntries().find(prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib);
     const auto ribPolicyUcmpWeight = v4Rib->second.getRibPolicyUcmpWeight();
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v4Rib->second));
     EXPECT_TRUE(ribPolicyUcmpWeight.has_value());
@@ -300,8 +300,8 @@ TEST_P(RibFixtureAddPathTestSuite, LbwProgramFibTest) {
     EXPECT_TRUE(
         rib_->routeAttributePolicy_->statements_.at("stmt3").isActive());
 
-    const auto& v4Rib = rib_->ribEntries_.find(prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib);
+    const auto& v4Rib = rib_->defaultVrf_.ribEntries().find(prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib);
     const auto ribPolicyUcmpWeight = v4Rib->second.getRibPolicyUcmpWeight();
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v4Rib->second));
     EXPECT_TRUE(ribPolicyUcmpWeight.has_value());
@@ -326,8 +326,8 @@ TEST_P(RibFixtureAddPathTestSuite, LbwProgramFibTest) {
     EXPECT_TRUE(
         rib_->routeAttributePolicy_->statements_.at("stmt3").isActive());
 
-    const auto& v4Rib = rib_->ribEntries_.find(prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib);
+    const auto& v4Rib = rib_->defaultVrf_.ribEntries().find(prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib);
     const auto ribPolicyUcmpWeight = v4Rib->second.getRibPolicyUcmpWeight();
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v4Rib->second));
     EXPECT_FALSE(ribPolicyUcmpWeight.has_value());
@@ -374,8 +374,8 @@ TEST_P(RibFixtureAddPathTestSuite, LbwProgramFibTest) {
 
     ribFuture.wait();
 
-    const auto& v4Rib = rib_->ribEntries_.find(prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib);
+    const auto& v4Rib = rib_->defaultVrf_.ribEntries().find(prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib);
     const auto ribPolicyUcmpWeight = v4Rib->second.getRibPolicyUcmpWeight();
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v4Rib->second));
     EXPECT_TRUE(ribPolicyUcmpWeight.has_value());
@@ -411,8 +411,8 @@ TEST_P(RibFixtureAddPathTestSuite, LbwProgramFibTest) {
     EXPECT_FALSE(
         rib_->routeAttributePolicy_->statements_.at("stmt1").isActive());
 
-    const auto& v4Rib = rib_->ribEntries_.find(prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib);
+    const auto& v4Rib = rib_->defaultVrf_.ribEntries().find(prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib);
     const auto ribPolicyUcmpWeight = v4Rib->second.getRibPolicyUcmpWeight();
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v4Rib->second));
     EXPECT_FALSE(ribPolicyUcmpWeight.has_value());
@@ -460,16 +460,16 @@ TEST_P(RibFixtureAddPathTestSuite, LbwProgramFibTest) {
     ribFuture.wait();
 
     // prefix 1 rib should have rib policy set
-    const auto& v4Rib1 = rib_->ribEntries_.find(prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib1);
+    const auto& v4Rib1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib1);
     const auto ribPolicyUcmpWeight = v4Rib1->second.getRibPolicyUcmpWeight();
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v4Rib1->second));
     EXPECT_TRUE(ribPolicyUcmpWeight.has_value());
     EXPECT_EQ(kLbw10G, ribPolicyUcmpWeight.value());
 
     // prefix 2 rib should not have rib policy set
-    const auto& v4Rib2 = rib_->ribEntries_.find(prefix2);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib2);
+    const auto& v4Rib2 = rib_->defaultVrf_.ribEntries().find(prefix2);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib2);
     EXPECT_FALSE(rib_->routeAttributePolicy_->match(v4Rib2->second));
     EXPECT_FALSE(v4Rib2->second.getRibPolicyUcmpWeight().has_value());
 
@@ -498,8 +498,8 @@ TEST_P(RibFixtureAddPathTestSuite, LbwProgramFibTest) {
 
     ribFuture.wait();
 
-    const auto& v4Rib = rib_->ribEntries_.find(prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v4Rib);
+    const auto& v4Rib = rib_->defaultVrf_.ribEntries().find(prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib);
     const auto ribPolicyUcmpWeight = v4Rib->second.getRibPolicyUcmpWeight();
     EXPECT_FALSE(ribPolicyUcmpWeight.has_value());
 
@@ -699,8 +699,8 @@ TEST_P(
 
   // 3. Check weights are updated per policy.
   {
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v6Rib->second));
 
     /*
@@ -732,8 +732,8 @@ TEST_P(
     EXPECT_EQ(TRouteAttributePolicy{}, rib_->getRouteAttributePolicy());
     fibFuture.wait();
 
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
 
     /*
      * Make sure fib batch list has only 1 update for kV6Prefix1,
@@ -842,8 +842,8 @@ TEST_P(
 
   // 3. Check weights are updated per policy.
   {
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v6Rib->second));
 
     /*
@@ -883,8 +883,8 @@ TEST_P(
 
     fibFuture.wait();
 
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
 
     /*
      * Make sure fib batch list has only 1 update for kV6Prefix1,
@@ -1010,8 +1010,8 @@ TEST_P(
 
   // 3. Check weights are updated per policy.
   {
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v6Rib->second));
 
     /*
@@ -1042,8 +1042,8 @@ TEST_P(
     EXPECT_EQ(TRouteAttributePolicy{}, rib_->getRouteAttributePolicy());
     fibFuture.wait();
 
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
 
     /*
      * Make sure fib batch list has only 1 update for kV6Prefix1,
@@ -1163,8 +1163,8 @@ TEST_P(RibFixtureAddPathTestSuite, ReApplyRouteAttributePolicyTest) {
 
   // 3. Check weights are updated per policy.
   {
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
     EXPECT_TRUE(rib_->routeAttributePolicy_->match(v6Rib->second));
 
     /*
@@ -1211,8 +1211,8 @@ TEST_P(RibFixtureAddPathTestSuite, ReApplyRouteAttributePolicyTest) {
 
   // 5. verify only one prefix in the fib batch list
   {
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix2);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix2);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
 
     /*
      * Make sure fib batch list has only 1 update for kV6Prefix2,
@@ -1242,8 +1242,8 @@ TEST_P(RibFixtureAddPathTestSuite, ReApplyRouteAttributePolicyTest) {
 
   // 7. verify one prefix in the fib batch list and it falls back to native UCMP
   {
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
 
     /*
      * Make sure fib batch list has only 1 update for kV6Prefix1,
@@ -1449,8 +1449,8 @@ TEST_P(RibFixtureAddPathTestSuite, CreateTRibEntryWithCteUcmpAction) {
    * RibBase::getRibEntries* / BgpServiceBase.
    */
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-    EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+    const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+    EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
 
     auto tRibEntry = rib_->createTRibEntry(*v6Rib);
     EXPECT_TRUE(tRibEntry.active_cte_ucmp_action().has_value());
@@ -1476,8 +1476,8 @@ TEST_P(RibFixtureAddPathTestSuite, CreateTRibEntryWithCteUcmpAction) {
 
     // Read on the RIB evb to serialize with the RIB thread (see step 3 above).
     rib_->evb_.runInEventBaseThreadAndWait([&]() {
-      const auto& v4Rib = rib_->ribEntries_.find(kV4Prefix1);
-      EXPECT_NE(rib_->ribEntries_.end(), v4Rib);
+      const auto& v4Rib = rib_->defaultVrf_.ribEntries().find(kV4Prefix1);
+      EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v4Rib);
 
       auto tRibEntry = rib_->createTRibEntry(*v4Rib);
       EXPECT_FALSE(tRibEntry.active_cte_ucmp_action().has_value());
@@ -1493,8 +1493,8 @@ TEST_P(RibFixtureAddPathTestSuite, CreateTRibEntryWithCteUcmpAction) {
 
     // Read on the RIB evb to serialize with the RIB thread (see step 3 above).
     rib_->evb_.runInEventBaseThreadAndWait([&]() {
-      const auto& v6Rib = rib_->ribEntries_.find(kV6Prefix1);
-      EXPECT_NE(rib_->ribEntries_.end(), v6Rib);
+      const auto& v6Rib = rib_->defaultVrf_.ribEntries().find(kV6Prefix1);
+      EXPECT_NE(rib_->defaultVrf_.ribEntries().end(), v6Rib);
 
       auto tRibEntry = rib_->createTRibEntry(*v6Rib);
       EXPECT_FALSE(tRibEntry.active_cte_ucmp_action().has_value());
@@ -1662,8 +1662,8 @@ TEST_P(RibFixtureAddPathTestSuite, ExpirationOnlyCachePreservationTest) {
     EXPECT_EQ(cache.at(prefix1)->getStatementName(), "stmt1");
     EXPECT_FALSE(cache.at(prefix2).has_value());
 
-    const auto& ribEntry1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), ribEntry1);
+    const auto& ribEntry1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), ribEntry1);
     EXPECT_TRUE(ribEntry1->second.getRibPolicyUcmpWeight().has_value());
     EXPECT_EQ(kLbw10G, ribEntry1->second.getRibPolicyUcmpWeight().value());
 
@@ -2034,12 +2034,12 @@ TEST_P(RibFixtureAddPathTestSuite, SelectiveReEvaluationOnActionChange) {
     EXPECT_TRUE(cache.at(prefix1).has_value());
     EXPECT_TRUE(cache.at(prefix2).has_value());
 
-    auto it1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), it1);
+    auto it1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it1);
     EXPECT_EQ(kLbw10G, it1->second.getRibPolicyUcmpWeight().value());
 
-    auto it2 = rib_->ribEntries_.find(prefix2);
-    ASSERT_NE(rib_->ribEntries_.end(), it2);
+    auto it2 = rib_->defaultVrf_.ribEntries().find(prefix2);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it2);
     EXPECT_EQ(kLbw10G, it2->second.getRibPolicyUcmpWeight().value());
   }
 
@@ -2078,13 +2078,13 @@ TEST_P(RibFixtureAddPathTestSuite, SelectiveReEvaluationOnActionChange) {
     });
 
     // prefix1 should have new LBW value
-    auto it1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), it1);
+    auto it1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it1);
     EXPECT_EQ(kLbw5G, it1->second.getRibPolicyUcmpWeight().value());
 
     // prefix2 should retain old LBW value
-    auto it2 = rib_->ribEntries_.find(prefix2);
-    ASSERT_NE(rib_->ribEntries_.end(), it2);
+    auto it2 = rib_->defaultVrf_.ribEntries().find(prefix2);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it2);
     EXPECT_EQ(kLbw10G, it2->second.getRibPolicyUcmpWeight().value());
 
     // Cache should be preserved for all entries
@@ -2133,8 +2133,8 @@ TEST_P(RibFixtureAddPathTestSuite, FullFallbackOnFirstPolicySet) {
   // Step 2: Verify no LBW on either prefix
   {
     EXPECT_EQ(rib_->routeAttributePolicy_, nullptr);
-    auto it1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), it1);
+    auto it1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it1);
     EXPECT_FALSE(it1->second.getRibPolicyUcmpWeight().has_value());
   }
 
@@ -2159,8 +2159,8 @@ TEST_P(RibFixtureAddPathTestSuite, FullFallbackOnFirstPolicySet) {
     ASSERT_NE(rib_->routeAttributePolicy_, nullptr);
 
     // prefix1 should have LBW applied
-    auto it1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), it1);
+    auto it1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it1);
     EXPECT_TRUE(it1->second.getRibPolicyUcmpWeight().has_value());
     EXPECT_EQ(kLbw10G, it1->second.getRibPolicyUcmpWeight().value());
 
@@ -2210,8 +2210,8 @@ TEST_P(RibFixtureAddPathTestSuite, FullFallbackOnPolicyCleared) {
 
   // Step 2: Verify prefix1 has LBW
   {
-    auto it1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), it1);
+    auto it1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it1);
     EXPECT_EQ(kLbw10G, it1->second.getRibPolicyUcmpWeight().value());
   }
 
@@ -2234,8 +2234,8 @@ TEST_P(RibFixtureAddPathTestSuite, FullFallbackOnPolicyCleared) {
     EXPECT_EQ(rib_->routeAttributePolicy_, nullptr);
 
     // prefix1 should have LBW cleared
-    auto it1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), it1);
+    auto it1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it1);
     EXPECT_FALSE(it1->second.getRibPolicyUcmpWeight().has_value());
 
     // prefix1 should be in fibItems (LBW was removed)
@@ -2289,12 +2289,12 @@ TEST_P(RibFixtureAddPathTestSuite, SelectiveReEvaluationOnStatementRemoved) {
 
   // Step 2: Verify both prefixes have LBW
   {
-    auto it1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), it1);
+    auto it1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it1);
     EXPECT_EQ(kLbw10G, it1->second.getRibPolicyUcmpWeight().value());
 
-    auto it2 = rib_->ribEntries_.find(prefix2);
-    ASSERT_NE(rib_->ribEntries_.end(), it2);
+    auto it2 = rib_->defaultVrf_.ribEntries().find(prefix2);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it2);
     EXPECT_EQ(kLbw5G, it2->second.getRibPolicyUcmpWeight().value());
   }
 
@@ -2318,13 +2318,13 @@ TEST_P(RibFixtureAddPathTestSuite, SelectiveReEvaluationOnStatementRemoved) {
   // Step 4: Verify — prefix1 LBW removed (stmt1 gone), prefix2 unchanged
   {
     // prefix1 should have LBW cleared
-    auto it1 = rib_->ribEntries_.find(prefix1);
-    ASSERT_NE(rib_->ribEntries_.end(), it1);
+    auto it1 = rib_->defaultVrf_.ribEntries().find(prefix1);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it1);
     EXPECT_FALSE(it1->second.getRibPolicyUcmpWeight().has_value());
 
     // prefix2 should retain its LBW (stmt2 unchanged)
-    auto it2 = rib_->ribEntries_.find(prefix2);
-    ASSERT_NE(rib_->ribEntries_.end(), it2);
+    auto it2 = rib_->defaultVrf_.ribEntries().find(prefix2);
+    ASSERT_NE(rib_->defaultVrf_.ribEntries().end(), it2);
     EXPECT_EQ(kLbw5G, it2->second.getRibPolicyUcmpWeight().value());
 
     /*

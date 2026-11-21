@@ -136,7 +136,7 @@ class BgpServiceBase
 
   /*
    * Get the total number of prefixes currently installed in the loc-RIB
-   * (number of RibBase::ribEntries_), read from the RIB's ribCounters_ through
+   * (number of RibVrf::ribEntries_), read from the RIB's ribCounters_ through
    * a timeout-protected evb hop (co_runOnEvbWithTimeout, mirroring
    * co_getRibSummary). Returns -1 if the value is unavailable (session
    * exiting, or the evb hop timed out / failed); real counts are non-negative.

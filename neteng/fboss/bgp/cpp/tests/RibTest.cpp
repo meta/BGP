@@ -4865,7 +4865,7 @@ TEST_F(RibFixture, MultipleFullSyncRequest) {
   // hold future for fib programming
   auto fibFuture = fib_->getFibProgramFuture();
 
-  auto& toFibQ = rib_->toFibMessageQ_;
+  auto& fibProgrammingRequests = rib_->fibProgrammingRequests_;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     /*
      * call prepareFibProgramming() multiple times(>1) to mimic the full-sync
@@ -4876,9 +4876,9 @@ TEST_F(RibFixture, MultipleFullSyncRequest) {
 
     /*
      * ATTN: this cb will NOT yield to other fiber tasks, which can read the
-     * pending requests. Thus we expect 2 pending messages inside the queue.
+     * pending requests. The VRF is linked once, so we expect 1 pending entry.
      */
-    EXPECT_EQ(2, toFibQ.size());
+    EXPECT_EQ(1, fibProgrammingRequests.requests.size());
   });
 
   // MockFib::program() will fulfill this

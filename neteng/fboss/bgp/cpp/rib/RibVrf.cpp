@@ -20,4 +20,36 @@ namespace facebook::bgp {
 
 RibVrf::RibVrf(VrfId vrfId) : vrfId_(vrfId) {}
 
+void RibVrf::VrfProgrammingRequests::push(RibVrf& vrf) noexcept {
+  if (vrf.programmingRequestHook_.is_linked()) {
+    return;
+  }
+  requests.push_back(vrf);
+  if (waiter_) {
+    auto waiter = std::move(*waiter_);
+    waiter_.reset();
+    waiter.setValue();
+  }
+}
+
+folly::coro::Task<RibVrf&> RibVrf::VrfProgrammingRequests::pop() {
+  /*
+   * Recheck after every wakeup: a VRF destroyed while pending unlinks itself
+   * and can leave the list empty again.
+   */
+  while (requests.empty()) {
+    auto [waiter, woken] = folly::coro::makePromiseContract<void>();
+    waiter_ = std::move(waiter);
+    // Awaiting the future completes it with OperationCancelled on cancellation.
+    auto result = co_await folly::coro::co_awaitTry(std::move(woken));
+    if (result.hasException()) {
+      waiter_.reset();
+      co_yield folly::coro::co_error(std::move(result).exception());
+    }
+  }
+  auto& vrf = requests.front();
+  requests.pop_front();
+  co_return vrf;
+}
+
 } // namespace facebook::bgp

@@ -723,7 +723,8 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   /*
    * [Rib -> Fib]
    *
-   * Single-Producer-Single-Consumer(SPSC Queue) from Rib to Fib.
+   * VRFs with FIB programming pending, from Rib to Fib. A VRF is linked at most
+   * once; its fullSync_ carries whether the next cycle is a full sync.
    *
    * Trigger the Fib programming task under the following conditions:
    *  - incremental route update: triggers on fibBatchTimer_'s expiration;
@@ -731,14 +732,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    *    1) initial FIB programming
    *    2) request received from Fib upon bgp-agent connection failure
    */
-  struct TriggerFibProgMessage {
-    // Routing table whose fibBatchList_ is ready to be programmed.
-    const VrfId vrfId;
-    const bool fullSync{false};
-    TriggerFibProgMessage(VrfId vrfId, bool fullSync)
-        : vrfId(vrfId), fullSync(fullSync) {}
-  };
-  bgp::coro::MPMCQueue<TriggerFibProgMessage> toFibMessageQ_;
+  RibVrf::VrfProgrammingRequests fibProgrammingRequests_;
 
   /*
    * [RibPolicy]

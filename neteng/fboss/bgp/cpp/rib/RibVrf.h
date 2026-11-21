@@ -16,8 +16,13 @@
 
 #pragma once
 
+#include <optional>
+
 #include <folly/IPAddress.h>
+#include <folly/IntrusiveList.h>
 #include <folly/container/F14Map.h>
+#include <folly/coro/Promise.h>
+#include <folly/coro/Task.h>
 
 #include "neteng/fboss/bgp/cpp/common/Types.h"
 #include "neteng/fboss/bgp/cpp/rib/RibEntry.h"
@@ -26,6 +31,9 @@ namespace facebook::bgp {
 
 class RibVrf final {
  public:
+  // FIB programming requests from each VRF; defined after RibVrf.
+  struct VrfProgrammingRequests;
+
   explicit RibVrf(VrfId vrfId);
   RibVrf(const RibVrf&) = delete;
   RibVrf& operator=(const RibVrf&) = delete;
@@ -44,6 +52,13 @@ class RibVrf final {
   const folly::F14NodeMap<folly::CIDRNetwork, RibEntry>& ribEntries()
       const noexcept {
     return ribEntries_;
+  }
+
+  bool fullSync() const noexcept {
+    return fullSync_;
+  }
+  void setFullSync(bool fullSync) noexcept {
+    fullSync_ = fullSync;
   }
 
   uint64_t ribVersion() const noexcept {
@@ -97,6 +112,21 @@ class RibVrf final {
   // prefix -> RibEntry map
   folly::F14NodeMap<folly::CIDRNetwork, RibEntry> ribEntries_;
 
+  // ===================== FIB programming ====================
+
+  /*
+   * Set when prepareFibProgramming is asked for a full sync. Cleared only when
+   * the FIB loop triggers that full sync.
+   */
+  bool fullSync_{false};
+
+  /*
+   * Links this VRF into VrfProgrammingRequests::requests while it is pending.
+   * The hook's destructor unlinks it automatically, so no special lifecycle
+   * management is needed.
+   */
+  folly::IntrusiveListHook programmingRequestHook_;
+
   // ======================== RIB version =====================
 
   /*
@@ -109,6 +139,38 @@ class RibVrf final {
    * increment on the hot path.
    */
   uint64_t ribVersion_{0};
+};
+
+/*
+ * VRFs with FIB programming pending, read by RibBase's FIB loop. A VRF is
+ * linked at most once. Used only on the RIB event base, so it takes no lock.
+ */
+struct RibVrf::VrfProgrammingRequests {
+  VrfProgrammingRequests() = default;
+  VrfProgrammingRequests(const VrfProgrammingRequests&) = delete;
+  VrfProgrammingRequests& operator=(const VrfProgrammingRequests&) = delete;
+  VrfProgrammingRequests(VrfProgrammingRequests&&) = delete;
+  VrfProgrammingRequests& operator=(VrfProgrammingRequests&&) = delete;
+
+  ~VrfProgrammingRequests() = default;
+
+  // Links the VRF unless it is already linked, and wakes a waiting pop().
+  void push(RibVrf& vrf) noexcept;
+
+  /*
+   * Waits until a VRF is linked, then unlinks it. Fails with OperationCancelled
+   * when the awaiting coroutine is cancelled.
+   */
+  folly::coro::Task<RibVrf&> pop();
+
+  folly::IntrusiveList<RibVrf, &RibVrf::programmingRequestHook_> requests;
+
+ private:
+  /*
+   * Fulfilled by push() to wake pop(). Set only while pop() waits on an empty
+   * list.
+   */
+  std::optional<folly::coro::Promise<void>> waiter_;
 };
 
 } // namespace facebook::bgp

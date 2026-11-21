@@ -247,8 +247,8 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * watermark.
    */
   template <typename T>
-  void ribOutQPushAndMayPauseBestPathAndFibProgramming(T&& val) {
-    ribOutQ_.push(RibOutMessage{fboss::kDefaultVrf, std::forward<T>(val)});
+  void ribOutQPushAndMayPauseBestPathAndFibProgramming(VrfId vrfId, T&& val) {
+    ribOutQ_.push(RibOutMessage{vrfId, std::forward<T>(val)});
 
     if (ribOutQ_.size() > ribOutQHighWatermark_) {
       XLOGF(INFO, "Pause RIB as ribOutQ size : {}", ribOutQ_.size());
@@ -547,6 +547,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   virtual void createFib();
   virtual void prepareFibProgramming(bool fullSync = false) noexcept;
   void handleFullAddPathWithdrawal(
+      VrfId vrfId,
       RibEntry& ribEntry,
       RibOutWithdrawal& withdrawalAddPath,
       uint64_t& currentRibVersion);
@@ -560,10 +561,12 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * ribOutQ_ push order are unchanged.
    */
   void flushAnnouncementChunk(
+      VrfId vrfId,
       RibOutAnnouncement& announcement,
       bool reserveAddPath,
       bool sendWithEoR);
   void flushWithdrawalChunk(
+      VrfId vrfId,
       RibOutWithdrawal& withdrawal,
       bool reserveAddPath,
       bool logAsAddPath);
@@ -756,8 +759,11 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    *    2) request received from Fib upon bgp-agent connection failure
    */
   struct TriggerFibProgMessage {
+    // Routing table whose fibBatchList_ is ready to be programmed.
+    const VrfId vrfId;
     const bool fullSync{false};
-    explicit TriggerFibProgMessage(bool fullSync) : fullSync(fullSync) {}
+    TriggerFibProgMessage(VrfId vrfId, bool fullSync)
+        : vrfId(vrfId), fullSync(fullSync) {}
   };
   bgp::coro::MPMCQueue<TriggerFibProgMessage> toFibMessageQ_;
 
@@ -1003,12 +1009,14 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       const std::shared_ptr<const WeightedNexthopMap>&
           weightedNexthops) noexcept;
   void handleAddUpdatedUnicastRoute(
+      VrfId vrfId,
       RibEntry& entry,
       bool sendWithEoR,
       RibOutAnnouncement& announcement,
       RibOutAnnouncement& announcementAddPath,
       RibOutWithdrawal& withdrawalAddPath) noexcept;
   void handleAddUpdatedMultipaths(
+      VrfId vrfId,
       RibEntry& entry,
       bool sendWithEoR,
       bool newlyInstalledInLocalRib,
@@ -1016,6 +1024,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       RibOutAnnouncement& announcementAddPath,
       RibOutWithdrawal& withdrawalAddPath) noexcept;
   void handleAddUpdatedMultipathDelta(
+      VrfId vrfId,
       RibEntry& entry,
       bool sendWithEoR,
       bool newlyInstalledInLocalRib,

@@ -164,7 +164,9 @@ class MockFib : public Fib {
       const BgpRouteType routeType,
       bool enableFibOutTracking = false) override;
 
-  folly::coro::Task<void> program(bool isSync = false) override;
+  folly::coro::Task<void> program(
+      bool isSync = false,
+      VrfId vrfId = fboss::kDefaultVrf) override;
 
   /*
    * Return a Future which will be satisfied when Fib finishes program() call.

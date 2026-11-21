@@ -288,10 +288,10 @@ std::optional<FibOutRoute> MockFib::updateUnicastRoute(
                               : std::nullopt;
 }
 
-folly::coro::Task<void> MockFib::program(bool isSync) {
+folly::coro::Task<void> MockFib::program(bool isSync, VrfId vrfId) {
   program_(isSync);
   fullSynced_ |= isSync;
-  toRibQ_.push(FibProgrammedMessage(waitForAck_, isSync));
+  toRibQ_.push(FibProgrammedMessage(vrfId, waitForAck_, isSync));
   waitForAck_.clear();
   // notify that program() has finished to MockRib
   fulfillFibProgramPromise();

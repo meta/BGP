@@ -77,7 +77,7 @@ bool TestFib::isFullSynced() const {
   return fullSynced_;
 }
 
-folly::coro::Task<void> TestFib::program(bool isSync) {
+folly::coro::Task<void> TestFib::program(bool isSync, VrfId vrfId) {
   if (programDelay_.count() > 0) {
     co_await folly::coro::sleep(programDelay_);
   }
@@ -90,7 +90,7 @@ folly::coro::Task<void> TestFib::program(bool isSync) {
   }
   fullSynced_ |= isSync;
   XLOGF(INFO, "[TestFib] program() called, isSync={}", isSync);
-  toRibQ_.push(Fib::FibProgrammedMessage(staged_, isSync));
+  toRibQ_.push(Fib::FibProgrammedMessage(vrfId, staged_, isSync));
   staged_.clear();
   co_return;
 }

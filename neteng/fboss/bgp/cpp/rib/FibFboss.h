@@ -62,7 +62,9 @@ class FibFboss : public Fib {
       const std::optional<folly::IPAddress>& backupAddr,
       bool enableFibOutTracking = false) override;
 
-  folly::coro::Task<void> program(bool isSync = false) override;
+  folly::coro::Task<void> program(
+      bool isSync = false,
+      VrfId vrfId = fboss::kDefaultVrf) override;
 
   bool isFullSynced() const override {
     return fullSynced_;

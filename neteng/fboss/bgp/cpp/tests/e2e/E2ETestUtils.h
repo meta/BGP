@@ -114,7 +114,9 @@ class TestFib : public Fib {
     XLOG(INFO, "[TestFib] Simulated reconnect, sent FibSyncReq");
   }
 
-  folly::coro::Task<void> program(bool isSync = false) override;
+  folly::coro::Task<void> program(
+      bool isSync = false,
+      VrfId vrfId = fboss::kDefaultVrf) override;
 
   void stop() override;
 

@@ -26,8 +26,10 @@
 #include <folly/IPAddress.h>
 #include <folly/coro/AsyncScope.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/common/BgpPath.h"
 #include "neteng/fboss/bgp/cpp/common/Structs.h"
+#include "neteng/fboss/bgp/cpp/common/Types.h"
 #include "neteng/fboss/bgp/cpp/lib/coro/MPMCQueue.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopInfo.h"
 #include "neteng/fboss/bgp/cpp/rib/FibOut.h"
@@ -62,12 +64,19 @@ class Fib : public boost::noncopyable {
 
   /** Platform programming completion used to continue RIB advertisement. */
   struct FibProgrammedMessage {
+    // Routing table the programmed routes belong to.
+    const VrfId vrfId;
     const FibProgrammedPfxs fibProgrammedPfxs;
     const bool isSync;
 
     /** Construct a completion for one platform programming call. */
-    FibProgrammedMessage(FibProgrammedPfxs fibProgrammedPfxs, bool isSync)
-        : fibProgrammedPfxs(std::move(fibProgrammedPfxs)), isSync(isSync) {}
+    FibProgrammedMessage(
+        VrfId vrfId,
+        FibProgrammedPfxs fibProgrammedPfxs,
+        bool isSync)
+        : vrfId(vrfId),
+          fibProgrammedPfxs(std::move(fibProgrammedPfxs)),
+          isSync(isSync) {}
   };
 
   /** Request a full platform FIB synchronization. */
@@ -140,8 +149,13 @@ class Fib : public boost::noncopyable {
   /** Return whether the platform has completed its required initial sync. */
   virtual bool isFullSynced() const = 0;
 
-  /** Submit the currently staged platform batch. */
-  virtual folly::coro::Task<void> program(bool isSync = false) = 0;
+  /*
+   * Submit the currently staged platform batch. `vrfId` is the routing table
+   * the batch belongs to and is echoed back in the FibProgrammedMessage.
+   */
+  virtual folly::coro::Task<void> program(
+      bool isSync = false,
+      VrfId vrfId = fboss::kDefaultVrf) = 0;
 
   /** Stop platform activity and release its connection state. */
   virtual void stop() = 0;

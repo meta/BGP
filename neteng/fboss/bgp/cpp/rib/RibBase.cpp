@@ -1899,6 +1899,7 @@ std::pair<bool, bool> RibBase::runBestPathSelection(RibEntry& entry) noexcept {
 
 void RibBase::prepareFibProgramming(bool fullSync) noexcept {
   ScopedProfile profile("RibBase::prepareFibProgramming");
+  // TODO: take a vrfId; RIB-out and FIB messages below use kDefaultVrf.
   BgpStats::incrDecisionProcessRunsCount();
 
   XLOGF(DBG1, "Trigger Fib programming with fullSync = {}", fullSync);
@@ -2018,7 +2019,7 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
               kRibChunkSize);
 
           ribOutQPushAndMayPauseBestPathAndFibProgramming(
-              std::move(withdrawal));
+              fboss::kDefaultVrf, std::move(withdrawal));
           withdrawal = RibOutWithdrawal();
           withdrawal.entries.reserve(kRibChunkSize);
         }
@@ -2034,7 +2035,7 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
          */
         uint64_t currentRibVersion = incrementRibVersion();
         handleFullAddPathWithdrawal(
-            ribEntry, withdrawalAddPath, currentRibVersion);
+            fboss::kDefaultVrf, ribEntry, withdrawalAddPath, currentRibVersion);
         withdrawal.entries.emplace_back(
             prefix, kDefaultPathID, std::nullopt, currentRibVersion);
         ribEntry.setRibVersion(currentRibVersion);
@@ -2078,7 +2079,8 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
   // If there are withdrawals left, send them to peers
   if (withdrawal.entries.size() || withdrawal.addPathEntries.size()) {
     XLOGF(DBG1, "{}", formatRibOutWithdrawalLog(withdrawal));
-    ribOutQPushAndMayPauseBestPathAndFibProgramming(std::move(withdrawal));
+    ribOutQPushAndMayPauseBestPathAndFibProgramming(
+        fboss::kDefaultVrf, std::move(withdrawal));
   }
 
   // ods logging whether at least 1 rib entry actively uses ucmp
@@ -2104,10 +2106,11 @@ void RibBase::prepareFibProgramming(bool fullSync) noexcept {
   }
 
   RibStats::addFibBatchListSize(fibBatchList_.size());
-  toFibMessageQ_.push(TriggerFibProgMessage(fullSync));
+  toFibMessageQ_.push(TriggerFibProgMessage(fboss::kDefaultVrf, fullSync));
 }
 
 void RibBase::flushAnnouncementChunk(
+    VrfId vrfId,
     RibOutAnnouncement& announcement,
     bool reserveAddPath,
     bool sendWithEoR) {
@@ -2117,25 +2120,28 @@ void RibBase::flushAnnouncementChunk(
 
   XLOGF(DBG1, "{}", formatRibOutAnnouncementLog(announcement));
 
-  ribOutQPushAndMayPauseBestPathAndFibProgramming(std::move(announcement));
+  ribOutQPushAndMayPauseBestPathAndFibProgramming(
+      vrfId, std::move(announcement));
   announcement = RibOutAnnouncement();
   (reserveAddPath ? announcement.addPathEntries : announcement.entries)
       .reserve(kRibChunkSize);
 }
 
 void RibBase::flushWithdrawalChunk(
+    VrfId vrfId,
     RibOutWithdrawal& withdrawal,
     bool reserveAddPath,
     bool logAsAddPath) {
   XLOGF(DBG1, "{}", formatRibOutWithdrawalLog(withdrawal, logAsAddPath));
 
-  ribOutQPushAndMayPauseBestPathAndFibProgramming(std::move(withdrawal));
+  ribOutQPushAndMayPauseBestPathAndFibProgramming(vrfId, std::move(withdrawal));
   withdrawal = RibOutWithdrawal();
   (reserveAddPath ? withdrawal.addPathEntries : withdrawal.entries)
       .reserve(kRibChunkSize);
 }
 
 void RibBase::handleFullAddPathWithdrawal(
+    VrfId vrfId,
     RibEntry& ribEntry,
     RibOutWithdrawal& withdrawalAddPath,
     uint64_t& currentRibVersion) {
@@ -2149,7 +2155,10 @@ void RibBase::handleFullAddPathWithdrawal(
     for (const auto& [pathId, path] : ribEntry.getAdvertisedMultipaths()) {
       if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
         flushWithdrawalChunk(
-            withdrawalAddPath, /*reserveAddPath=*/true, /*logAsAddPath=*/true);
+            vrfId,
+            withdrawalAddPath,
+            /*reserveAddPath=*/true,
+            /*logAsAddPath=*/true);
 
         /*
          * rule 2: this prefix's remaining add-path withdrawals land in a new
@@ -2173,7 +2182,10 @@ void RibBase::handleFullAddPathWithdrawal(
          *ribEntry.getAdvertisedMultipathWeightedNexthops()) {
       if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
         flushWithdrawalChunk(
-            withdrawalAddPath, /*reserveAddPath=*/true, /*logAsAddPath=*/true);
+            vrfId,
+            withdrawalAddPath,
+            /*reserveAddPath=*/true,
+            /*logAsAddPath=*/true);
 
         /*
          * rule 2: this prefix's remaining add-path withdrawals land in a new
@@ -2253,8 +2265,7 @@ void RibBase::handleFibProgrammedMessage(
      * This msg MUST be enqueued BEFORE
      * the first RibAnnouncement only if sendWithEoR is true.
      */
-    ribOutQ_.push(
-        RibOutMessage{fboss::kDefaultVrf, RibInitialAnnouncementStart{}});
+    ribOutQ_.push(RibOutMessage{msg.vrfId, RibInitialAnnouncementStart{}});
 
     // log BGP++ initialization event
     BgpStats::logInitializationEvent("Rib", BgpInitializationEvent::EOR_SENT);
@@ -2310,6 +2321,7 @@ void RibBase::handleFibProgrammedMessage(
       }
       /* Handle prefix added or updated in Fib by addUnicastRoutes */
       handleAddUpdatedUnicastRoute(
+          msg.vrfId,
           entry,
           sendWithEoR,
           announcement,
@@ -2329,7 +2341,7 @@ void RibBase::handleFibProgrammedMessage(
   if (withdrawalAddPath.addPathEntries.size()) {
     XLOGF(DBG1, "{}", formatRibOutWithdrawalLog(withdrawalAddPath));
     ribOutQPushAndMayPauseBestPathAndFibProgramming(
-        std::move(withdrawalAddPath));
+        msg.vrfId, std::move(withdrawalAddPath));
   }
 
   announcement.addPathEntries = std::move(announcementAddPath.addPathEntries);
@@ -2341,7 +2353,8 @@ void RibBase::handleFibProgrammedMessage(
     }
     XLOGF(DBG1, "{}", formatRibOutAnnouncementLog(announcement));
 
-    ribOutQPushAndMayPauseBestPathAndFibProgramming(std::move(announcement));
+    ribOutQPushAndMayPauseBestPathAndFibProgramming(
+        msg.vrfId, std::move(announcement));
   }
 
   // publish unicast routes size.
@@ -2417,6 +2430,7 @@ bool RibBase::handleStaleUnicastRoute(
 }
 
 void RibBase::handleAddUpdatedUnicastRoute(
+    VrfId vrfId,
     RibEntry& entry,
     bool sendWithEoR,
     RibOutAnnouncement& announcement,
@@ -2461,6 +2475,7 @@ void RibBase::handleAddUpdatedUnicastRoute(
 
   if (enableRibAllocatedPathId_) {
     handleAddUpdatedMultipathDelta(
+        vrfId,
         entry,
         sendWithEoR,
         newlyInstalledInLocalRib,
@@ -2469,6 +2484,7 @@ void RibBase::handleAddUpdatedUnicastRoute(
         withdrawalAddPath);
   } else {
     handleAddUpdatedMultipaths(
+        vrfId,
         entry,
         sendWithEoR,
         newlyInstalledInLocalRib,
@@ -2505,7 +2521,8 @@ void RibBase::handleAddUpdatedUnicastRoute(
    * start working on previous chunks.
    */
   if (announcement.entries.size() == kRibChunkSize) {
-    flushAnnouncementChunk(announcement, /*reserveAddPath=*/false, sendWithEoR);
+    flushAnnouncementChunk(
+        vrfId, announcement, /*reserveAddPath=*/false, sendWithEoR);
   }
   announcement.entries.emplace_back(
       prefix,
@@ -2524,6 +2541,7 @@ void RibBase::handleAddUpdatedUnicastRoute(
 }
 
 void RibBase::handleAddUpdatedMultipaths(
+    VrfId vrfId,
     RibEntry& entry,
     bool sendWithEoR,
     bool newlyInstalledInLocalRib,
@@ -2550,7 +2568,7 @@ void RibBase::handleAddUpdatedMultipaths(
   for (const auto& [_, advMultPath] : advMultPaths) {
     if (announcementAddPath.addPathEntries.size() == kRibChunkSize) {
       flushAnnouncementChunk(
-          announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
+          vrfId, announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
 
       /*
        * rule 2: this prefix's remaining add-path entries land in a new
@@ -2588,6 +2606,7 @@ void RibBase::handleAddUpdatedMultipaths(
           newAdvMultipathNHs->end()) {
         if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
           flushWithdrawalChunk(
+              vrfId,
               withdrawalAddPath,
               /*reserveAddPath=*/true,
               /*logAsAddPath=*/false);
@@ -2615,6 +2634,7 @@ void RibBase::handleAddUpdatedMultipaths(
  * advertisement, and withdraws the path IDs that are no longer advertised.
  */
 void RibBase::handleAddUpdatedMultipathDelta(
+    VrfId vrfId,
     RibEntry& entry,
     bool sendWithEoR,
     bool newlyInstalledInLocalRib,
@@ -2660,7 +2680,7 @@ void RibBase::handleAddUpdatedMultipathDelta(
     }
     if (announcementAddPath.addPathEntries.size() == kRibChunkSize) {
       flushAnnouncementChunk(
-          announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
+          vrfId, announcementAddPath, /*reserveAddPath=*/true, sendWithEoR);
 
       currentRibVersion = incrementRibVersion();
     }
@@ -2684,6 +2704,7 @@ void RibBase::handleAddUpdatedMultipathDelta(
   for (const auto& [pathId, oldPath] : oldAdvMultipaths) {
     if (withdrawalAddPath.addPathEntries.size() == kRibChunkSize) {
       flushWithdrawalChunk(
+          vrfId,
           withdrawalAddPath,
           /*reserveAddPath=*/true,
           /*logAsAddPath=*/false);

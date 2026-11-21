@@ -90,7 +90,7 @@ std::optional<FibOutRoute> FibDev::updateUnicastRoute(
                               : std::nullopt;
 }
 
-folly::coro::Task<void> FibDev::program(bool isSync) {
+folly::coro::Task<void> FibDev::program(bool isSync, VrfId vrfId) {
   auto waitForAck = std::move(waitForAck_);
   waitForAck_ = std::make_unique<FibProgrammedPfxs>();
 
@@ -108,7 +108,7 @@ folly::coro::Task<void> FibDev::program(bool isSync) {
   fullSynced_ |= isSync;
 
   // notify back to Rib that all prefixes have been installed in HW
-  toRibQ_.push(FibProgrammedMessage(std::move(*waitForAck), isSync));
+  toRibQ_.push(FibProgrammedMessage(vrfId, std::move(*waitForAck), isSync));
 
   co_return;
 }

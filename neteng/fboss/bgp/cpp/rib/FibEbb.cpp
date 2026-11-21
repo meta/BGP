@@ -294,7 +294,7 @@ std::optional<FibOutRoute> FibEbb::updateUnicastRoute(
       : std::nullopt;
 }
 
-folly::coro::Task<void> FibEbb::program(bool isSync) {
+folly::coro::Task<void> FibEbb::program(bool isSync, VrfId vrfId) {
   XLOG(DBG3, "Fib EBB Starting fib program coroutine");
 
   if (!client_) {
@@ -432,7 +432,7 @@ folly::coro::Task<void> FibEbb::program(bool isSync) {
   FibStats::setFibSyncStatus(fullSynced_);
 
   // notify back to Rib that all prefixes have been installed in HW
-  toRibQ_.push(FibProgrammedMessage(process->waitForAck, isSync));
+  toRibQ_.push(FibProgrammedMessage(vrfId, process->waitForAck, isSync));
 
   co_return;
 }

@@ -3160,6 +3160,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteUnchangedBumpsVersion) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3192,6 +3193,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteNewPrefixNewlyInstalled) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3238,6 +3240,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAnnouncesBestpathChange) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3285,6 +3288,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAnnouncesMultipaths) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3333,6 +3337,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawsDroppedNexthop) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3374,6 +3379,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteNoAddPathWithoutBestpath) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3417,6 +3423,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteAddPathSpansChunks) {
     versionBefore = rib_->ribVersion_;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3491,6 +3498,7 @@ TEST_F(RibFixture, HandleAddUpdatedUnicastRouteWithdrawalSpansChunks) {
     versionBefore = rib_->ribVersion_;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3560,7 +3568,8 @@ TEST_F(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion) {
     versionBefore = rib_->ribVersion_;
 
     rib_->handleFibProgrammedMessage(
-        Fib::FibProgrammedMessage(std::move(fibProgrammedPfxs), false));
+        Fib::FibProgrammedMessage(
+            fboss::kDefaultVrf, std::move(fibProgrammedPfxs), false));
 
     EXPECT_EQ(versionBefore + 1, rib_->ribVersion_);
     EXPECT_FALSE(rib_->ribEntries_.contains(kV4Prefix1));
@@ -3715,6 +3724,7 @@ TEST_F(
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3775,6 +3785,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaSkipsUnchangedPaths) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3829,6 +3840,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaReannouncesUpdatedPath) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3883,6 +3895,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawsDroppedPathId) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3938,6 +3951,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaSharedNexthopWithdrawsPathId) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -3975,6 +3989,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaNoChangeSendsNothing) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedMultipathDelta(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         false /* newlyInstalledInLocalRib */,
@@ -4024,6 +4039,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaNoBestpathSkipsCommit) {
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedMultipathDelta(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         false /* newlyInstalledInLocalRib */,
@@ -4069,6 +4085,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaAddPathSpansChunks) {
     versionBefore = rib_->ribVersion_;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -4149,6 +4166,7 @@ TEST_F(RibAllocatedPathIdFixture, MultipathDeltaWithdrawalSpansChunks) {
     versionBefore = rib_->ribVersion_;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -4338,6 +4356,7 @@ TEST_F(
       RibOutWithdrawal withdrawalAddPath;
 
       rib_->handleAddUpdatedUnicastRoute(
+          fboss::kDefaultVrf,
           entry,
           false /* sendWithEoR */,
           announcement,
@@ -4403,6 +4422,7 @@ TEST_F(
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -4458,6 +4478,7 @@ TEST_F(
     RibOutWithdrawal withdrawalAddPath;
 
     rib_->handleAddUpdatedUnicastRoute(
+        fboss::kDefaultVrf,
         entry,
         false /* sendWithEoR */,
         announcement,
@@ -4876,7 +4897,7 @@ TEST_F(RibFixture, InitialDumpChunkTest) {
       FibProgrammedPfxs;
   FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-  Fib::FibProgrammedMessage fibMsg(FibProgrammedPfxs, true);
+  Fib::FibProgrammedMessage fibMsg(fboss::kDefaultVrf, FibProgrammedPfxs, true);
   inputQ.push(std::move(fibMsg));
 
   /*
@@ -8311,7 +8332,7 @@ TEST_F(RibFixture, LbwCommunityForward) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage msg(FibProgrammedPfxs, false);
+    Fib::FibProgrammedMessage msg(fboss::kDefaultVrf, FibProgrammedPfxs, false);
     rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry)));
     inputQ.push(std::move(msg));
 
@@ -8400,7 +8421,7 @@ TEST_F(RibFixture, LbwCommunitySuppression1) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage msg(FibProgrammedPfxs, false);
+    Fib::FibProgrammedMessage msg(fboss::kDefaultVrf, FibProgrammedPfxs, false);
     rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry)));
     inputQ.push(std::move(msg));
 
@@ -8489,7 +8510,7 @@ TEST_F(RibFixture, LbwCommunitySuppression2) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage msg(FibProgrammedPfxs, false);
+    Fib::FibProgrammedMessage msg(fboss::kDefaultVrf, FibProgrammedPfxs, false);
     rib_->ribEntries_.emplace(make_pair(kV4Prefix2, std::move(entry)));
     inputQ.push(std::move(msg));
 
@@ -8555,7 +8576,8 @@ TEST_F(RibFixture, EorSentInitializationEvent) {
       FibProgrammedPfxs;
   FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-  Fib::FibProgrammedMessage fibMsg(FibProgrammedPfxs, true /* fullSync */);
+  Fib::FibProgrammedMessage fibMsg(
+      fboss::kDefaultVrf, FibProgrammedPfxs, true /* fullSync */);
   inputQ.push(std::move(fibMsg));
 
   auto msg0 = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -8703,7 +8725,8 @@ TEST_P(RibFixtureAddPathTestSuite, PathRemovedAndRibDumpReqTest) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage msg(FibProgrammedPfxs, false /* fullSync */);
+    Fib::FibProgrammedMessage msg(
+        fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
     fromFibToRibQ.push(std::move(msg));
 
     /*

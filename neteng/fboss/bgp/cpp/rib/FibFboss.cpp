@@ -322,7 +322,7 @@ std::optional<FibOutRoute> FibFboss::updateUnicastRouteWithBackup(
       : std::nullopt;
 }
 
-folly::coro::Task<void> FibFboss::program(bool isSync) {
+folly::coro::Task<void> FibFboss::program(bool isSync, VrfId vrfId) {
   std::unique_lock<folly::coro::Mutex> lock{
       co_await agentMutex_.co_scoped_lock()};
 
@@ -442,7 +442,7 @@ folly::coro::Task<void> FibFboss::program(bool isSync) {
   FibStats::setFibSyncStatus(fullSynced_);
 
   // notify back to Rib that all prefixes have been installed in HW
-  toRibQ_.push(FibProgrammedMessage(process->waitForAck, isSync));
+  toRibQ_.push(FibProgrammedMessage(vrfId, process->waitForAck, isSync));
 
   co_return;
 }

@@ -286,7 +286,8 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage fibMsg(FibProgrammedPfxs, false /* fullSync */);
+    Fib::FibProgrammedMessage fibMsg(
+        fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
     rib_->ribEntries_.emplace(kV4Prefix1, entry);
     inputQ.push(std::move(fibMsg));
 
@@ -327,7 +328,8 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage msg(FibProgrammedPfxs, false /* fullSync */);
+    Fib::FibProgrammedMessage msg(
+        fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
     inputQ.push(std::move(msg));
 
     // expect 0 element in the ribOutQ_
@@ -351,7 +353,8 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage msg(FibProgrammedPfxs, false /* fullSync */);
+    Fib::FibProgrammedMessage msg(
+        fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
     inputQ.push(std::move(msg));
 
     // expect 0 element in the ribOutQ_
@@ -375,7 +378,8 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage msg(FibProgrammedPfxs, false /* fullSync */);
+    Fib::FibProgrammedMessage msg(
+        fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
     inputQ.push(std::move(msg));
 
     // expect 0 element in the ribOutQ_
@@ -412,7 +416,8 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
 
     rib_->ribEntries_.clear();
     rib_->ribEntries_.emplace(make_pair(kV4Prefix1, std::move(entry)));
-    Fib::FibProgrammedMessage fibMsg(FibProgrammedPfxs, false /* fullSync */);
+    Fib::FibProgrammedMessage fibMsg(
+        fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
     inputQ.push(std::move(fibMsg));
 
     auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
@@ -461,7 +466,8 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
              ->second.getMultipathWeightedNexthops()}};
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage fibMsg2(FibProgrammedPfxs, false /* fullSync */);
+    Fib::FibProgrammedMessage fibMsg2(
+        fboss::kDefaultVrf, FibProgrammedPfxs, false /* fullSync */);
     inputQ.push(std::move(fibMsg2));
 
     if (GetParam()) {
@@ -514,7 +520,8 @@ TEST_P(RibFixtureAddPathTestSuite, FromFibMessageLoop) {
         FibProgrammedPfxs;
     FibProgrammedPfxs[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage fibMsg(FibProgrammedPfxs, true /* fullSync */);
+    Fib::FibProgrammedMessage fibMsg(
+        fboss::kDefaultVrf, FibProgrammedPfxs, true /* fullSync */);
     rib_->ribEntries_.emplace(kV6Prefix1, entry2);
     inputQ.push(std::move(fibMsg));
 
@@ -1029,7 +1036,8 @@ TEST_F(RibFixture, FibFlushedCounterTest) {
     Fib::FibProgrammedPfxs waitForAck;
     waitForAck[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage fibMsg(waitForAck, false /* fullSync */);
+    Fib::FibProgrammedMessage fibMsg(
+        fboss::kDefaultVrf, waitForAck, false /* fullSync */);
     inputQ.push(std::move(fibMsg));
 
     // Wait for the message to be processed
@@ -1066,7 +1074,8 @@ TEST_F(RibFixture, FibFlushedCounterTest) {
     Fib::FibProgrammedPfxs withdrawalMsg;
     withdrawalMsg[nullptr] = prefixToNexthops;
 
-    Fib::FibProgrammedMessage fibMsg(withdrawalMsg, false /* fullSync */);
+    Fib::FibProgrammedMessage fibMsg(
+        fboss::kDefaultVrf, withdrawalMsg, false /* fullSync */);
     inputQ.push(std::move(fibMsg));
 
     // Verify counter WAS incremented

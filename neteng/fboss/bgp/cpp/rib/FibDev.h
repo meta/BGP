@@ -38,7 +38,9 @@ class FibDev : public Fib {
       const BgpRouteType routeType = BgpRouteType::UNKNOWN,
       bool enableFibOutTracking = false) override;
 
-  folly::coro::Task<void> program(bool isSync = false) override;
+  folly::coro::Task<void> program(
+      bool isSync = false,
+      VrfId vrfId = fboss::kDefaultVrf) override;
 
   bool isFullSynced() const override {
     return fullSynced_;

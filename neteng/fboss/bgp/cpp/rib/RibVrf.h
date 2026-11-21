@@ -28,6 +28,7 @@
 
 #include "neteng/fboss/bgp/cpp/common/Types.h"
 #include "neteng/fboss/bgp/cpp/rib/FibOut.h"
+#include "neteng/fboss/bgp/cpp/rib/LocalRoute.h"
 #include "neteng/fboss/bgp/cpp/rib/RibCounters.h"
 #include "neteng/fboss/bgp/cpp/rib/RibEntry.h"
 
@@ -79,7 +80,10 @@ class RibVrf final {
     return fibNexthopSets_;
   }
 
-  // Clears ribEntries_ and fibNexthopSets_, then resets ribCounters_.
+  /*
+   * Clears ribEntries_ and fibNexthopSets_, resets ribCounters_, then clears
+   * localRoutes_ and conditionalLocalRoutes_.
+   */
   void clear();
 
   /*
@@ -87,6 +91,23 @@ class RibVrf final {
    * ribEntries_ and, if it was there, releases its counts from ribCounters_.
    */
   void remove(RibEntry& entry);
+
+  folly::F14NodeMap<folly::CIDRNetwork, LocalRoute>& localRoutes() noexcept {
+    return localRoutes_;
+  }
+  const folly::F14NodeMap<folly::CIDRNetwork, LocalRoute>& localRoutes()
+      const noexcept {
+    return localRoutes_;
+  }
+
+  folly::F14NodeMap<folly::IPAddress, std::vector<folly::CIDRNetwork>>&
+  conditionalLocalRoutes() noexcept {
+    return conditionalLocalRoutes_;
+  }
+  const folly::F14NodeMap<folly::IPAddress, std::vector<folly::CIDRNetwork>>&
+  conditionalLocalRoutes() const noexcept {
+    return conditionalLocalRoutes_;
+  }
 
   RibCounters& ribCounters() noexcept {
     return ribCounters_;
@@ -218,6 +239,22 @@ class RibVrf final {
 
   // Canonical immutable nexthop sets referenced by FIB-out route state.
   FibNexthopSets fibNexthopSets_;
+
+  // ====================== Local routes ======================
+
+  // Locally originated routes of this VRF, keyed by prefix.
+  folly::F14NodeMap<folly::CIDRNetwork, LocalRoute> localRoutes_;
+
+  /*
+   * There could be more than one route pointing to the same nexthop ip,
+   * hence we store a map of nexthop ip to a list of routes in localRoutes_.
+   * Routes in each list conditionally originate based on resolution of the
+   * nexthop ip
+   */
+  folly::F14NodeMap<
+      folly::IPAddress /* nexthop ip */,
+      std::vector<folly::CIDRNetwork> /* route */>
+      conditionalLocalRoutes_;
 
   // ======================== Counters ========================
 

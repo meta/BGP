@@ -96,7 +96,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   class FibProgrammedPrefixIterator {
    public:
     FibProgrammedPrefixIterator(
-        const RibBase& rib,
+        const RibVrf& vrf,
         const Fib::FibProgrammedPfxToNexthops& pfxNhs);
     Fib::FibProgrammedPfxToNexthops::const_iterator cbegin();
     Fib::FibProgrammedPfxToNexthops::const_iterator cend();
@@ -106,8 +106,8 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
     // Whether iterator is currently handling summary routes or not.
     bool summaryRoutesPass_{true};
     bool inited_{false};
-    // Reference back to parent RIB.
-    const RibBase& rib_;
+    // VRF whose local routes are handled first.
+    const RibVrf& vrf_;
     // Iterator to track next localRoutes to process.
     folly::F14NodeMap<folly::CIDRNetwork, LocalRoute>::const_iterator
         localRouteIter_;
@@ -343,19 +343,28 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   void removeLocalRoutes(
       const std::set<facebook::neteng::fboss::bgp_attr::TIpPrefix>& prefixes);
 
-  folly::F14NodeMap<folly::CIDRNetwork, LocalRoute> getLocalRoutes() {
-    return localRoutes_;
+  // Return a copy of one VRF's local routes; empty for an unknown VRF.
+  folly::F14NodeMap<folly::CIDRNetwork, LocalRoute> getLocalRoutes(
+      VrfId vrfId = fboss::kDefaultVrf) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return {};
+    }
+    return vrf->localRoutes();
   }
 
   /*
-   * True when at least one local route is configured to originate
-   * conditionally on nexthop resolution (populated in the ctor from each
-   * route's require_nexthop_resolution flag). The composition root uses this
-   * to arm PeerManagerBase's nexthop-resolution gate without a separate config
-   * knob — conditionalLocalRoutes_ is the single source of truth.
+   * True when at least one local route in the default VRF is configured to
+   * originate conditionally on nexthop resolution (populated in the ctor from
+   * each route's require_nexthop_resolution flag). The composition root uses
+   * this to arm PeerManagerBase's nexthop-resolution gate without a separate
+   * config knob — the default VRF's conditionalLocalRoutes_ is the single
+   * source of truth.
+   *
+   * TODO_NH_VRF: Check the conditional local routes of every VRF.
    */
   bool hasConditionalLocalRoutes() const {
-    return !conditionalLocalRoutes_.empty();
+    return !defaultVrf_.conditionalLocalRoutes().empty();
   }
 
   /**
@@ -379,8 +388,9 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    */
   std::vector<neteng::fboss::bgp::thrift::TNexthopInfo> getNexthopInfos(
       const std::vector<folly::IPAddress>& nexthops);
-  std::vector<neteng::fboss::bgp::thrift::TOriginatedRoute>
-  getOriginatedRoutes();
+  // Return one VRF's originated (local) routes; empty for an unknown VRF.
+  std::vector<neteng::fboss::bgp::thrift::TOriginatedRoute> getOriginatedRoutes(
+      VrfId vrfId = fboss::kDefaultVrf);
 
   virtual rib_policy::TRibPolicy getRibPolicy();
 
@@ -933,6 +943,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    */
   std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
   aggregateRoute(
+      RibVrf& vrf,
       const folly::CIDRNetwork& prefix,
       bool supportingRouteAnnouncement) noexcept;
 
@@ -1198,17 +1209,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
  private:
   std::shared_ptr<facebook::bgp::PolicyManager> policyManager_{nullptr};
 
-  folly::F14NodeMap<folly::CIDRNetwork, LocalRoute> localRoutes_{};
-  /*
-   * There could be more than one route pointing to the same nexthop ip,
-   * hence we store a map of nexthop ip to a list of routes.
-   * Routes in each list conditionally originate based on resolution of the
-   * nexthop ip
-   */
-  folly::F14NodeMap<
-      folly::IPAddress /* nexthop ip */,
-      std::vector<folly::CIDRNetwork> /* route */>
-      conditionalLocalRoutes_{};
   std::chrono::steady_clock::time_point
       pauseBestPathAndFibProgrammingStartTime_;
 

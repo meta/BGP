@@ -985,13 +985,13 @@ TEST_F(RibFixture, FibFlushedCounterTest) {
   auto localPrefix = folly::CIDRNetwork(IPAddress("10.0.0.0"), 24);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->defaultVrf_.ribEntries().clear();
-    rib_->localRoutes_.clear();
+    rib_->defaultVrf_.localRoutes().clear();
 
     // Set up a local route
     thrift::BgpNetwork network;
     network.prefix() = "10.0.0.0/24";
     LocalRoute localRoute(network, 0, nullptr);
-    rib_->localRoutes_.emplace(localPrefix, localRoute);
+    rib_->defaultVrf_.localRoutes().emplace(localPrefix, localRoute);
 
     // Add one rib entry for the local route
     RibEntry localEntry(localPrefix);
@@ -1010,7 +1010,7 @@ TEST_F(RibFixture, FibFlushedCounterTest) {
 
   // Verify setup: ribEntries_.size() > localRoutes_.size()
   EXPECT_EQ(2, rib_->defaultVrf_.ribEntries().size());
-  EXPECT_EQ(1, rib_->localRoutes_.size());
+  EXPECT_EQ(1, rib_->defaultVrf_.localRoutes().size());
 
   /*
    * Negative case: ribEntries_.size() > localRoutes_.size()

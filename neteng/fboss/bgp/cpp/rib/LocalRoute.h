@@ -16,9 +16,13 @@
 
 #pragma once
 
+#include <memory>
+
 #include "configerator/structs/neteng/fboss/bgp/gen-cpp2/bgp_config_types.h"
 
 namespace facebook::bgp {
+
+class BgpPath;
 
 // local route structure
 struct LocalRoute {

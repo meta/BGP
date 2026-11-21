@@ -763,7 +763,8 @@ void RibDC::processNexthopResolutionUpdate(
    * preventing it from wiping GR-retained conditional routes in FibAgent on BGP
    * daemon restart.
    */
-  if (!conditionalLocalRoutes_.empty()) {
+  // TODO_NH_VRF: Process the conditional local routes of every VRF.
+  if (!defaultVrf_.conditionalLocalRoutes().empty()) {
     processConditionalRoutesForNexthops(
         nexthopResolutionUpdate.resolved,
         [this](const folly::CIDRNetwork& prefix, PrefixPathIds&& pfxPathIds) {
@@ -774,7 +775,7 @@ void RibDC::processNexthopResolutionUpdate(
           processRibInAnnouncement(
               defaultVrf_,
               kV4LocalPeerInfo,
-              localRoutes_.at(prefix).attrs,
+              defaultVrf_.localRoutes().at(prefix).attrs,
               pfxPathIds);
         });
     processConditionalRoutesForNexthops(

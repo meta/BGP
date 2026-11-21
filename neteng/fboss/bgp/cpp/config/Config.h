@@ -89,7 +89,10 @@ class Config {
   PeeringParams getPeeringParamsForDynamicPeer(
       const BgpDynamicPeerConfig& dynamicPeerConfig) const;
 
-  // local routes
+  /*
+   * Local routes. Only VRF 0 supports local routes today: RIB originates every
+   * configured local route into the default VRF.
+   */
   std::unordered_map<folly::CIDRNetwork, thrift::BgpNetwork> createLocalRoutes(
       const std::vector<thrift::BgpNetwork>& networks);
   std::unordered_map<folly::CIDRNetwork, thrift::BgpNetwork> getLocalRoutes();

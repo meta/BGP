@@ -5296,7 +5296,9 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationStress) {
 
     EXPECT_EQ(
         supportingPrefixes.size(),
-        rib_->localRoutes_.find(kV6Prefix4_0Slash59)->second.supportPfxCnt);
+        rib_->defaultVrf_.localRoutes()
+            .find(kV6Prefix4_0Slash59)
+            ->second.supportPfxCnt);
   }
 
   // 2. flap 2401:db00:21:7003::/64 with consecutive announcement and withdrawn
@@ -5307,7 +5309,9 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationStress) {
     fibFuture.wait();
     EXPECT_EQ(
         supportingPrefixes.size() - 1,
-        rib_->localRoutes_.find(kV6Prefix4_0Slash59)->second.supportPfxCnt);
+        rib_->defaultVrf_.localRoutes()
+            .find(kV6Prefix4_0Slash59)
+            ->second.supportPfxCnt);
 
     fibFuture = fib_->getFibProgramFuture();
     sendAnnouncement({supportingPrefixes[3]}, peers[3], attr_);
@@ -5318,7 +5322,9 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationStress) {
     fibFuture.wait();
     EXPECT_EQ(
         supportingPrefixes.size(),
-        rib_->localRoutes_.find(kV6Prefix4_0Slash59)->second.supportPfxCnt);
+        rib_->defaultVrf_.localRoutes()
+            .find(kV6Prefix4_0Slash59)
+            ->second.supportPfxCnt);
   }
 
   // 3. flap 2401:db00:21:7003::/64 with duplicate announcements
@@ -5329,7 +5335,9 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationStress) {
     fibFuture.wait();
     EXPECT_EQ(
         supportingPrefixes.size() - 1,
-        rib_->localRoutes_.find(kV6Prefix4_0Slash59)->second.supportPfxCnt);
+        rib_->defaultVrf_.localRoutes()
+            .find(kV6Prefix4_0Slash59)
+            ->second.supportPfxCnt);
 
     fibFuture = fib_->getFibProgramFuture();
     sendAnnouncement({supportingPrefixes[3]}, peers[3], attr_);
@@ -5337,7 +5345,9 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationStress) {
     fibFuture.wait();
     EXPECT_EQ(
         supportingPrefixes.size(),
-        rib_->localRoutes_.find(kV6Prefix4_0Slash59)->second.supportPfxCnt);
+        rib_->defaultVrf_.localRoutes()
+            .find(kV6Prefix4_0Slash59)
+            ->second.supportPfxCnt);
   }
 
   // 4. flap 2401:db00:21:7003::/64 with duplicate withdrawals
@@ -5348,7 +5358,9 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationStress) {
     fibFuture.wait();
     EXPECT_EQ(
         supportingPrefixes.size() - 1,
-        rib_->localRoutes_.find(kV6Prefix4_0Slash59)->second.supportPfxCnt);
+        rib_->defaultVrf_.localRoutes()
+            .find(kV6Prefix4_0Slash59)
+            ->second.supportPfxCnt);
   }
 }
 
@@ -7274,7 +7286,8 @@ TEST_F(RibFixture, UpdateEntryStatsTest) {
   }
 
   EXPECT_EQ(*stats.total_ucast_routes(), rib_->defaultVrf_.ribEntries().size());
-  EXPECT_EQ(*stats.total_originated_routes(), rib_->localRoutes_.size());
+  EXPECT_EQ(
+      *stats.total_originated_routes(), rib_->defaultVrf_.localRoutes().size());
   EXPECT_EQ(*stats.total_rib_paths(), totalRibPaths);
 }
 

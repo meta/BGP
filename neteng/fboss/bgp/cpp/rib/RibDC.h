@@ -416,6 +416,8 @@ class RibDC : public RibBase {
    * ribInQ_.push) avoids a deadlock — this is called from processRibInMsgLoop
    * which is the sole consumer of ribInQ_, so a push there would block
    * forever if the queue is full.
+   *
+   * TODO_NH_VRF: Look up the conditional local routes of every VRF.
    */
   template <typename MessageProcessor>
   void processConditionalRoutesForNexthops(
@@ -498,9 +500,10 @@ void RibDC::processConditionalRoutesForNexthops(
     MessageProcessor&& processMessage) noexcept {
   XLOGF(
       INFO, "Processing conditional routes for {} nexthops", nexthopIps.size());
+  const auto& conditionalLocalRoutes = defaultVrf_.conditionalLocalRoutes();
   for (const auto& ipaddr : nexthopIps) {
-    auto it = conditionalLocalRoutes_.find(ipaddr);
-    if (it != conditionalLocalRoutes_.end()) {
+    auto it = conditionalLocalRoutes.find(ipaddr);
+    if (it != conditionalLocalRoutes.end()) {
       for (const auto& prefix : it->second) {
         PrefixPathIds pfxPathIds{{prefix, kDefaultPathID}};
         processMessage(prefix, std::move(pfxPathIds));

@@ -69,6 +69,8 @@ void RibVrf::clear() {
   ribEntries_.clear();
   fibNexthopSets_.clear();
   ribCounters_.reset();
+  localRoutes_.clear();
+  conditionalLocalRoutes_.clear();
 }
 
 void RibVrf::remove(RibEntry& entry) {

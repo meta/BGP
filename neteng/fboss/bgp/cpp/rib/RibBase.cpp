@@ -94,9 +94,9 @@ using folly::IPAddress;
 using nettools::bgplib::BgpPeerId;
 
 RibBase::FibProgrammedPrefixIterator::FibProgrammedPrefixIterator(
-    const RibBase& rib,
+    const RibVrf& vrf,
     const Fib::FibProgrammedPfxToNexthops& pfxNhs)
-    : rib_(rib), pfxNhs_(pfxNhs) {}
+    : vrf_(vrf), pfxNhs_(pfxNhs) {}
 
 Fib::FibProgrammedPfxToNexthops::const_iterator
 RibBase::FibProgrammedPrefixIterator::cbegin() {
@@ -111,7 +111,7 @@ RibBase::FibProgrammedPrefixIterator::cend() {
 Fib::FibProgrammedPfxToNexthops::const_iterator
 RibBase::FibProgrammedPrefixIterator::next() {
   if (!inited_) {
-    localRouteIter_ = rib_.localRoutes_.cbegin();
+    localRouteIter_ = vrf_.localRoutes().cbegin();
     inited_ = true;
   }
   /*
@@ -123,7 +123,7 @@ RibBase::FibProgrammedPrefixIterator::next() {
    * and return any which is not present in localRoutes.
    */
   if (summaryRoutesPass_) {
-    while (localRouteIter_ != rib_.localRoutes_.cend()) {
+    while (localRouteIter_ != vrf_.localRoutes().cend()) {
       const auto& elem = pfxNhs_.find(localRouteIter_->first);
       ++localRouteIter_;
       // if local route matches fib-batch then return it
@@ -136,8 +136,8 @@ RibBase::FibProgrammedPrefixIterator::next() {
   }
   while (nonLocalRouteIter_ != pfxNhs_.cend()) {
     // Skip prefix that macthes local-route as it is alrady handled above.
-    if (rib_.localRoutes_.find(nonLocalRouteIter_->first) ==
-        rib_.localRoutes_.cend()) {
+    if (vrf_.localRoutes().find(nonLocalRouteIter_->first) ==
+        vrf_.localRoutes().cend()) {
       auto ret = nonLocalRouteIter_;
       ++nonLocalRouteIter_;
       return ret;
@@ -199,7 +199,8 @@ RibBase::RibBase(
       // ATTN: invalid local routes
       continue;
     }
-    localRoutes_.emplace(prefix, localRouteOpt.value());
+    // TODO_PMTRIZED_VRF: Local routes can only be in the default VRF for now.
+    defaultVrf_.localRoutes().emplace(prefix, localRouteOpt.value());
     /*
      * store a set of local routes requiring conditional origination
      * to avoid full walk of localRoutes_ every time nexthop resolution changes
@@ -208,11 +209,12 @@ RibBase::RibBase(
       // if require_nexthop_resolution is set, nexthop must be non-empty
       assert(localRouteOpt->network.nexthop());
       auto nexthop = folly::IPAddress(*localRouteOpt->network.nexthop());
-      conditionalLocalRoutes_[nexthop].push_back(prefix);
+      defaultVrf_.conditionalLocalRoutes()[nexthop].push_back(prefix);
     }
   }
   // TODO_NH_VRF: Set the originated route count in the counters of its VRF.
-  defaultVrf_.ribCounters().setOriginatedRoutes(localRoutes_.size());
+  defaultVrf_.ribCounters().setOriginatedRoutes(
+      defaultVrf_.localRoutes().size());
 
   // bounds the deferred initial full-sync's wait for nexthop resolution
   nexthopResolutionTimer_ = folly::AsyncTimeout::make(
@@ -363,7 +365,6 @@ void RibBase::cleanupCommon() noexcept {
    * device bootup will initialize the ODS counter to 0
    */
   nexthopInfoMap_.clear();
-  localRoutes_.clear();
 }
 
 /*
@@ -667,7 +668,12 @@ folly::coro::Task<void> RibBase::processLocalRoutesRoutine() noexcept {
   // advertise local routes that does not need minimum upporting routes
   XLOG(INFO, "Starting local route advertising coro task...");
 
-  for (const auto& [prefix, localRoute] : localRoutes_) {
+  /*
+   * TODO_PMTRIZED_VRF: Advertise the local routes of every VRF. Only the
+   * default VRF has local routes for now, because the config does not assign
+   * them to a VRF.
+   */
+  for (const auto& [prefix, localRoute] : defaultVrf_.localRoutes()) {
     /*
      * If min_supporting_route is non 0, or if require_nexthop_resolution is
      * set, we cannot simply originate the local route here. Instead, we need to
@@ -848,8 +854,9 @@ RibBase::processSingleRibInUpdate(
 
   bool isAggRoute{false}, installToFib{(!peer.isRedistributePeer)};
   if (peer == kV4LocalPeerInfo) {
-    const auto& lr = localRoutes_.find(prefix);
-    if (lr != localRoutes_.cend()) {
+    const auto& localRoutes = vrf.localRoutes();
+    const auto& lr = localRoutes.find(prefix);
+    if (lr != localRoutes.cend()) {
       installToFib = getInstallToFib(lr->second.network);
       isAggRoute = (getMinSupportRoutes(lr->second.network) > 0);
     }
@@ -917,7 +924,7 @@ RibBase::processSingleRibInUpdate(
    * determine if this is supporting route announcement/withdrawn
    * TODO: Is sameAsLocalRoute logic expected behavior in RFC?
    */
-  bool sameAsLocalRoute = localRoutes_.find(prefix) != localRoutes_.cend();
+  bool sameAsLocalRoute = vrf.localRoutes().contains(prefix);
   /*
    * supporting route withdrawn:
    * 1. prefix != agg (prefix withdrawn):
@@ -946,7 +953,7 @@ RibBase::processSingleRibInUpdate(
       (sameAsLocalRoute && newAllPathCnt == oldAllPathCnt + 1);
 
   if (supportingRouteWithdrawn || supportingRouteAnnouncement) {
-    return aggregateRoute(prefix, supportingRouteAnnouncement);
+    return aggregateRoute(vrf, prefix, supportingRouteAnnouncement);
   }
 
   return {};
@@ -1510,12 +1517,13 @@ bool RibBase::isRouteChurnDetected() noexcept {
 
 std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
 RibBase::aggregateRoute(
+    RibVrf& vrf,
     const folly::CIDRNetwork& prefix,
     bool supportingRouteAnnouncement) noexcept {
   std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
       aggRoutes;
   // local route aggregation
-  for (auto& [localPrefix, localRoute] : localRoutes_) {
+  for (auto& [localPrefix, localRoute] : vrf.localRoutes()) {
     if (!isSubnet(prefix, localPrefix)) {
       continue;
     }
@@ -2288,7 +2296,7 @@ void RibBase::handleFibProgrammedMessage(
 
   for (const auto& [_, path] : msg.fibProgrammedPfxs) {
     // Send updates to all established peers
-    auto iter = RibBase::FibProgrammedPrefixIterator(*this, path);
+    auto iter = RibBase::FibProgrammedPrefixIterator(*vrf, path);
 
     for (auto elem = iter.cbegin(); elem != iter.cend(); elem = iter.next()) {
       const auto& prefix = elem->first;
@@ -2357,7 +2365,7 @@ void RibBase::handleFibProgrammedMessage(
   }
 
   // Check if FIB is flushed (only local routes remain)
-  if (ribEntries.size() <= localRoutes_.size()) {
+  if (ribEntries.size() <= vrf->localRoutes().size()) {
     FibStats::incrFibFlushed();
   }
 }
@@ -3319,14 +3327,18 @@ RibBase::createTRibEntryWithFilter(
 }
 
 // Get originated routes(local networks) for display
-std::vector<TOriginatedRoute> RibBase::getOriginatedRoutes() {
+std::vector<TOriginatedRoute> RibBase::getOriginatedRoutes(VrfId vrfId) {
   std::vector<TOriginatedRoute> tRoutes;
 
   /* runImmediatelyOrRunInEventBaseThreadAndWait: runs inline if already
    * on Rib's evb (e.g., called via folly::via from co_runOnEvbWithTimeout),
    * otherwise dispatches and waits. Avoids deadlock in both contexts. */
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    for (const auto& [prefix, localRoute] : localRoutes_) {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    for (const auto& [prefix, localRoute] : vrf->localRoutes()) {
       TIpPrefix tPrefix;
       TOriginatedRoute tRoute;
 
@@ -3399,7 +3411,7 @@ void RibBase::updateEntryStats(TEntryStats& stats, VrfId vrfId) noexcept {
       return;
     }
     stats.total_ucast_routes() = vrf->ribEntries().size();
-    stats.total_originated_routes() = localRoutes_.size();
+    stats.total_originated_routes() = vrf->localRoutes().size();
 
     /*
      * total_rib_paths is the add-path-correct sum of every prefix's path count.

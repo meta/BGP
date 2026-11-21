@@ -16,9 +16,11 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <folly/CancellationToken.h>
+#include <folly/IPAddress.h>
 #include <folly/OperationCancelled.h>
 #include <folly/coro/Collect.h>
 #include <folly/coro/CurrentExecutor.h>
@@ -27,6 +29,9 @@
 #include <folly/futures/Future.h>
 #include <gtest/gtest.h>
 
+#include "neteng/fboss/bgp/cpp/common/Consts.h"
+#include "neteng/fboss/bgp/cpp/lib/BgpStructs.h"
+#include "neteng/fboss/bgp/cpp/rib/RibBB.h"
 #include "neteng/fboss/bgp/cpp/rib/RibVrf.h"
 
 namespace facebook::bgp {
@@ -39,11 +44,30 @@ folly::coro::Task<VrfId> popVrfId(RibVrf::VrfProgrammingRequests* requests) {
 }
 } // namespace
 
-CO_TEST(VrfProgrammingRequestsTest, PopsVrfsInPushOrder) {
+// Supplies the owner RIB that each RibVrf requires; the tests do not use it.
+class VrfProgrammingRequestsTest : public ::testing::Test {
+ protected:
+  BgpGlobalConfig config_{
+      65000, // localAsn
+      folly::IPAddress("10.0.0.1"), // routerId
+      folly::IPAddress("10.0.0.1"), // clusterId
+      std::chrono::seconds(30), // holdTime
+      std::nullopt, // listenAddr
+      std::nullopt, // grRestartTime
+      {}, // networksV4
+      {}, // networksV6
+  };
+  nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage> ribInQ_{
+      nettools::bgplib::kMaxIngressQueueSize};
+  MonitoredMPMCQueue<RibOutMessage> ribOutQ_;
+  RibBB owner_{{}, config_, std::nullopt, ribInQ_, ribOutQ_, kDevPlatform};
+};
+
+CO_TEST_F(VrfProgrammingRequestsTest, PopsVrfsInPushOrder) {
   RibVrf::VrfProgrammingRequests requests;
-  RibVrf vrf0{0};
-  RibVrf vrf1{1};
-  RibVrf vrf2{2};
+  RibVrf vrf0{0, owner_};
+  RibVrf vrf1{1, owner_};
+  RibVrf vrf2{2, owner_};
 
   requests.push(vrf1);
   requests.push(vrf0);
@@ -57,9 +81,9 @@ CO_TEST(VrfProgrammingRequestsTest, PopsVrfsInPushOrder) {
   EXPECT_TRUE(requests.requests.empty());
 }
 
-CO_TEST(VrfProgrammingRequestsTest, PushWakesWaitingPop) {
+CO_TEST_F(VrfProgrammingRequestsTest, PushWakesWaitingPop) {
   RibVrf::VrfProgrammingRequests requests;
-  RibVrf vrf1{1};
+  RibVrf vrf1{1, owner_};
 
   auto [popped, _] = co_await folly::coro::collectAll(
       popVrfId(&requests),
@@ -76,11 +100,11 @@ CO_TEST(VrfProgrammingRequestsTest, PushWakesWaitingPop) {
  * A VRF destroyed while pending unlinks itself. pop() must skip it and keep
  * waiting instead of returning a destroyed VRF.
  */
-CO_TEST(VrfProgrammingRequestsTest, DeletedPendingVrfIsSkipped) {
+CO_TEST_F(VrfProgrammingRequestsTest, DeletedPendingVrfIsSkipped) {
   RibVrf::VrfProgrammingRequests requests;
   std::vector<std::unique_ptr<RibVrf>> vrfs;
   for (VrfId vrfId = 0; vrfId < 5; ++vrfId) {
-    vrfs.push_back(std::make_unique<RibVrf>(vrfId));
+    vrfs.push_back(std::make_unique<RibVrf>(vrfId, owner_));
     requests.push(*vrfs.back());
   }
 
@@ -96,7 +120,7 @@ CO_TEST(VrfProgrammingRequestsTest, DeletedPendingVrfIsSkipped) {
       folly::coro::timeout(requests.pop(), kPopTimeout));
   EXPECT_TRUE(extraPop.hasException<folly::FutureTimeout>());
 
-  RibVrf vrf5{5};
+  RibVrf vrf5{5, owner_};
   requests.push(vrf5);
   EXPECT_EQ(5, (co_await requests.pop()).vrfId());
   EXPECT_TRUE(requests.requests.empty());
@@ -106,10 +130,10 @@ CO_TEST(VrfProgrammingRequestsTest, DeletedPendingVrfIsSkipped) {
  * The push that wakes pop() can link a VRF that is destroyed before pop()
  * resumes. pop() must find the list empty and wait for the next push.
  */
-CO_TEST(VrfProgrammingRequestsTest, WaitsAgainWhenWokenVrfIsDeleted) {
+CO_TEST_F(VrfProgrammingRequestsTest, WaitsAgainWhenWokenVrfIsDeleted) {
   RibVrf::VrfProgrammingRequests requests;
-  auto vrf1 = std::make_unique<RibVrf>(1);
-  RibVrf vrf2{2};
+  auto vrf1 = std::make_unique<RibVrf>(1, owner_);
+  RibVrf vrf2{2, owner_};
 
   auto [popped, _] = co_await folly::coro::collectAll(
       popVrfId(&requests),
@@ -127,7 +151,7 @@ CO_TEST(VrfProgrammingRequestsTest, WaitsAgainWhenWokenVrfIsDeleted) {
   EXPECT_TRUE(requests.requests.empty());
 }
 
-CO_TEST(VrfProgrammingRequestsTest, CancellationEndsWaitingPop) {
+CO_TEST_F(VrfProgrammingRequestsTest, CancellationEndsWaitingPop) {
   RibVrf::VrfProgrammingRequests requests;
   folly::CancellationSource cancelSource;
 
@@ -142,7 +166,7 @@ CO_TEST(VrfProgrammingRequestsTest, CancellationEndsWaitingPop) {
   EXPECT_TRUE(popped.hasException<folly::OperationCancelled>());
 
   // A later pop() is not affected by the cancelled one.
-  RibVrf vrf1{1};
+  RibVrf vrf1{1, owner_};
   requests.push(vrf1);
   EXPECT_EQ(1, (co_await requests.pop()).vrfId());
 }

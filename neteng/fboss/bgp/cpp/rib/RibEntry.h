@@ -564,6 +564,8 @@ class RibEntry {
    */
   friend class RibBase;
   friend class RibDC;
+  // RibVrf owns the fibBatchList_ that links through fibBatchListHook_.
+  friend class RibVrf;
 
   /*
    * store a free ID interval for this prefix, starting as [minPathId,

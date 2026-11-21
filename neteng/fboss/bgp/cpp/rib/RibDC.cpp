@@ -697,7 +697,8 @@ folly::coro::Task<void> RibDC::consumeCanonicalRibSnapshotRequests(
       co_return;
     }
     canonicalSnapshotPending_ = true;
-    if (pauseBestPathAndFibProgramming_ || fibBatchTimer_->isScheduled()) {
+    if (pauseBestPathAndFibProgramming_ ||
+        defaultVrf_.fibBatchTimer()->isScheduled()) {
       continue;
     }
     enqueueCanonicalRibFullSnapshot("fsdb_connect");
@@ -922,7 +923,7 @@ void RibDC::handleRouteAttributePolicyTimerMsg() noexcept {
   for (auto& [_, ribEntry] : defaultVrf_.ribEntries()) {
     ribEntry.requirePathSelection();
   }
-  schedulePrepareFibProgrammingTimer();
+  defaultVrf_.schedulePrepareFibProgrammingTimer();
 }
 
 void RibDC::handlePathSelectionPolicySetMsg(
@@ -1286,7 +1287,7 @@ bool RibDC::replaceRouteAttributePolicy(
       RibStatsDC::STATS_raPolicyReEvalPrefixes.add(ribEntries.size());
     }
 
-    schedulePrepareFibProgrammingTimer();
+    defaultVrf_.schedulePrepareFibProgrammingTimer();
   } else if (needsReEvaluation && !ribEoRReceived_) {
     XLOGF(
         INFO,
@@ -1411,7 +1412,7 @@ bool RibDC::replacePathSelectionPolicy(
     for (auto& [prefix, ribEntry] : defaultVrf_.ribEntries()) {
       ribEntry.requirePathSelection();
     }
-    schedulePrepareFibProgrammingTimer();
+    defaultVrf_.schedulePrepareFibProgrammingTimer();
   }
 
   return hasUpdate;
@@ -1467,9 +1468,7 @@ void RibDC::overwriteRouteAttributes(
     auto ribIt = ribEntries.find(prefix);
     XCHECK(ribIt != ribEntries.end());
     auto& ribEntry = ribIt->second;
-    if (!ribEntry.isOnFibBatchList()) {
-      fibBatchList_.push_back(ribEntry);
-    }
+    vrf.addToFibBatch(ribEntry);
   }
 
   if (prefixes.size() == ribEntries.size()) {

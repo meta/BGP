@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <memory>
 #include <optional>
 
 #include <folly/IPAddress.h>
@@ -23,18 +24,21 @@
 #include <folly/container/F14Map.h>
 #include <folly/coro/Promise.h>
 #include <folly/coro/Task.h>
+#include <folly/io/async/AsyncTimeout.h>
 
 #include "neteng/fboss/bgp/cpp/common/Types.h"
 #include "neteng/fboss/bgp/cpp/rib/RibEntry.h"
 
 namespace facebook::bgp {
 
+class RibBase;
+
 class RibVrf final {
  public:
   // FIB programming requests from each VRF; defined after RibVrf.
   struct VrfProgrammingRequests;
 
-  explicit RibVrf(VrfId vrfId);
+  RibVrf(VrfId vrfId, RibBase& owner);
   RibVrf(const RibVrf&) = delete;
   RibVrf& operator=(const RibVrf&) = delete;
   RibVrf(RibVrf&&) = delete;
@@ -53,6 +57,33 @@ class RibVrf final {
       const noexcept {
     return ribEntries_;
   }
+
+  folly::IntrusiveList<RibEntry, &RibEntry::fibBatchListHook_>&
+  fibBatchList() noexcept {
+    return fibBatchList_;
+  }
+  const folly::IntrusiveList<RibEntry, &RibEntry::fibBatchListHook_>&
+  fibBatchList() const noexcept {
+    return fibBatchList_;
+  }
+
+  // Adds the entry to fibBatchList_ unless it is already on it.
+  void addToFibBatch(RibEntry& entry) noexcept;
+
+  std::unique_ptr<folly::AsyncTimeout>& fibBatchTimer() noexcept {
+    return fibBatchTimer_;
+  }
+
+  /*
+   * Schedule the prepareFibProgramming timer.
+   *
+   * This function is used to schedule the prepareFibProgramming function to be
+   * called after a certain amount of time. The time is usually 200ms by
+   * default. If the fib churn is high, a longer timeout of
+   * kFibBatchTimeoutChurn is used instead. Skipped while the owner has paused
+   * best path selection and FIB programming.
+   */
+  void schedulePrepareFibProgrammingTimer() noexcept;
 
   bool fullSync() const noexcept {
     return fullSync_;
@@ -107,10 +138,32 @@ class RibVrf final {
   // Identifies the routing table owned by this context.
   const VrfId vrfId_;
 
+  // RIB that owns this VRF.
+  RibBase& owner_;
+
   // ======================== RIB state =======================
 
   // prefix -> RibEntry map
   folly::F14NodeMap<folly::CIDRNetwork, RibEntry> ribEntries_;
+
+  /*
+   * The list to store all RibEntry that have been updated and needs to
+   * be programmed in Fib and/or send to peers.
+   *
+   * Using a non-intrusive list requires storing either a key or a shared
+   * pointer of the entry. It could contribute to some performance overload.
+   * Using folly::IntrusiveList could help in this case. Measurement shows
+   * IntrusiveList has about 4x performance gain on constructing the list
+   * and 7x gain on looping, comparing with std::forward_list.
+   *
+   * Declared after ribEntries_ so it is destroyed first.
+   */
+  folly::IntrusiveList<RibEntry, &RibEntry::fibBatchListHook_> fibBatchList_;
+
+  // ======================== FIB batch =======================
+
+  // fib update with batch processing
+  std::unique_ptr<folly::AsyncTimeout> fibBatchTimer_;
 
   // ===================== FIB programming ====================
 

@@ -1471,7 +1471,7 @@ TEST_P(RibFixtureAddPathTestSuite, CreateTRibEntryWithCteUcmpAction) {
 
     fibFuture = fib_->getFibProgramFuture();
     rib_->evb_.runInEventBaseThreadAndWait(
-        [&]() { rib_->schedulePrepareFibProgrammingTimer(); });
+        [&]() { rib_->defaultVrf_.schedulePrepareFibProgrammingTimer(); });
     fibFuture.wait();
 
     // Read on the RIB evb to serialize with the RIB thread (see step 3 above).

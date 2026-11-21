@@ -16,9 +16,37 @@
 
 #include "neteng/fboss/bgp/cpp/rib/RibVrf.h"
 
+#include "neteng/fboss/bgp/cpp/rib/RibBase.h"
+
 namespace facebook::bgp {
 
-RibVrf::RibVrf(VrfId vrfId) : vrfId_(vrfId) {}
+RibVrf::RibVrf(VrfId vrfId, RibBase& owner) : vrfId_(vrfId), owner_(owner) {
+  /*
+   * initialize fibBatchTimer_ for batch processing of fib programming
+   * requests
+   */
+  fibBatchTimer_ = folly::AsyncTimeout::make(
+      owner_.evb_, [this]() noexcept { owner_.prepareFibProgramming(vrfId_); });
+}
+
+void RibVrf::addToFibBatch(RibEntry& entry) noexcept {
+  if (!entry.isOnFibBatchList()) {
+    fibBatchList_.push_back(entry);
+  }
+}
+
+void RibVrf::schedulePrepareFibProgrammingTimer() noexcept {
+  if (owner_.pauseBestPathAndFibProgramming_ || fibBatchTimer_->isScheduled()) {
+    /*
+     * Best path selection and Fib programming is paused or timer has been
+     * scheduled already
+     */
+    return;
+  }
+
+  // Schedule fib programming in a batch fashion
+  fibBatchTimer_->scheduleTimeout(owner_.getFibBatchTime());
+}
 
 void RibVrf::VrfProgrammingRequests::push(RibVrf& vrf) noexcept {
   if (vrf.programmingRequestHook_.is_linked()) {

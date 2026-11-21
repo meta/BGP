@@ -169,8 +169,9 @@ RibBase::RibBase(
       fibAgentPort_(fibAgentPort),
       fibAgentRecvTimeout_(fibAgentRecvTimeout),
       enableRibAllocatedPathId_(globalConfig.enableRibAllocatedPathId),
-      defaultVrf_(createVrf(fboss::kDefaultVrf)),
-      quarantineVrf_(createVrf(fboss::kQuarantineVrfId)) {
+      defaultVrf_(createVrf(fboss::kDefaultVrf)) {
+  // TODO: re-enable the quarantine VRF.
+  // quarantineVrf_(createVrf(fboss::kQuarantineVrfId))
   // init switchId best effort if deviceName is set in global config
   switchId_ = facebook::bgp::getSwitchId(globalConfig_.deviceName);
   // add monitoring for inter-thread queues
@@ -212,10 +213,6 @@ RibBase::RibBase(
   }
   ribCounters_.setOriginatedRoutes(localRoutes_.size());
 
-  // initialize fibBatchTimer_ for batch processing of fib programming requests
-  fibBatchTimer_ = folly::AsyncTimeout::make(
-      evb_, [this]() noexcept { prepareFibProgramming(fboss::kDefaultVrf); });
-
   // bounds the deferred initial full-sync's wait for nexthop resolution
   nexthopResolutionTimer_ = folly::AsyncTimeout::make(
       evb_, [this]() noexcept { onNexthopResolutionTimeout(); });
@@ -230,7 +227,7 @@ RibBase::RibBase(
 RibVrf& RibBase::createVrf(VrfId vrfId) {
   auto& ribVrf = ribVrfs_[vrfId];
   if (!ribVrf) {
-    ribVrf = std::make_unique<RibVrf>(vrfId);
+    ribVrf = std::make_unique<RibVrf>(vrfId, *this);
   }
   return *ribVrf;
 }
@@ -263,7 +260,9 @@ RibBase::~RibBase() {
     nexthopResolutionTimer_->cancelTimeout();
   }
   // reset the batch list
-  fibBatchList_.clear();
+  for (auto& [_, ribVrf] : ribVrfs_) {
+    ribVrf->fibBatchList().clear();
+  }
 }
 
 void RibBase::setFibBatchTime(std::chrono::milliseconds d) {
@@ -336,7 +335,9 @@ void RibBase::cancelAndJoinTasks() noexcept {
  */
 void RibBase::cleanupCommon() noexcept {
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    fibBatchTimer_.reset();
+    for (auto& [_, ribVrf] : ribVrfs_) {
+      ribVrf->fibBatchTimer().reset();
+    }
     if (fib_) {
       fib_->stop();
     }
@@ -416,10 +417,11 @@ folly::coro::Task<void> RibBase::processFibProgrammingMsgLoop() noexcept {
       continue;
     }
 
+    auto& fibBatchList = vrf.fibBatchList();
     // TODO: put the fibBatchList_ population into a separate function call
     auto toFibTotal = 0;
-    auto iter = fibBatchList_.begin();
-    auto endIter = fibBatchList_.end();
+    auto iter = fibBatchList.begin();
+    auto endIter = fibBatchList.end();
 
     {
       ScopedProfile profile("RibBase::fibProgramming_batch");
@@ -481,7 +483,7 @@ folly::coro::Task<void> RibBase::processFibProgrammingMsgLoop() noexcept {
       }
     } // ScopedProfile for fibProgramming_batch
 
-    fibBatchList_.clear();
+    fibBatchList.clear();
     deleteUnusedNexthopInfos();
     if (fullSync || toFibTotal) {
       XLOGF(DBG2, "Added {} prefixes to Fib batch", toFibTotal);
@@ -640,6 +642,7 @@ folly::coro::Task<void> RibBase::processRibInMsgLoop() noexcept {
         },
         [this](const RibInInitialPathComputation& initialPathComputation) {
           processRibInInitialPathComputation(
+              initialPathComputation.vrfId,
               initialPathComputation.nexthopResolutionTimeout);
         },
         [this](const RibInNexthopUpdate& nexthopUpdate) {
@@ -727,7 +730,7 @@ void RibBase::processRibInAnnouncement(
     incrementPrefixCountForRouteChurn(pfxPathIds.size());
 
     // Schedule incremental fib programming timer
-    schedulePrepareFibProgrammingTimer();
+    vrf.schedulePrepareFibProgrammingTimer();
   }
 }
 
@@ -816,7 +819,7 @@ void RibBase::processRibInWithdrawal(
     incrementPrefixCountForRouteChurn(pfxPathIds.size());
 
     // Schedule incremental fib programming timer
-    schedulePrepareFibProgrammingTimer();
+    vrf.schedulePrepareFibProgrammingTimer();
   }
 }
 
@@ -975,6 +978,7 @@ RibBase::processSingleRibInUpdate(
 }
 
 void RibBase::processRibInInitialPathComputation(
+    VrfId vrfId,
     std::chrono::milliseconds nexthopResolutionTimeout) noexcept {
   XLOG(INFO, "Processing RibInInitialPathComputation");
 
@@ -1013,16 +1017,25 @@ void RibBase::processRibInInitialPathComputation(
     return;
   }
 
-  runInitialPathComputation();
+  runInitialPathComputation(vrfId);
 }
 
-void RibBase::runInitialPathComputation() noexcept {
+void RibBase::runInitialPathComputation(VrfId vrfId) noexcept {
+  auto* vrf = findVrf(vrfId);
+  if (!vrf) {
+    XLOGF(
+        ERR,
+        "Ignoring initial path computation for non-existent VRF {}",
+        vrfId);
+    return;
+  }
+
   pendingInitialPathComputation_ = false;
   // stop the resolution timer so none is live when the full-sync runs
   nexthopResolutionTimer_->cancelTimeout();
 
   // fib batch process list must be empty right now
-  CHECK(fibBatchList_.empty());
+  CHECK(vrf->fibBatchList().empty());
 
   /*
    * set one-time flag before prepareFibProgramming so that subclass
@@ -1032,7 +1045,7 @@ void RibBase::runInitialPathComputation() noexcept {
   ribEoRReceived_ = true;
 
   // best path selection + notify programming FIB
-  prepareFibProgramming(fboss::kDefaultVrf, true /* fullSync */);
+  prepareFibProgramming(vrfId, true /* fullSync */);
 
   // log BGP++ initialization event
   BgpStats::logInitializationEvent("Rib", BgpInitializationEvent::RIB_COMPUTED);
@@ -1044,8 +1057,11 @@ void RibBase::runInitialPathComputation() noexcept {
    * prepareFibProgramming() and can't be paused/stopped once called.
    */
 
-  // Schedule periodic task to monitor route churn
-  asyncScope_.add(co_withExecutor(&evb_, monitorRouteChurn()));
+  // Schedule periodic task to monitor route churn, once for the process
+  if (!routeChurnMonitorStarted_) {
+    routeChurnMonitorStarted_ = true;
+    asyncScope_.add(co_withExecutor(&evb_, monitorRouteChurn()));
+  }
 }
 
 void RibBase::maybeRunPendingInitialPathComputation() noexcept {
@@ -1061,7 +1077,8 @@ void RibBase::maybeRunPendingInitialPathComputation() noexcept {
       INFO,
       "[Initialization] Nexthop resolution / conditional routes ready; running "
       "deferred initial path computation.");
-  runInitialPathComputation();
+  // TODO_PMTRIZED_VRF: Make this method VRF aware in a follow-up diff.
+  runInitialPathComputation(fboss::kDefaultVrf);
 }
 
 void RibBase::onNexthopResolutionTimeout() noexcept {
@@ -1072,7 +1089,8 @@ void RibBase::onNexthopResolutionTimeout() noexcept {
       ERR,
       "[Initialization] Timed out waiting for nexthop resolution; running "
       "initial path computation with unresolved nexthops.");
-  runInitialPathComputation();
+  // TODO_PMTRIZED_VRF: Make this method VRF aware in a follow-up diff.
+  runInitialPathComputation(fboss::kDefaultVrf);
 }
 
 bool RibBase::areAllRegisteredNexthopsResolved() const noexcept {
@@ -1137,8 +1155,11 @@ void RibBase::processPauseBestPathAndFibProgramming(
     pauseBestPathAndFibProgramming_ = true;
 
     // Stop scheduled Fib programming timer if any
-    if (fibBatchTimer_->isScheduled()) {
-      fibBatchTimer_->cancelTimeout();
+    for (auto& [_, ribVrf] : ribVrfs_) {
+      auto& fibBatchTimer = ribVrf->fibBatchTimer();
+      if (fibBatchTimer->isScheduled()) {
+        fibBatchTimer->cancelTimeout();
+      }
     }
   }
 
@@ -1283,10 +1304,11 @@ void RibBase::mayResumeBestPathAndFibProgramming(
         "ResumeBestPathAndFibProgramming is triggering best-path computation and FIB programming with fullSync={}",
         fullSync);
 
-    // Best path selection + notify programming FIB (fullSync if pending)
-    prepareFibProgramming(fboss::kDefaultVrf, fullSync);
-
-    schedulePrepareFibProgrammingTimer();
+    for (const auto& [vrfId, ribVrf] : ribVrfs_) {
+      // Best path selection + notify programming FIB (fullSync if pending)
+      prepareFibProgramming(vrfId, fullSync);
+      ribVrf->schedulePrepareFibProgrammingTimer();
+    }
   }
 }
 
@@ -1437,7 +1459,9 @@ void RibBase::processRibInNexthopUpdate(
         DBG1,
         "Nexthop update for [{}] is triggering best-path computation and FIB programming",
         folly::join(", ", triggeringNexthops));
-    schedulePrepareFibProgrammingTimer();
+    for (const auto& [_, ribVrf] : ribVrfs_) {
+      ribVrf->schedulePrepareFibProgrammingTimer();
+    }
   }
 
   /*
@@ -1911,8 +1935,9 @@ void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
    * Full sync: clear current fibBatchList_ and populate with entire
    * ribEntries
    */
+  auto& fibBatchList = vrf->fibBatchList();
   if (fullSync) {
-    fibBatchList_.clear();
+    fibBatchList.clear();
     XLOGF(
         DBG4,
         "Start full sync best path selection for {} ribEntries",
@@ -1966,7 +1991,7 @@ void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
 
     // update fib for all entries if fullsync
     if (fullSync) {
-      fibBatchList_.push_back(ribEntry);
+      vrf->addToFibBatch(ribEntry);
     }
 
     /*
@@ -1978,9 +2003,7 @@ void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
      * and continue.
      */
     if (!bestpathChanged && !nexthopChanged && ribEntry.multipathChanged()) {
-      if (!ribEntry.isOnFibBatchList()) {
-        fibBatchList_.push_back(ribEntry);
-      }
+      vrf->addToFibBatch(ribEntry);
       continue;
     }
 
@@ -2041,9 +2064,7 @@ void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
       }
 
       // If route entry is not on the batch process list yet, add it.
-      if (!ribEntry.isOnFibBatchList()) {
-        fibBatchList_.push_back(ribEntry);
-      }
+      vrf->addToFibBatch(ribEntry);
     }
 
     /*
@@ -2054,9 +2075,8 @@ void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
      * If it has prior FibOut state (including explicit NONE/removal), enqueue
      * an idempotent removal so FIB-ack processing can erase it.
      */
-    if (ribEntry.getAllPathsCnt() == 0 && ribEntry.hasFibOutState() &&
-        !ribEntry.isOnFibBatchList()) {
-      fibBatchList_.push_back(ribEntry);
+    if (ribEntry.getAllPathsCnt() == 0 && ribEntry.hasFibOutState()) {
+      vrf->addToFibBatch(ribEntry);
     }
   }
   if (prefixesToOverwriteRouteAttributes.size() == ribEntries.size()) {
@@ -2101,11 +2121,11 @@ void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
   ribCounters_.publishInactivePathCounters();
 
   // If no entry in fib update list and not full sync, skip fib programming
-  if (fibBatchList_.empty() && !fullSync) {
+  if (fibBatchList.empty() && !fullSync) {
     return;
   }
 
-  RibStats::addFibBatchListSize(fibBatchList_.size());
+  RibStats::addFibBatchListSize(fibBatchList.size());
   if (fullSync) {
     vrf->setFullSync(true);
   }
@@ -2214,29 +2234,6 @@ void RibBase::handleFullAddPathWithdrawal(
  */
 std::chrono::seconds RibBase::getFibBackoffTimeout() const noexcept {
   return kFibBatchTimeoutChurn;
-}
-
-/**
- * Schedule the prepareFibProgramming timer.
- *
- * This function is used to schedule the prepareFibProgramming function to be
- * called after a certain amount of time. The time is usually 200ms by
- * default. If the fib churn is high, a longer timeout of
- * kFibBatchTimeoutChurn is used instead.
- *
- * @return None
- */
-void RibBase::schedulePrepareFibProgrammingTimer() noexcept {
-  if (pauseBestPathAndFibProgramming_ || fibBatchTimer_->isScheduled()) {
-    /*
-     * Best path selection and Fib programming is paused or timer has been
-     * scheduled already
-     */
-    return;
-  }
-
-  // Schedule fib programming in a batch fashion
-  fibBatchTimer_->scheduleTimeout(fibBatchTime_);
 }
 
 /*
@@ -3839,8 +3836,11 @@ bool RibBase::checkAndDeleteNexthopInfo(const folly::IPAddress& nexthop) {
    * its NexthopInfo when the FIB loop builds the request. The NexthopInfo stays
    * registered and in nexthopInfoMap_, with no RouteInfo. The FIB loop deletes
    * it after it takes the batch.
+   *
+   * TODO_NH_VRF: Check every VRF's fibBatchList_ once nexthops are tracked per
+   * VRF.
    */
-  if (!fibBatchList_.empty()) {
+  if (!defaultVrf_.fibBatchList().empty()) {
     return false;
   }
   deleteNexthopInfo(it);
@@ -3872,6 +3872,13 @@ RibBase::NexthopInfoMap::iterator RibBase::deleteNexthopInfo(
 }
 
 void RibBase::deleteUnusedNexthopInfos() {
+  /*
+   * TODO_NH_VRF: Check every VRF's fibBatchList_ once nexthops are tracked per
+   * VRF.
+   */
+  if (!defaultVrf_.fibBatchList().empty()) {
+    return;
+  }
   for (auto it = nexthopInfoMap_.begin(); it != nexthopInfoMap_.end();) {
     if (it->second.isRouteInfoListEmpty()) {
       it = deleteNexthopInfo(it);

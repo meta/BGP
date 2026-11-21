@@ -337,14 +337,18 @@ void MockRib::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
   prepareFibProgramming_();
   RibDC::prepareFibProgramming(vrfId, fullSync);
   fibItems.clear();
-  for (auto it = fibBatchList_.begin(); it != fibBatchList_.end(); ++it) {
-    auto [snapshot, inserted] = fibItems.emplace(it->getPrefix(), *it);
-    CHECK(inserted);
-    /*
-     * fibItems is a test-only copy of the batch input, not another live route.
-     * Do not let it contribute an owner to the canonical FIB-out set count.
-     */
-    eraseFibOut(snapshot->second);
+  if (auto* vrf = findVrf(vrfId)) {
+    auto& fibBatchList = vrf->fibBatchList();
+    for (auto it = fibBatchList.begin(); it != fibBatchList.end(); ++it) {
+      auto [snapshot, inserted] = fibItems.emplace(it->getPrefix(), *it);
+      CHECK(inserted);
+      /*
+       * fibItems is a test-only copy of the batch input, not another live
+       * route. Do not let it contribute an owner to the canonical FIB-out set
+       * count.
+       */
+      eraseFibOut(snapshot->second);
+    }
   }
   fulfillRibPrepareFibProgrammingPromise(fibItems.size());
 }
@@ -865,7 +869,7 @@ void RibFixture::setUpService() {
  */
 folly::coro::Task<void> RibFixture::delayedFibProgramSchedule() {
   co_await folly::futures::sleep(std::chrono::seconds(5));
-  rib_->schedulePrepareFibProgrammingTimer();
+  rib_->defaultVrf_.schedulePrepareFibProgrammingTimer();
 }
 
 void RibFixture::createFsdbTestResources() {

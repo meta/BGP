@@ -755,18 +755,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    */
   std::unique_ptr<RouteFilterPolicy> routeFilterPolicy_{nullptr};
 
-  /*
-   * The list to store all RibEntry that have been updated and needs to
-   * be programmed in Fib and/or send to peers.
-   *
-   * Using a non-intrusive list requires storing either a key or a shared
-   * pointer of the entry. It could contribute to some performance overload.
-   * Using folly::IntrusiveList could help in this case. Measurement shows
-   * IntrusiveList has about 4x performance gain on constructing the list
-   * and 7x gain on looping, comparing with std::forward_list.
-   */
-  folly::IntrusiveList<RibEntry, &RibEntry::fibBatchListHook_> fibBatchList_;
-
  private:
   /*
    * Member functions
@@ -855,6 +843,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * timer fires first. A zero timeout runs the sync immediately.
    */
   void processRibInInitialPathComputation(
+      VrfId vrfId,
       std::chrono::milliseconds nexthopResolutionTimeout) noexcept;
 
   /*
@@ -862,7 +851,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * route-churn monitor scheduling. Cancels nexthopResolutionTimer_ first so no
    * timer is live when the full-sync runs.
    */
-  void runInitialPathComputation() noexcept;
+  void runInitialPathComputation(VrfId vrfId) noexcept;
 
   /*
    * Run the deferred initial path computation if it is pending and all
@@ -1015,8 +1004,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       const RibEntry& /*entry*/) const noexcept {
     return false;
   }
-
-  void schedulePrepareFibProgrammingTimer() noexcept;
 
  private:
   /**
@@ -1194,7 +1181,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   /*
    * Deletes every NexthopInfo with no RouteInfo. The FIB loop calls it after it
-   * takes fibBatchList_.
+   * takes fibBatchList_. No-op while any VRF's fibBatchList_ is non-empty.
    */
   void deleteUnusedNexthopInfos();
 
@@ -1246,6 +1233,9 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   // Flag to indicate if route churn is detected.
   std::atomic<bool> routeChurnDetected_{false};
 
+  // Whether monitorRouteChurn has been scheduled. It runs once for the process.
+  bool routeChurnMonitorStarted_{false};
+
   // ---------------- PeerManagerBase <-> Rib ----------------
 
   // rib in and out message queue
@@ -1272,7 +1262,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   // fib update with batch processing
   std::chrono::milliseconds fibBatchTime_{kFibBatchTimeDefault};
-  std::unique_ptr<folly::AsyncTimeout> fibBatchTimer_;
 
   /*
    * [Initialization]
@@ -1332,6 +1321,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   friend class RibBB;
   friend class MockRib;
   friend class RibBaseFixture;
+  friend class RibVrf;
 
   /*
    * e.g., for rsw001.p002.f03.abc4, switchId is 1
@@ -1396,7 +1386,8 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   // Routing tables owned by this RIB, keyed by VRF ID.
   folly::F14NodeMap<VrfId, std::unique_ptr<RibVrf>> ribVrfs_;
   RibVrf& defaultVrf_;
-  RibVrf& quarantineVrf_;
+  // TODO: re-enable the quarantine VRF.
+  // RibVrf& quarantineVrf_;
 
   uint32_t ribOutQHighWatermark_{kRibOutQueueSizePauseThreshold};
 

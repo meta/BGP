@@ -19,7 +19,10 @@
 #include <folly/logging/xlog.h>
 
 #include "fboss/agent/Constants.h"
+#include "neteng/fboss/bgp/cpp/common/Consts.h"
+#include "neteng/fboss/bgp/cpp/common/Utils.h"
 #include "neteng/fboss/bgp/cpp/rib/RibBase.h"
+#include "neteng/fboss/bgp/cpp/rib/Utils.h"
 
 namespace facebook::bgp {
 
@@ -82,6 +85,231 @@ void RibVrf::remove(RibEntry& entry) {
         ribCounters_.onPrefixRemoved(
             prefix.first.isV4(), prefix.second, erased.getInactivePathCnt());
       });
+}
+
+RibVrf::AggregateRoutes RibVrf::processSingleRibInUpdate(
+    const TinyPeerInfo& peer,
+    std::shared_ptr<const BgpPath> attrs,
+    const PrefixPathId& pfxPid,
+    NexthopInfo* FOLLY_NULLABLE nexthopInfo,
+    RibEntry::UnlinkRouteInfoFn unlinkRouteInfoFn) noexcept {
+  auto prefix = get<0>(pfxPid);
+  auto receivedPathId = get<1>(pfxPid);
+
+  /*
+   * ** NOTE **
+   * ribEntries_ are managed in two places asynchronously:
+   *   1. here
+   *   2. In handleFibProgrammedMessage(): erase prefix after withdrawal is
+   *   programmed
+   *
+   * It's likely a ribEntry still exists with getAllPathsCnt() == 0.
+   * This should be considered as if the prefix does not exist before.
+   */
+
+  auto& ribEntries = ribEntries_;
+  // check whether prefix exists in ribEntries_
+  auto kv = ribEntries.find(prefix);
+  if (kv == ribEntries.cend()) {
+    // withdraw route of a prefix that does not exist, nothing to do
+    if (!attrs) {
+      return {};
+    }
+    // add prefix to ribEntries_
+    kv = ribEntries.emplace(std::make_pair(prefix, RibEntry(prefix))).first;
+    ribCounters_.onPrefixAdded(prefix.first.isV4(), prefix.second);
+  }
+  auto& entry = kv->second;
+  /*
+   * oldAllPathCnt is used in aggregate route logic to indentify
+   * prefix announcement/withdrawal (to distinguish with ecmp change)
+   */
+  auto oldAllPathCnt = entry.getAllPathsCnt();
+
+  if (!attrs && oldAllPathCnt == 0) {
+    /*
+     * A previous withdrawn has been processed, but has not been programmed yet.
+     * this is equal to withdraw route of a prefix that does not exist.
+     * nothing more to do here.
+     */
+    return {};
+  }
+
+  bool isAggRoute{false}, installToFib{(!peer.isRedistributePeer)};
+  if (peer == kV4LocalPeerInfo) {
+    const auto& lr = localRoutes_.find(prefix);
+    if (lr != localRoutes_.cend()) {
+      installToFib = getInstallToFib(lr->second.network);
+      isAggRoute = (getMinSupportRoutes(lr->second.network) > 0);
+    }
+  }
+
+  // update new path to the entry.
+  entry.updatePath(
+      peer,
+      attrs,
+      installToFib,
+      receivedPathId,
+      nexthopInfo ? std::make_optional(nexthopInfo) : std::nullopt,
+      unlinkRouteInfoFn);
+
+  /*
+   * Get new path counts now. entry will be gone out of scope if
+   * removed under (!attr) condition. Be careful, do not access
+   * entry reference after this call
+   */
+  auto newAllPathCnt = entry.getAllPathsCnt();
+
+  /*
+   * Single maintenance point for the per-AFI total path count: the change in
+   * this prefix's path count is add-path-correct here, and aggregate routes
+   * also funnel through this method.
+   */
+  ribCounters_.onPathsDelta(
+      prefix.first.isV4(),
+      static_cast<int64_t>(newAllPathCnt) -
+          static_cast<int64_t>(oldAllPathCnt));
+
+  if (!attrs) {
+    checkWithdrawalBeforeRouteProgrammed(prefix, entry);
+  }
+
+  XLOGF(
+      DBG3,
+      "Finish updating RibEntry of prefix {} from peer [{}]",
+      folly::IPAddress::networkToString(prefix),
+      nettools::bgplib::BgpPeerId{peer.addr, peer.routerId}.str());
+
+  /*
+   * If route is configured with minimum_supporting_routes > 0, do not
+   * aggregate For all other cases run aggregate logic:
+   * 1. local route with minimum_supporting_routes = 0
+   * 2. local injected routes (peer == localPeer, but not in localRoutes_)
+   * 3. peer learnt routes
+   */
+
+  // skip aggreagate route
+  if (isAggRoute) {
+    return {};
+  }
+
+  /*
+   * determine if this is supporting route announcement/withdrawn
+   * TODO: Is sameAsLocalRoute logic expected behavior in RFC?
+   */
+  bool sameAsLocalRoute = localRoutes_.contains(prefix);
+  /*
+   * supporting route withdrawn:
+   * 1. prefix != agg (prefix withdrawn):
+   *      oldAllPathCnt == 1 and newAllPathCnt == 0
+   * 2. prefix == agg (path withdrawn):
+   *      getAllPathsCnt() = oldPathCnt - 1
+   *    e.g. agg = <1.0.0.0/24, nh=0.0.0.0, supportPfxCnt=1>
+   *         supporting prefix = <1.0.0.0/24, nh=peer1>
+   *    If peer1 withdrawn supporting prefix => agg.supportPfxCnt--
+   */
+  bool supportingRouteWithdrawn =
+      (!sameAsLocalRoute && oldAllPathCnt == 1 && newAllPathCnt == 0) ||
+      (sameAsLocalRoute && newAllPathCnt == oldAllPathCnt - 1);
+  /*
+   * supporting route announcement:
+   * 1. prefix != agg (prefix announcement):
+   *      oldAllPathCnt == 0 and newAllPathCnt == 1
+   * 2. prefix == agg (path announcement):
+   *      getAllPathsCnt() = oldPathCnt + 1
+   *    e.g. agg = <1.0.0.0/24, nh=0.0.0.0, supportPfxCnt=0>
+   *         supporting prefix = <1.0.0.0/24, nh=peer1>
+   *    If peer1 announce supporting prefix, agg.supportPfxCnt++
+   */
+  bool supportingRouteAnnouncement =
+      (!sameAsLocalRoute && oldAllPathCnt == 0 && newAllPathCnt == 1) ||
+      (sameAsLocalRoute && newAllPathCnt == oldAllPathCnt + 1);
+
+  if (supportingRouteWithdrawn || supportingRouteAnnouncement) {
+    return aggregateRoute(prefix, supportingRouteAnnouncement);
+  }
+
+  return {};
+}
+
+void RibVrf::checkWithdrawalBeforeRouteProgrammed(
+    folly::CIDRNetwork& prefix,
+    RibEntry& entry) noexcept {
+  /*
+   * Skip the normal selection/FIB cycle only when the entry has no FibOut
+   * state. A null best path does not prove that FIB has no state for the
+   * prefix.
+   */
+  if (!entry.hasFibOutState() && entry.routeInfos_.empty()) {
+    XLOGF(
+        DBG1,
+        "The case of new prefix {} announcement followed by withdrawal during Fib-programming timer.",
+        folly::IPAddress::networkToString(prefix));
+    remove(entry);
+  }
+}
+
+RibVrf::AggregateRoutes RibVrf::aggregateRoute(
+    const folly::CIDRNetwork& prefix,
+    bool supportingRouteAnnouncement) noexcept {
+  AggregateRoutes aggRoutes;
+  // local route aggregation
+  for (auto& [localPrefix, localRoute] : localRoutes_) {
+    if (!isSubnet(prefix, localPrefix)) {
+      continue;
+    }
+
+    /*
+     * no need to aggregate local route that do not need
+     * minimum_supporting_routes assumption here is local routes does not
+     * overlap with each other in configurations
+     */
+    auto minSupportRoutes = getMinSupportRoutes(localRoute.network);
+    if (minSupportRoutes == 0) {
+      continue;
+    }
+
+    // withdrawal of non-existing supporting routes, simply ignore
+    if (!supportingRouteAnnouncement && localRoute.supportPfxCnt == 0) {
+      continue;
+    }
+
+    // supporting prefix withdrawal
+    if (!supportingRouteAnnouncement) {
+      // decrease aggregate supporting route count
+      --localRoute.supportPfxCnt;
+      XLOGF(
+          DBG1,
+          "Supporting route withdrawal for {}: {}, counter decreased to {}.",
+          folly::IPAddress::networkToString(localPrefix),
+          folly::IPAddress::networkToString(prefix),
+          localRoute.supportPfxCnt);
+
+      /*
+       * minimum_supporting_routes drop down to threshold,
+       * withdrawn aggregated RouteInfo
+       */
+      if (localRoute.supportPfxCnt == minSupportRoutes - 1) {
+        aggRoutes.emplace_back(localPrefix, nullptr);
+      }
+    } else { // supporting prefix announcement
+      ++localRoute.supportPfxCnt;
+      XLOGF(
+          DBG1,
+          "Supporting route announcement for {}: {}, counter increased to {}.",
+          folly::IPAddress::networkToString(localPrefix),
+          folly::IPAddress::networkToString(prefix),
+          localRoute.supportPfxCnt);
+      /*
+       * prefix announcement causes count reaches minimum_supporting_routes,
+       * advertise aggregated route
+       */
+      if (localRoute.supportPfxCnt == minSupportRoutes) {
+        aggRoutes.emplace_back(localPrefix, localRoute.attrs);
+      }
+    }
+  }
+  return aggRoutes;
 }
 
 void RibVrf::schedulePrepareFibProgrammingTimer() noexcept {

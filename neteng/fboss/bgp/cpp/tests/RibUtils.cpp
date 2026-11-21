@@ -437,7 +437,15 @@ void MockRib::processSingleRibInUpdateForTest(
     const TinyPeerInfo& peer,
     std::shared_ptr<const BgpPath> attrs,
     const PrefixPathId& prefixPathId) {
-  processSingleRibInUpdate(defaultVrf_, peer, std::move(attrs), prefixPathId);
+  auto* nexthopInfo = getNexthopInfo(attrs);
+  defaultVrf_.processSingleRibInUpdate(
+      peer,
+      std::move(attrs),
+      prefixPathId,
+      nexthopInfo,
+      [this](RouteInfo& routeInfo) {
+        return unlinkRouteInfoAndCleanupNexthop(routeInfo);
+      });
 }
 
 void MockRib::enqueueCanonicalRibFullSnapshotForTest() {

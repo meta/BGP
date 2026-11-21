@@ -9980,8 +9980,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   auto initialAttrs = makeAttrs(4, kPeerAddr1);
   std::shared_ptr<RouteInfo> initialRouteInfo;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, initialAttrs, prefixBatch.front());
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, initialAttrs, prefixBatch.front());
     auto entry = rib_->defaultVrf_.ribEntries().find(kV4Prefix1);
     ASSERT_NE(entry, rib_->defaultVrf_.ribEntries().end());
     initialRouteInfo = entry->second.getRouteInfo(peerId, kDefaultPathID);
@@ -9994,8 +9994,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, initialAttrs, prefixBatch.front());
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, initialAttrs, prefixBatch.front());
     const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     EXPECT_EQ(initialRouteInfo, entry.getRouteInfo(peerId, kDefaultPathID));
     EXPECT_EQ(1, rib_->nexthopInfoMap_.at(kPeerAddr1).getRouteInfoListSize());
@@ -10004,8 +10004,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   auto refreshedAttrs = makeAttrs(5, kPeerAddr1);
   std::shared_ptr<RouteInfo> refreshedRouteInfo;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, refreshedAttrs, prefixBatch.front());
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, refreshedAttrs, prefixBatch.front());
     const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     refreshedRouteInfo = entry.getRouteInfo(peerId, kDefaultPathID);
     ASSERT_NE(refreshedRouteInfo, nullptr);
@@ -10018,8 +10018,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   auto changedNexthopAttrs = makeAttrs(6, kPeerAddr2);
   std::shared_ptr<RouteInfo> changedNexthopRouteInfo;
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, changedNexthopAttrs, prefixBatch.front());
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, changedNexthopAttrs, prefixBatch.front());
     const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     changedNexthopRouteInfo = entry.getRouteInfo(peerId, kDefaultPathID);
     ASSERT_NE(changedNexthopRouteInfo, nullptr);
@@ -10034,8 +10034,8 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, nullptr, prefixBatch.front());
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, nullptr, prefixBatch.front());
     EXPECT_FALSE(changedNexthopRouteInfo->isOnNextHopList());
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr2));
@@ -10048,18 +10048,17 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   const PrefixPathId secondPath{kV6Prefix1, 2};
   auto sharedNexthopAttrs = makeAttrs(4, kPeerAddr1);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, sharedNexthopAttrs, firstPath);
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, sharedNexthopAttrs, secondPath);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, sharedNexthopAttrs, firstPath);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, sharedNexthopAttrs, secondPath);
     EXPECT_EQ(2, rib_->nexthopInfoMap_.at(kPeerAddr1).getRouteInfoListSize());
   });
   tcData->publishStats();
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, nullptr, firstPath);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, firstPath);
     EXPECT_EQ(1, rib_->nexthopInfoMap_.at(kPeerAddr1).getRouteInfoListSize());
     EXPECT_TRUE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
   });
@@ -10067,8 +10066,7 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, nullptr, secondPath);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, secondPath);
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr1));
     EXPECT_FALSE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
@@ -10496,8 +10494,7 @@ TEST_F(RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect) {
 
   const PrefixPathId prefixPathId{kV4Prefix1, kDefaultPathID};
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, nullptr, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, prefixPathId);
   });
   EXPECT_FALSE(rib_->getNexthopInfoForNexthop(kPeerAddr1).has_value());
   EXPECT_FALSE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
@@ -10617,17 +10614,14 @@ TEST_F(
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus({reachable});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, attrs, prefixPathId);
     auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
     ASSERT_EQ(1, queuedStatuses.size());
 
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, nullptr, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, prefixPathId);
     ASSERT_TRUE(nexthopCache->addOrUpdateNextHopStatus({reachable}).empty());
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, attrs, prefixPathId);
     rib_->processRibInNexthopUpdate(
         RibInNexthopUpdate(std::move(queuedStatuses)));
 
@@ -10653,17 +10647,14 @@ TEST_F(
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus({unreachable});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, attrs, prefixPathId);
     auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/100)});
     ASSERT_EQ(1, queuedStatuses.size());
 
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, nullptr, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, prefixPathId);
     ASSERT_TRUE(nexthopCache->addOrUpdateNextHopStatus({unreachable}).empty());
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, attrs, prefixPathId);
     rib_->processRibInNexthopUpdate(
         RibInNexthopUpdate(std::move(queuedStatuses)));
 
@@ -10688,8 +10679,7 @@ TEST_F(
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, attrs, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, attrs, prefixPathId);
 
     auto firstStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
@@ -10721,8 +10711,8 @@ TEST_F(RibNexthopTrackingFixture, StaleNexthopUpdateIsSkippedAndCounted) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     auto staleStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
     auto newerStatuses = nexthopCache->addOrUpdateNextHopStatus(
@@ -10760,16 +10750,10 @@ TEST_F(RibNexthopTrackingFixture, NexthopUpdatesForTwoNexthopsApplyOutOfOrder) {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10),
          NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_,
-        iBgpPeer_,
-        pathVia(kPeerAddr1),
-        {kV4Prefix1, kDefaultPathID});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_,
-        iBgpPeer_,
-        pathVia(kPeerAddr2),
-        {kV4Prefix2, kDefaultPathID});
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), {kV4Prefix1, kDefaultPathID});
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr2), {kV4Prefix2, kDefaultPathID});
     auto statusesB = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/20)});
     auto statusesA = nexthopCache->addOrUpdateNextHopStatus(
@@ -10795,8 +10779,8 @@ TEST_F(RibNexthopTrackingFixture, UnstampedNexthopUpdateAlwaysRereads) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
 
@@ -10821,8 +10805,8 @@ TEST_F(RibNexthopTrackingFixture, NexthopUpdateWithEqualEpochRereads) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     auto statuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
     rib_->processRibInNexthopUpdate(RibInNexthopUpdate(statuses));
@@ -10847,16 +10831,10 @@ TEST_F(
   auto* nexthopCache = rib_->nexthopCache_.get();
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_,
-        iBgpPeer_,
-        pathVia(kPeerAddr1),
-        {kV4Prefix1, kDefaultPathID});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_,
-        iBgpPeer_,
-        pathVia(kPeerAddr2),
-        {kV4Prefix2, kDefaultPathID});
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), {kV4Prefix1, kDefaultPathID});
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr2), {kV4Prefix2, kDefaultPathID});
     rib_->processRibInInitialPathComputation(
         fboss::kDefaultVrf, std::chrono::seconds(60));
     ASSERT_FALSE(rib_->ribEoRReceived_);
@@ -10925,12 +10903,12 @@ TEST_F(
              /*excludeNexthopWithoutCost=*/true,
              /*ifName=*/"eth1/1/1"),
          NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     rib_->processRibInInitialPathComputation(
         fboss::kDefaultVrf, std::chrono::milliseconds(0));
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
   });
   fibFuture.wait();
 
@@ -10989,14 +10967,13 @@ TEST_F(
          NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
     // The eBGP path via N1 is the best path. The iBGP path via N2 keeps the
     // RibEntry after the withdrawal.
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, eBgpPeer1_, pathVia(kPeerAddr1), prefixPathId);
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        eBgpPeer1_, pathVia(kPeerAddr1), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
     rib_->processRibInInitialPathComputation(
         fboss::kDefaultVrf, std::chrono::milliseconds(0));
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, eBgpPeer1_, nullptr, prefixPathId);
+    rib_->processSingleRibInUpdateForTest(eBgpPeer1_, nullptr, prefixPathId);
   });
   fibFuture.wait();
 
@@ -11028,16 +11005,16 @@ TEST_F(
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/1),
          NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     rib_->processRibInInitialPathComputation(
         fboss::kDefaultVrf, std::chrono::milliseconds(0));
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr2), prefixPathId);
     ASSERT_TRUE(rib_->nexthopInfoMap_.contains(kPeerAddr1));
     ASSERT_TRUE(rib_->nexthopInfoMap_.at(kPeerAddr1).isRouteInfoListEmpty());
-    rib_->processSingleRibInUpdate(
-        rib_->defaultVrf_, iBgpPeer_, pathVia(kPeerAddr1), otherPrefixPathId);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), otherPrefixPathId);
   });
   fibFuture.wait();
 

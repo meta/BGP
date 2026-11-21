@@ -702,6 +702,9 @@ void RibBase::processRibInAnnouncement(
       BgpPeerId{peer.addr, peer.routerId}.str(),
       pfxPathIds.size());
 
+  auto unlinkRouteInfo = [this](RouteInfo& routeInfo) {
+    return unlinkRouteInfoAndCleanupNexthop(routeInfo);
+  };
   for (const auto& pfxPathId : pfxPathIds) {
     /*
      * As per RFC-4724 we must send all our local routes along with
@@ -711,14 +714,20 @@ void RibBase::processRibInAnnouncement(
      * can be advertised to peers before we send EoR. Process the aggregate
      * routes first
      */
-    auto aggs = processSingleRibInUpdate(vrf, peer, attrs, pfxPathId);
+    auto aggs = vrf.processSingleRibInUpdate(
+        peer, attrs, pfxPathId, getNexthopInfo(attrs), unlinkRouteInfo);
     for (auto& [network, bgpAttrs] : aggs) {
       /*
        * aggs iterated here MUST be local originated routes, not received
        * routes. Hence they always use default path ID
        */
       PrefixPathId aggPfxPid{network, kDefaultPathID};
-      processSingleRibInUpdate(vrf, kV4LocalPeerInfo, bgpAttrs, aggPfxPid);
+      vrf.processSingleRibInUpdate(
+          kV4LocalPeerInfo,
+          bgpAttrs,
+          aggPfxPid,
+          getNexthopInfo(bgpAttrs),
+          unlinkRouteInfo);
     }
   }
   vrf.ribCounters().publishTotalPathCounters();
@@ -744,24 +753,6 @@ void RibBase::maybeFlushNexthopSubscriptions() noexcept {
   pendingNexthopSubscriptions_.clear();
 }
 
-void RibBase::checkWithdrawalBeforeRouteProgrammed(
-    RibVrf& vrf,
-    folly::CIDRNetwork& prefix,
-    RibEntry& entry) noexcept {
-  /*
-   * Skip the normal selection/FIB cycle only when the entry has no FibOut
-   * state. A null best path does not prove that FIB has no state for the
-   * prefix.
-   */
-  if (!entry.hasFibOutState() && entry.routeInfos_.empty()) {
-    XLOGF(
-        DBG1,
-        "The case of new prefix {} announcement followed by withdrawal during Fib-programming timer.",
-        folly::IPAddress::networkToString(prefix));
-    vrf.remove(entry);
-  }
-}
-
 void RibBase::processRibInWithdrawal(
     RibVrf& vrf,
     const TinyPeerInfo& peer,
@@ -772,6 +763,9 @@ void RibBase::processRibInWithdrawal(
       BgpPeerId{peer.addr, peer.routerId}.str(),
       pfxPathIds.size());
 
+  auto unlinkRouteInfo = [this](RouteInfo& routeInfo) {
+    return unlinkRouteInfoAndCleanupNexthop(routeInfo);
+  };
   for (const auto& pfxPathId : pfxPathIds) {
     /*
      * As per RFC-4724 we must send all our local routes along with
@@ -781,7 +775,8 @@ void RibBase::processRibInWithdrawal(
      * can be advertised to peers before we send EoR. Process the aggregate
      * routes first
      */
-    auto aggs = processSingleRibInUpdate(vrf, peer, nullptr, pfxPathId);
+    auto aggs = vrf.processSingleRibInUpdate(
+        peer, nullptr, pfxPathId, nullptr /* nexthopInfo */, unlinkRouteInfo);
 
     for (auto& [network, bgpAttrs] : aggs) {
       /*
@@ -789,7 +784,12 @@ void RibBase::processRibInWithdrawal(
        * routes. Hence they always use default path ID
        */
       PrefixPathId aggPfxPid{network, kDefaultPathID};
-      processSingleRibInUpdate(vrf, kV4LocalPeerInfo, bgpAttrs, aggPfxPid);
+      vrf.processSingleRibInUpdate(
+          kV4LocalPeerInfo,
+          bgpAttrs,
+          aggPfxPid,
+          getNexthopInfo(bgpAttrs),
+          unlinkRouteInfo);
     }
   }
   vrf.ribCounters().publishTotalPathCounters();
@@ -802,161 +802,6 @@ void RibBase::processRibInWithdrawal(
     // Schedule incremental fib programming timer
     vrf.schedulePrepareFibProgrammingTimer();
   }
-}
-
-std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
-RibBase::processSingleRibInUpdate(
-    RibVrf& vrf,
-    const TinyPeerInfo& peer,
-    std::shared_ptr<const BgpPath> attrs,
-    const PrefixPathId& pfxPid) noexcept {
-  auto prefix = get<0>(pfxPid);
-  auto receivedPathId = get<1>(pfxPid);
-
-  /*
-   * ** NOTE **
-   * ribEntries_ are managed in two places asynchronously:
-   *   1. here
-   *   2. In handleFibProgrammedMessage(): erase prefix after withdrawal is
-   *   programmed
-   *
-   * It's likely a ribEntry still exists with getAllPathsCnt() == 0.
-   * This should be considered as if the prefix does not exist before.
-   */
-
-  auto& ribEntries = vrf.ribEntries();
-  // check whether prefix exists in ribEntries_
-  auto kv = ribEntries.find(prefix);
-  if (kv == ribEntries.cend()) {
-    // withdraw route of a prefix that does not exist, nothing to do
-    if (!attrs) {
-      return {};
-    }
-    // add prefix to ribEntries_
-    kv = ribEntries.emplace(std::make_pair(prefix, RibEntry(prefix))).first;
-    vrf.ribCounters().onPrefixAdded(prefix.first.isV4(), prefix.second);
-  }
-  auto& entry = kv->second;
-  /*
-   * oldAllPathCnt is used in aggregate route logic to indentify
-   * prefix announcement/withdrawal (to distinguish with ecmp change)
-   */
-  auto oldAllPathCnt = entry.getAllPathsCnt();
-
-  if (!attrs && oldAllPathCnt == 0) {
-    /*
-     * A previous withdrawn has been processed, but has not been programmed yet.
-     * this is equal to withdraw route of a prefix that does not exist.
-     * nothing more to do here.
-     */
-    return {};
-  }
-
-  bool isAggRoute{false}, installToFib{(!peer.isRedistributePeer)};
-  if (peer == kV4LocalPeerInfo) {
-    const auto& localRoutes = vrf.localRoutes();
-    const auto& lr = localRoutes.find(prefix);
-    if (lr != localRoutes.cend()) {
-      installToFib = getInstallToFib(lr->second.network);
-      isAggRoute = (getMinSupportRoutes(lr->second.network) > 0);
-    }
-  }
-
-  NexthopInfo* nexthopInfo = nullptr;
-  // update new path to the entry.
-  if (enableNexthopTracking_ && attrs) {
-    // Find the nexthop and associated NexthopInfo
-    XCHECK(nexthopCache_) << "nexthopCache_ is null, this is not expected";
-    nexthopInfo = getNexthopInfo(*attrs);
-  }
-
-  entry.updatePath(
-      peer,
-      attrs,
-      installToFib,
-      receivedPathId,
-      nexthopInfo ? std::make_optional(nexthopInfo) : std::nullopt,
-      [this](RouteInfo& routeInfo) {
-        return unlinkRouteInfoAndCleanupNexthop(routeInfo);
-      });
-
-  /*
-   * Get new path counts now. entry will be gone out of scope if
-   * removed under (!attr) condition. Be careful, do not access
-   * entry reference after this call
-   */
-  auto newAllPathCnt = entry.getAllPathsCnt();
-
-  /*
-   * Single maintenance point for the per-AFI total path count: the change in
-   * this prefix's path count is add-path-correct here, and aggregate routes
-   * also funnel through this method.
-   */
-  vrf.ribCounters().onPathsDelta(
-      prefix.first.isV4(),
-      static_cast<int64_t>(newAllPathCnt) -
-          static_cast<int64_t>(oldAllPathCnt));
-
-  if (!attrs) {
-    checkWithdrawalBeforeRouteProgrammed(vrf, prefix, entry);
-  }
-
-  XLOGF(
-      DBG3,
-      "Finish updating RibEntry of prefix {} from peer [{}]",
-      folly::IPAddress::networkToString(prefix),
-      BgpPeerId{peer.addr, peer.routerId}.str());
-
-  /*
-   * If route is configured with minimum_supporting_routes > 0, do not
-   * aggregate For all other cases run aggregate logic:
-   * 1. local route with minimum_supporting_routes = 0
-   * 2. local injected routes (peer == localPeer, but not in localRoutes_)
-   * 3. peer learnt routes
-   */
-
-  // skip aggreagate route
-  if (isAggRoute) {
-    return {};
-  }
-
-  /*
-   * determine if this is supporting route announcement/withdrawn
-   * TODO: Is sameAsLocalRoute logic expected behavior in RFC?
-   */
-  bool sameAsLocalRoute = vrf.localRoutes().contains(prefix);
-  /*
-   * supporting route withdrawn:
-   * 1. prefix != agg (prefix withdrawn):
-   *      oldAllPathCnt == 1 and newAllPathCnt == 0
-   * 2. prefix == agg (path withdrawn):
-   *      getAllPathsCnt() = oldPathCnt - 1
-   *    e.g. agg = <1.0.0.0/24, nh=0.0.0.0, supportPfxCnt=1>
-   *         supporting prefix = <1.0.0.0/24, nh=peer1>
-   *    If peer1 withdrawn supporting prefix => agg.supportPfxCnt--
-   */
-  bool supportingRouteWithdrawn =
-      (!sameAsLocalRoute && oldAllPathCnt == 1 && newAllPathCnt == 0) ||
-      (sameAsLocalRoute && newAllPathCnt == oldAllPathCnt - 1);
-  /*
-   * supporting route announcement:
-   * 1. prefix != agg (prefix announcement):
-   *      oldAllPathCnt == 0 and newAllPathCnt == 1
-   * 2. prefix == agg (path announcement):
-   *      getAllPathsCnt() = oldPathCnt + 1
-   *    e.g. agg = <1.0.0.0/24, nh=0.0.0.0, supportPfxCnt=0>
-   *         supporting prefix = <1.0.0.0/24, nh=peer1>
-   *    If peer1 announce supporting prefix, agg.supportPfxCnt++
-   */
-  bool supportingRouteAnnouncement =
-      (!sameAsLocalRoute && oldAllPathCnt == 0 && newAllPathCnt == 1) ||
-      (sameAsLocalRoute && newAllPathCnt == oldAllPathCnt + 1);
-
-  if (supportingRouteWithdrawn || supportingRouteAnnouncement) {
-    return aggregateRoute(vrf, prefix, supportingRouteAnnouncement);
-  }
-
-  return {};
 }
 
 void RibBase::processRibInInitialPathComputation(
@@ -1514,72 +1359,6 @@ bool RibBase::isRouteChurnDetected() noexcept {
        prefixCountForRouteChurn_ >= lowWatermarkForRouteChurn_);
   return routeChurnDetected_;
 };
-
-std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
-RibBase::aggregateRoute(
-    RibVrf& vrf,
-    const folly::CIDRNetwork& prefix,
-    bool supportingRouteAnnouncement) noexcept {
-  std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
-      aggRoutes;
-  // local route aggregation
-  for (auto& [localPrefix, localRoute] : vrf.localRoutes()) {
-    if (!isSubnet(prefix, localPrefix)) {
-      continue;
-    }
-
-    /*
-     * no need to aggregate local route that do not need
-     * minimum_supporting_routes assumption here is local routes does not
-     * overlap with each other in configurations
-     */
-    auto minSupportRoutes = getMinSupportRoutes(localRoute.network);
-    if (minSupportRoutes == 0) {
-      continue;
-    }
-
-    // withdrawal of non-existing supporting routes, simply ignore
-    if (!supportingRouteAnnouncement && localRoute.supportPfxCnt == 0) {
-      continue;
-    }
-
-    // supporting prefix withdrawal
-    if (!supportingRouteAnnouncement) {
-      // decrease aggregate supporting route count
-      --localRoute.supportPfxCnt;
-      XLOGF(
-          DBG1,
-          "Supporting route withdrawal for {}: {}, counter decreased to {}.",
-          folly::IPAddress::networkToString(localPrefix),
-          folly::IPAddress::networkToString(prefix),
-          localRoute.supportPfxCnt);
-
-      /*
-       * minimum_supporting_routes drop down to threshold,
-       * withdrawn aggregated RouteInfo
-       */
-      if (localRoute.supportPfxCnt == minSupportRoutes - 1) {
-        aggRoutes.emplace_back(localPrefix, nullptr);
-      }
-    } else { // supporting prefix announcement
-      ++localRoute.supportPfxCnt;
-      XLOGF(
-          DBG1,
-          "Supporting route announcement for {}: {}, counter increased to {}.",
-          folly::IPAddress::networkToString(localPrefix),
-          folly::IPAddress::networkToString(prefix),
-          localRoute.supportPfxCnt);
-      /*
-       * prefix announcement causes count reaches minimum_supporting_routes,
-       * advertise aggregated route
-       */
-      if (localRoute.supportPfxCnt == minSupportRoutes) {
-        aggRoutes.emplace_back(localPrefix, localRoute.attrs);
-      }
-    }
-  }
-  return aggRoutes;
-}
 
 /*
  * prepareFibProgramming() is scheduled every fibBatchTime_ (default 200ms).
@@ -3717,11 +3496,16 @@ void RibBase::appendRibPolicyChangeHistory(
   }
 }
 
-NexthopInfo* FOLLY_NULLABLE RibBase::getNexthopInfo(const BgpPath& attrs) {
+NexthopInfo* FOLLY_NULLABLE
+RibBase::getNexthopInfo(const std::shared_ptr<const BgpPath>& attrs) {
+  // Only an announcement carries a nexthop to track.
+  if (!enableNexthopTracking_ || !attrs) {
+    return nullptr;
+  }
   XCHECK(nexthopCache_)
       << "nexthopCache_ must not be null when nexthop tracking is enabled";
 
-  const auto& nexthop = attrs.getNexthop();
+  const auto& nexthop = attrs->getNexthop();
   /*
    * Skip the unspecified nexthop (::/0.0.0.0). Locally-originated and
    * aggregate routes (via kV4LocalPeerInfo) carry this next-hop-self

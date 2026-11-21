@@ -26,6 +26,7 @@
 #include <folly/coro/Task.h>
 #include <folly/io/async/AsyncTimeout.h>
 
+#include "neteng/fboss/bgp/cpp/common/RibMessage.h"
 #include "neteng/fboss/bgp/cpp/common/Types.h"
 #include "neteng/fboss/bgp/cpp/rib/FibOut.h"
 #include "neteng/fboss/bgp/cpp/rib/LocalRoute.h"
@@ -40,6 +41,10 @@ class RibVrf final {
  public:
   // FIB programming requests from each VRF; defined after RibVrf.
   struct VrfProgrammingRequests;
+
+  // Aggregate (locally originated) route updates: prefix and attrs, or null.
+  using AggregateRoutes = std::vector<
+      std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>;
 
   RibVrf(VrfId vrfId, RibBase& owner);
   RibVrf(const RibVrf&) = delete;
@@ -85,6 +90,19 @@ class RibVrf final {
    * localRoutes_ and conditionalLocalRoutes_.
    */
   void clear();
+
+  /*
+   * Applies one RIB-in announcement (attrs set) or withdrawal (attrs null) to
+   * the prefix's RibEntry and returns the aggregate route updates it causes.
+   * nexthopInfo is the tracked NexthopInfo of attrs, or null when the nexthop
+   * is not tracked; unlinkRouteInfoFn unlinks a removed path from its nexthop.
+   */
+  AggregateRoutes processSingleRibInUpdate(
+      const TinyPeerInfo& peer,
+      std::shared_ptr<const BgpPath> attrs,
+      const PrefixPathId& pfxPid,
+      NexthopInfo* FOLLY_NULLABLE nexthopInfo,
+      RibEntry::UnlinkRouteInfoFn unlinkRouteInfoFn) noexcept;
 
   /*
    * Removes the entry: erases its FIB-out state, then erases it from
@@ -188,6 +206,26 @@ class RibVrf final {
   }
 
  private:
+  /*
+   * Removes the entry when a withdrawal leaves it with no paths and no FIB-out
+   * state, i.e. it was never programmed.
+   */
+  void checkWithdrawalBeforeRouteProgrammed(
+      folly::CIDRNetwork& prefix,
+      RibEntry& entry) noexcept;
+
+  /*
+   * @brief: helper function called in processSingleRibInUpdate
+   * @return:
+   *  1. local route announcement if >= minimum_supporting_routes number of
+   *     subnet are processed.
+   *  2. local routes withdrawal if < minimum_supporting_routes number of
+   *     subnet are processed.
+   */
+  AggregateRoutes aggregateRoute(
+      const folly::CIDRNetwork& prefix,
+      bool supportingRouteAnnouncement) noexcept;
+
   // ======================== Identity ========================
 
   // Identifies the routing table owned by this context.

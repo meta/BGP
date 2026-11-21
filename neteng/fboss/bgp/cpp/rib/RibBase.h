@@ -828,10 +828,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       const TinyPeerInfo& peer,
       std::shared_ptr<const BgpPath> attr,
       const PrefixPathIds& pfxPathIds) noexcept;
-  void checkWithdrawalBeforeRouteProgrammed(
-      RibVrf& vrf,
-      folly::CIDRNetwork& prefix,
-      RibEntry& entry) noexcept;
   void processRibInWithdrawal(
       RibVrf& vrf,
       const TinyPeerInfo& peer,
@@ -921,31 +917,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    */
   virtual void processNexthopResolutionUpdate(
       const NexthopResolutionUpdate& /* nexthopResolutionUpdate */) noexcept {}
-
-  /*
-   * Util function to return aggregated route(locally originated) update to be
-   * processed if any
-   */
-  std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
-  processSingleRibInUpdate(
-      RibVrf& vrf,
-      const TinyPeerInfo& peer,
-      std::shared_ptr<const BgpPath> attrs,
-      const PrefixPathId& pfxPid) noexcept;
-
-  /*
-   * @brief: helper function called in processSingleRibInUpdate
-   * @return:
-   *  1. local route announcement if >= minimum_supporting_routes number of
-   *     subnet are processed.
-   *  2. local routes withdrawal if < minimum_supporting_routes number of
-   *     subnet are processed.
-   */
-  std::vector<std::pair<folly::CIDRNetwork, std::shared_ptr<const BgpPath>>>
-  aggregateRoute(
-      RibVrf& vrf,
-      const folly::CIDRNetwork& prefix,
-      bool supportingRouteAnnouncement) noexcept;
 
   // Util function to resume bestpath/fib programming
   void mayResumeBestPathAndFibProgramming(
@@ -1150,11 +1121,13 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * If the nexthop is not in nexthopInfoMap_, it will get the status from
    * nexthopCache_ and create a new NexthopInfo in the map.
    *
-   * @param attrs The route attributes for an announcement
-   * @return A pointer to the NexthopInfo for the nexthop, or nullptr if the
-   * nexthop should not be tracked
+   * @param attrs The route attributes for an announcement, or null for a
+   * withdrawal
+   * @return A pointer to the NexthopInfo for the nexthop, or nullptr if
+   * nexthop tracking is off, attrs is null or the nexthop should not be tracked
    */
-  NexthopInfo* FOLLY_NULLABLE getNexthopInfo(const BgpPath& attrs);
+  NexthopInfo* FOLLY_NULLABLE
+  getNexthopInfo(const std::shared_ptr<const BgpPath>& attrs);
 
   /**
    * @brief Helper method to check if a NexthopInfo should be deleted from

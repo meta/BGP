@@ -28,7 +28,7 @@ namespace facebook::bgp {
 /**
  * Single authoritative in-memory aggregate of RIB-wide counts.
  *
- * Owned by RibBase and mutated only on the RIB EventBase, so it needs no
+ * Owned by each RibVrf and mutated only on the RIB EventBase, so it needs no
  * locking. Each prefix/nexthop mutator updates the in-memory field(s) AND
  * mirrors the matching fb303 ODS counter (via RibStats) in one place, so
  * callers no longer sprinkle RibStats increment/decrement calls across the RIB
@@ -44,6 +44,14 @@ namespace facebook::bgp {
  */
 class RibCounters {
  public:
+  /*
+   * publishToFb303 controls whether mutators mirror counts to fb303. Only one
+   * RibCounters should publish, because the path gauges are set to its own
+   * totals rather than incremented.
+   */
+  explicit RibCounters(bool publishToFb303 = true)
+      : publishToFb303_(publishToFb303) {}
+
   /**
    * IPv6 carries the longest prefixes; IPv4 lengths (0..32) index the same
    * table. Counts are indexed directly by prefix length [0, kMaxPrefixLen].
@@ -55,7 +63,9 @@ class RibCounters {
     auto& a = afiOf(isV4);
     ++a.totalPrefixes;
     ++a.prefixLenCounts[bucket(prefixLen)];
-    RibStats::incrRibPrefixCount();
+    if (publishToFb303_) {
+      RibStats::incrRibPrefixCount();
+    }
   }
 
   /**
@@ -70,7 +80,9 @@ class RibCounters {
     auto& a = afiOf(isV4);
     --a.totalPrefixes;
     --a.prefixLenCounts[bucket(prefixLen)];
-    RibStats::decrRibPrefixCount();
+    if (publishToFb303_) {
+      RibStats::decrRibPrefixCount();
+    }
     onInactivePathsDelta(isV4, -static_cast<int64_t>(inactivePaths));
   }
 
@@ -115,6 +127,9 @@ class RibCounters {
    * independent of FIB programming, which may be paused.
    */
   void publishTotalPathCounters() const {
+    if (!publishToFb303_) {
+      return;
+    }
     RibStats::setTotalPathsCount(static_cast<int64_t>(totalPaths()));
     RibStats::setTotalPathCountForAfi(
         /*isV4=*/true, static_cast<int64_t>(totalPaths(/*isV4=*/true)));
@@ -127,6 +142,9 @@ class RibCounters {
    * two families always sum to the aggregate.
    */
   void publishInactivePathCounters() const {
+    if (!publishToFb303_) {
+      return;
+    }
     RibStats::setInactivePathCount(inactivePaths());
     RibStats::setInactivePathCountForAfi(
         /*isV4=*/true, inactivePaths(/*isV4=*/true));
@@ -137,17 +155,23 @@ class RibCounters {
   /** The set of locally-originated routes was (re)computed to `count`. */
   void setOriginatedRoutes(uint64_t count) {
     originatedRoutes_ = count;
-    RibStats::setOriginatedRoutesSize(count);
+    if (publishToFb303_) {
+      RibStats::setOriginatedRoutesSize(count);
+    }
   }
 
   void incrementUnresolvableNexthopCount() {
     ++unresolvableNexthops_;
-    RibStats::incrUnresolvableNexthopsCount();
+    if (publishToFb303_) {
+      RibStats::incrUnresolvableNexthopsCount();
+    }
   }
 
   void decrementUnresolvableNexthopCount() {
     --unresolvableNexthops_;
-    RibStats::decrUnresolvableNexthopsCount();
+    if (publishToFb303_) {
+      RibStats::decrUnresolvableNexthopsCount();
+    }
   }
 
   /**
@@ -327,6 +351,7 @@ class RibCounters {
     return afis_[isV4 ? 0 : 1];
   }
 
+  const bool publishToFb303_;
   // [0] = IPv4, [1] = IPv6.
   std::array<AfiCounters, 2> afis_{};
   uint64_t originatedRoutes_{0};

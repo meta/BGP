@@ -347,7 +347,7 @@ void MockRib::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
        * route. Do not let it contribute an owner to the canonical FIB-out set
        * count.
        */
-      eraseFibOut(snapshot->second);
+      vrf->eraseFibOut(snapshot->second);
     }
   }
   fulfillRibPrepareFibProgrammingPromise(fibItems.size());

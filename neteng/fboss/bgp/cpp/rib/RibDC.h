@@ -299,7 +299,9 @@ class RibDC : public RibBase {
    * Instance entry point. Runs the CPS-aware orchestrator using the
    * RibDC instance's owned pathSelectionPolicy_.
    */
-  std::pair<bool, bool> runBestPathSelection(RibEntry& entry) noexcept override;
+  std::pair<bool, bool> runBestPathSelection(
+      RibCounters& ribCounters,
+      RibEntry& entry) noexcept override;
 
   /*
    * Static orchestrator with an explicit policy parameter. Used by

@@ -1491,7 +1491,9 @@ void RibDC::overwriteRouteAttributes(
   }
 }
 
-std::pair<bool, bool> RibDC::runBestPathSelection(RibEntry& entry) noexcept {
+std::pair<bool, bool> RibDC::runBestPathSelection(
+    RibCounters& ribCounters,
+    RibEntry& entry) noexcept {
   /*
    * Capture before selectBestPath() — it is the sole producer of
    * isPartialDrain_ and may flip it on the entry. Recording the transition
@@ -1522,8 +1524,9 @@ std::pair<bool, bool> RibDC::runBestPathSelection(RibEntry& entry) noexcept {
       std::optional<BgpUcmpQuantizer>(globalConfig_.ucmpQuantizer),
       pathSelectionPolicy_);
   recordBestpathSourceDelta(
-      entry.getPrefix(), oldSource, entry.getBestPathRaw());
-  recordInactivePathDelta(entry.getPrefix(), oldInactivePathCount, entry);
+      ribCounters, entry.getPrefix(), oldSource, entry.getBestPathRaw());
+  recordInactivePathDelta(
+      ribCounters, entry.getPrefix(), oldInactivePathCount, entry);
 
   /*
    * Defer the partial-drain summary until this path-selection pass completes.

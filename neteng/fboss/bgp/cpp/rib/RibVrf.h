@@ -27,6 +27,8 @@
 #include <folly/io/async/AsyncTimeout.h>
 
 #include "neteng/fboss/bgp/cpp/common/Types.h"
+#include "neteng/fboss/bgp/cpp/rib/FibOut.h"
+#include "neteng/fboss/bgp/cpp/rib/RibCounters.h"
 #include "neteng/fboss/bgp/cpp/rib/RibEntry.h"
 
 namespace facebook::bgp {
@@ -69,6 +71,38 @@ class RibVrf final {
 
   // Adds the entry to fibBatchList_ unless it is already on it.
   void addToFibBatch(RibEntry& entry) noexcept;
+
+  FibNexthopSets& fibNexthopSets() noexcept {
+    return fibNexthopSets_;
+  }
+  const FibNexthopSets& fibNexthopSets() const noexcept {
+    return fibNexthopSets_;
+  }
+
+  // Clears ribEntries_ and fibNexthopSets_, then resets ribCounters_.
+  void clear();
+
+  /*
+   * Removes the entry: erases its FIB-out state, then erases it from
+   * ribEntries_ and, if it was there, releases its counts from ribCounters_.
+   */
+  void remove(RibEntry& entry);
+
+  RibCounters& ribCounters() noexcept {
+    return ribCounters_;
+  }
+  const RibCounters& ribCounters() const noexcept {
+    return ribCounters_;
+  }
+
+  /** Replace one entry's FIB-out state with a canonical nexthop set. */
+  void replaceFibOut(RibEntry& entry, FibOutState state);
+
+  /** Remove one entry's FIB-out state on the RIB event-base thread. */
+  void eraseFibOut(RibEntry& entry);
+
+  /** Return an entry's submitted FIB-out state, or null if none exists. */
+  const FibOutState* FOLLY_NULLABLE findFibOut(const RibEntry& entry) const;
 
   std::unique_ptr<folly::AsyncTimeout>& fibBatchTimer() noexcept {
     return fibBatchTimer_;
@@ -179,6 +213,20 @@ class RibVrf final {
    * management is needed.
    */
   folly::IntrusiveListHook programmingRequestHook_;
+
+  // ========================= FIB-out ========================
+
+  // Canonical immutable nexthop sets referenced by FIB-out route state.
+  FibNexthopSets fibNexthopSets_;
+
+  // ======================== Counters ========================
+
+  /*
+   * Single authoritative aggregate of this VRF's counts. Only the default VRF's
+   * counts are mirrored to fb303 ODS counters. Mutated only on the RIB
+   * EventBase alongside ribEntries_.
+   */
+  RibCounters ribCounters_;
 
   // ======================== RIB version =====================
 

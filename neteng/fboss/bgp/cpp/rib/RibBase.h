@@ -287,19 +287,24 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   /*
    * Get a compact summary (total prefixes + per-prefix-length histogram) of the
-   * RIB for one address family, read from ribCounters_ on this module's evb.
+   * RIB for one address family, read from the VRF's ribCounters_ on this
+   * module's evb. An unknown VRF returns an empty summary.
    */
   neteng::fboss::bgp::thrift::TRibSummary getRibSummary(
-      neteng::fboss::bgp_attr::TBgpAfi afi);
+      neteng::fboss::bgp_attr::TBgpAfi afi,
+      VrfId vrfId = fboss::kDefaultVrf);
 
   /**
-   * Return canonical FIB-out nexthop sets and their shared owner counts.
+   * Return one VRF's canonical FIB-out nexthop sets and their shared owner
+   * counts.
    *
    * The method returns immediately when the immutable startup flag is off.
-   * When enabled, it traverses the canonical-set registry on the RIB event-base
-   * thread and does not scan the RIB.
+   * When enabled, it traverses the VRF's canonical-set registry on the RIB
+   * event-base thread and does not scan the RIB. An unknown VRF returns no
+   * sets.
    */
-  neteng::fboss::bgp::thrift::TFibNexthopDatabase getFibNexthopDatabase();
+  neteng::fboss::bgp::thrift::TFibNexthopDatabase getFibNexthopDatabase(
+      VrfId vrfId = fboss::kDefaultVrf);
 
   /*
    * Get ribEntries by prefixes:
@@ -379,9 +384,10 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   virtual rib_policy::TRibPolicy getRibPolicy();
 
-  // update entry stats
+  // Update entry stats from one VRF; an unknown VRF leaves them unchanged.
   void updateEntryStats(
-      neteng::fboss::bgp::thrift::TEntryStats& stats) noexcept;
+      neteng::fboss::bgp::thrift::TEntryStats& stats,
+      VrfId vrfId = fboss::kDefaultVrf) noexcept;
 
   /**
    * [Partial Drain]
@@ -429,13 +435,13 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   }
 
   /**
-   * Get the total number of prefixes in the loc-RIB across all address
-   * families. Backed by ribCounters_, which is mutated only on the RIB event
-   * base; this reads it via an evb hop (like getRibSummary), so it is safe to
-   * call from the thrift handler thread. For the per-family (IPv4 / IPv6)
-   * split, use getRibSummary (surfaced via "show bgp table summary").
+   * Get the total number of prefixes in one VRF's loc-RIB across all address
+   * families. Backed by the VRF's ribCounters_, which is mutated only on the
+   * RIB event base; this reads it via an evb hop (like getRibSummary), so it is
+   * safe to call from the thrift handler thread. For the per-family (IPv4 /
+   * IPv6) split, use getRibSummary (surfaced via "show bgp table summary").
    */
-  uint64_t getNumPrefixes();
+  uint64_t getNumPrefixes(VrfId vrfId = fboss::kDefaultVrf);
 
   virtual void clearRibPolicy();
 
@@ -592,7 +598,9 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * selectors and UCMP knobs from member state and runs the static
    * selectBestPath orchestrator.
    */
-  virtual std::pair<bool, bool> runBestPathSelection(RibEntry& entry) noexcept;
+  virtual std::pair<bool, bool> runBestPathSelection(
+      RibCounters& ribCounters,
+      RibEntry& entry) noexcept;
 
  protected:
   /**
@@ -616,6 +624,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * selectBestPath override can reuse it.
    */
   void recordBestpathSourceDelta(
+      RibCounters& ribCounters,
       const folly::CIDRNetwork& prefix,
       std::optional<BgpRouteType> oldSource,
       const RouteInfo* newBestpath) noexcept;
@@ -629,6 +638,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * a hook placed only in RibBase::runBestPathSelection would be skipped on DC.
    */
   void recordInactivePathDelta(
+      RibCounters& ribCounters,
       const folly::CIDRNetwork& prefix,
       uint32_t oldCount,
       const RibEntry& entry) noexcept;
@@ -702,14 +712,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   std::unique_ptr<RouteInfoSelector> multipathSelector_{nullptr};
   std::unique_ptr<RouteInfoSelector> bestpathSelector_{nullptr};
 
-  // Canonical immutable nexthop sets referenced by FIB-out route state.
-  FibNexthopSets fibNexthopSets_;
-  /*
-   * Single authoritative aggregate of RIB-wide counts (mirrors fb303 ODS
-   * counters). Mutated only on this module's EventBase alongside ribEntries_.
-   */
-  RibCounters ribCounters_;
-
   /*
    * [Fib -> Rib]
    *
@@ -766,15 +768,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
       const std::string& policyName,
       const folly::CIDRNetwork& prefixes,
       const std::shared_ptr<BgpPath>& preInAttrs);
-
-  /** Replace one entry's FIB-out state with a canonical nexthop set. */
-  void replaceFibOut(RibEntry& entry, FibOutState state);
-
-  /** Remove one entry's FIB-out state on the RIB event-base thread. */
-  void eraseFibOut(RibEntry& entry);
-
-  /** Return an entry's submitted FIB-out state, or null if none exists. */
-  const FibOutState* FOLLY_NULLABLE findFibOut(const RibEntry& entry);
 
   // given config, create local route object
   std::optional<facebook::bgp::LocalRoute> createLocalRoute(
@@ -961,7 +954,7 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
 
   // Steps of handleFibProgrammedMessage for one Fib-programmed prefix.
   bool handleDeletedUnicastRoute(
-      folly::F14NodeMap<folly::CIDRNetwork, RibEntry>& ribEntries,
+      RibVrf& vrf,
       RibEntry& entry,
       const std::shared_ptr<const WeightedNexthopMap>&
           weightedNexthops) noexcept;

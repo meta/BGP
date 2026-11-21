@@ -16,11 +16,21 @@
 
 #include "neteng/fboss/bgp/cpp/rib/RibVrf.h"
 
+#include <folly/logging/xlog.h>
+
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/rib/RibBase.h"
 
 namespace facebook::bgp {
 
-RibVrf::RibVrf(VrfId vrfId, RibBase& owner) : vrfId_(vrfId), owner_(owner) {
+RibVrf::RibVrf(VrfId vrfId, RibBase& owner)
+    : vrfId_(vrfId),
+      owner_(owner),
+      /*
+       * Only the default VRF publishes its counts to fb303.
+       * TODO_CTR_VRF: Publish the counts of every VRF.
+       */
+      ribCounters_(vrfId == fboss::kDefaultVrf) {
   /*
    * initialize fibBatchTimer_ for batch processing of fib programming
    * requests
@@ -33,6 +43,43 @@ void RibVrf::addToFibBatch(RibEntry& entry) noexcept {
   if (!entry.isOnFibBatchList()) {
     fibBatchList_.push_back(entry);
   }
+}
+
+void RibVrf::replaceFibOut(RibEntry& entry, FibOutState state) {
+  DCHECK(owner_.isFibOutTrackingEnabled());
+  CHECK(state.nexthops);
+  entry.fibOutState_ = std::make_shared<const FibOutState>(std::move(state));
+}
+
+void RibVrf::eraseFibOut(RibEntry& entry) {
+  entry.fibOutState_.reset();
+  entry.markFibOutStateAbsent();
+}
+
+const FibOutState* RibVrf::findFibOut(const RibEntry& entry) const {
+  return entry.fibOutState_.get();
+}
+
+void RibVrf::clear() {
+  XLOGF(
+      INFO,
+      "[Exit] Clearing ribEntries_ for VRF {} ({} entries)...",
+      vrfId_,
+      ribEntries_.size());
+  ribEntries_.clear();
+  fibNexthopSets_.clear();
+  ribCounters_.reset();
+}
+
+void RibVrf::remove(RibEntry& entry) {
+  eraseFibOut(entry);
+  // The callback runs only if the entry is erased, before it is destroyed.
+  ribEntries_.eraseInto(
+      entry.getPrefix(),
+      [this](const folly::CIDRNetwork& prefix, const RibEntry& erased) {
+        ribCounters_.onPrefixRemoved(
+            prefix.first.isV4(), prefix.second, erased.getInactivePathCnt());
+      });
 }
 
 void RibVrf::schedulePrepareFibProgrammingTimer() noexcept {

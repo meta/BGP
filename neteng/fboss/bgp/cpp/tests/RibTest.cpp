@@ -515,7 +515,7 @@ TEST_F(RibFibNexthopDatabaseFixture, KeepsCompleteNexthopSetsDistinct) {
   const auto firstOnlyAddress = folly::IPAddress("192.0.2.2");
   const auto secondOnlyAddress = folly::IPAddress("192.0.2.3");
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto firstNexthops = rib_->fibNexthopSets_.getOrCreate({
+    auto firstNexthops = rib_->defaultVrf_.fibNexthopSets().getOrCreate({
         FibOutNexthop{
             .address = sharedAddress,
             .weight = 1,
@@ -527,7 +527,7 @@ TEST_F(RibFibNexthopDatabaseFixture, KeepsCompleteNexthopSetsDistinct) {
             .role = FibOutNexthopRole::BACKUP,
         },
     });
-    auto secondNexthops = rib_->fibNexthopSets_.getOrCreate({
+    auto secondNexthops = rib_->defaultVrf_.fibNexthopSets().getOrCreate({
         FibOutNexthop{
             .address = sharedAddress,
             .weight = 1,
@@ -547,13 +547,13 @@ TEST_F(RibFibNexthopDatabaseFixture, KeepsCompleteNexthopSetsDistinct) {
         rib_->defaultVrf_.ribEntries()
             .emplace(std::make_pair(kV4Prefix2, RibEntry(kV4Prefix2)))
             .first->second;
-    rib_->replaceFibOut(
+    rib_->defaultVrf_.replaceFibOut(
         firstEntry,
         FibOutState{
             .nexthops = std::move(firstNexthops),
             .metadata = FibOutRouteMetadata::program(),
         });
-    rib_->replaceFibOut(
+    rib_->defaultVrf_.replaceFibOut(
         secondEntry,
         FibOutState{
             .nexthops = std::move(secondNexthops),
@@ -585,24 +585,26 @@ TEST_F(RibFibNexthopDatabaseFixture, KeepsCompleteNexthopSetsDistinct) {
       *prefixFibOut.entries()->front().fib_out()->nexthop_set_ref_count(), 1);
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->eraseFibOut(rib_->defaultVrf_.ribEntries().at(kV4Prefix1));
+    rib_->defaultVrf_.eraseFibOut(
+        rib_->defaultVrf_.ribEntries().at(kV4Prefix1));
   });
   const std::vector<TFibNexthopSet> expectedSecondOnly{expected.back()};
   EXPECT_EQ(*rib_->getFibNexthopDatabase().nexthop_sets(), expectedSecondOnly);
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    rib_->eraseFibOut(rib_->defaultVrf_.ribEntries().at(kV4Prefix2));
+    rib_->defaultVrf_.eraseFibOut(
+        rib_->defaultVrf_.ribEntries().at(kV4Prefix2));
   });
   EXPECT_TRUE(rib_->getFibNexthopDatabase().nexthop_sets()->empty());
 }
 
 TEST_F(RibFibNexthopDatabaseFixture, TracksEmptySubmittedNexthopSet) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto emptyNexthops = rib_->fibNexthopSets_.getOrCreate({});
+    auto emptyNexthops = rib_->defaultVrf_.fibNexthopSets().getOrCreate({});
     auto& entry = rib_->defaultVrf_.ribEntries()
                       .emplace(std::make_pair(kV4Prefix1, RibEntry(kV4Prefix1)))
                       .first->second;
-    rib_->replaceFibOut(
+    rib_->defaultVrf_.replaceFibOut(
         entry,
         FibOutState{
             .nexthops = std::move(emptyNexthops),
@@ -628,7 +630,7 @@ TEST_F(RibFibNexthopDatabaseFixture, TracksEmptySubmittedNexthopSet) {
 
 TEST_F(RibFibNexthopDatabaseFixture, PropagatesConversionFailure) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    auto invalidNexthops = rib_->fibNexthopSets_.getOrCreate({
+    auto invalidNexthops = rib_->defaultVrf_.fibNexthopSets().getOrCreate({
         FibOutNexthop{
             .address = kV4Nexthop1,
             .weight = 1,
@@ -638,7 +640,7 @@ TEST_F(RibFibNexthopDatabaseFixture, PropagatesConversionFailure) {
     auto& entry = rib_->defaultVrf_.ribEntries()
                       .emplace(std::make_pair(kV4Prefix1, RibEntry(kV4Prefix1)))
                       .first->second;
-    rib_->replaceFibOut(
+    rib_->defaultVrf_.replaceFibOut(
         entry,
         FibOutState{
             .nexthops = std::move(invalidNexthops),
@@ -3067,8 +3069,8 @@ TEST_F(RibFixture, HandleDeletedUnicastRouteIgnoresProgrammedRoute) {
     auto nexthops = std::make_shared<const WeightedNexthopMap>(
         WeightedNexthopMap{{kV4Nexthop1, 1}});
 
-    EXPECT_FALSE(rib_->handleDeletedUnicastRoute(
-        rib_->defaultVrf_.ribEntries(), entry, nexthops));
+    EXPECT_FALSE(
+        rib_->handleDeletedUnicastRoute(rib_->defaultVrf_, entry, nexthops));
     EXPECT_TRUE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
   });
 }
@@ -3080,14 +3082,17 @@ TEST_F(RibFixture, HandleDeletedUnicastRouteIgnoresProgrammedRoute) {
 TEST_F(RibFixture, HandleDeletedUnicastRouteErasesEntryWithNoPaths) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
-    rib_->ribCounters_.onPrefixAdded(true, kV4Prefix1.second);
+    rib_->defaultVrf_.ribCounters().onPrefixAdded(true, kV4Prefix1.second);
     auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
-    const auto prefixesBefore = rib_->ribCounters_.totalPrefixes(true);
+    const auto prefixesBefore =
+        rib_->defaultVrf_.ribCounters().totalPrefixes(true);
 
-    EXPECT_TRUE(rib_->handleDeletedUnicastRoute(
-        rib_->defaultVrf_.ribEntries(), entry, nullptr));
+    EXPECT_TRUE(
+        rib_->handleDeletedUnicastRoute(rib_->defaultVrf_, entry, nullptr));
     EXPECT_FALSE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
-    EXPECT_EQ(prefixesBefore - 1, rib_->ribCounters_.totalPrefixes(true));
+    EXPECT_EQ(
+        prefixesBefore - 1,
+        rib_->defaultVrf_.ribCounters().totalPrefixes(true));
   });
 }
 
@@ -3101,8 +3106,8 @@ TEST_F(RibFixture, HandleDeletedUnicastRouteKeepsEntryOnFibBatchList) {
     auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     rib_->defaultVrf_.fibBatchList().push_back(entry);
 
-    EXPECT_TRUE(rib_->handleDeletedUnicastRoute(
-        rib_->defaultVrf_.ribEntries(), entry, nullptr));
+    EXPECT_TRUE(
+        rib_->handleDeletedUnicastRoute(rib_->defaultVrf_, entry, nullptr));
     EXPECT_TRUE(rib_->defaultVrf_.ribEntries().contains(kV4Prefix1));
 
     rib_->defaultVrf_.fibBatchList().clear();
@@ -3575,7 +3580,7 @@ TEST_F(RibFixture, FibProgrammedSkippedRoutesDoNotConsumeRibVersion) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     // kV4Prefix1 is deleted from Fib and has no paths left.
     rib_->defaultVrf_.ribEntries().emplace(kV4Prefix1, RibEntry(kV4Prefix1));
-    rib_->ribCounters_.onPrefixAdded(true, kV4Prefix1.second);
+    rib_->defaultVrf_.ribCounters().onPrefixAdded(true, kV4Prefix1.second);
     // kV4Prefix2 is stale and kV4Prefix3 is up to date.
     for (const auto& prefix : {kV4Prefix2, kV4Prefix3}) {
       rib_->defaultVrf_.ribEntries().emplace(prefix, RibEntry(prefix));

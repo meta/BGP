@@ -56,6 +56,29 @@ TEST(RibCountersTest, PrefixCountTracksFieldAndFb303) {
   EXPECT_EQ(1, counter(RibStats::kRibPrefixCount));
 }
 
+// Counters built with publishToFb303 = false keep their counts in memory only.
+TEST(RibCountersTest, NonPublishingCountersLeaveFb303Unchanged) {
+  RibStats::initCounters();
+  RibCounters c{/*publishToFb303=*/false};
+
+  c.onPrefixAdded(/*isV4=*/true, 24);
+  c.onPathsDelta(/*isV4=*/true, 3);
+  c.onInactivePathsDelta(/*isV4=*/true, 1);
+  c.publishTotalPathCounters();
+  c.setOriginatedRoutes(2);
+  c.incrementUnresolvableNexthopCount();
+
+  EXPECT_EQ(1, c.totalPrefixes());
+  EXPECT_EQ(3, c.totalPaths());
+  EXPECT_EQ(1, c.inactivePaths());
+  EXPECT_EQ(2, c.originatedRoutes());
+  EXPECT_EQ(1, c.unresolvableNexthops());
+  EXPECT_EQ(0, counter(RibStats::kRibPrefixCount));
+  EXPECT_EQ(0, counter(RibStats::kTotalPathsCount));
+  EXPECT_EQ(0, counter(RibStats::kInactivePathCount));
+  EXPECT_EQ(0, counter(RibStats::kRibUnresolvableNexthopsCount));
+}
+
 // Total and per-prefix-length counts are split per address family.
 TEST(RibCountersTest, PerAfiPrefixAndPerLengthCounts) {
   RibStats::initCounters();

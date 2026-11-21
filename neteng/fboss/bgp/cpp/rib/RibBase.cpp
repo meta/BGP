@@ -211,7 +211,8 @@ RibBase::RibBase(
       conditionalLocalRoutes_[nexthop].push_back(prefix);
     }
   }
-  ribCounters_.setOriginatedRoutes(localRoutes_.size());
+  // TODO_NH_VRF: Set the originated route count in the counters of its VRF.
+  defaultVrf_.ribCounters().setOriginatedRoutes(localRoutes_.size());
 
   // bounds the deferred initial full-sync's wait for nexthop resolution
   nexthopResolutionTimer_ = folly::AsyncTimeout::make(
@@ -352,17 +353,9 @@ void RibBase::cleanupCommon() noexcept {
    * Clearing here while nexthopInfoMap_ is still valid lets RouteInfo
    * destructors unlink from their NexthopInfo association lists.
    */
-  for (auto& [vrfId, ribVrf] : ribVrfs_) {
-    auto& ribEntries = ribVrf->ribEntries();
-    XLOGF(
-        INFO,
-        "[Exit] Clearing ribEntries_ for VRF {} ({} entries)...",
-        vrfId,
-        ribEntries.size());
-    ribEntries.clear();
+  for (auto& [_, ribVrf] : ribVrfs_) {
+    ribVrf->clear();
   }
-  fibNexthopSets_.clear();
-  ribCounters_.reset();
   XLOG(INFO, "[Exit] ribEntries_ cleared");
 
   /*
@@ -457,10 +450,10 @@ folly::coro::Task<void> RibBase::processFibProgrammingMsgLoop() noexcept {
                      : std::optional<folly::IPAddress>{},
             globalConfig_.enableFibOutTracking);
         if (fibOutRoute) {
-          replaceFibOut(
+          vrf.replaceFibOut(
               entry,
               FibOutState{
-                  .nexthops = fibNexthopSets_.getOrCreate(
+                  .nexthops = vrf.fibNexthopSets().getOrCreate(
                       std::move(fibOutRoute->nexthops)),
                   .metadata = fibOutRoute->metadata,
                   .topologyInfo = std::move(fibOutRoute->topologyInfo),
@@ -722,7 +715,7 @@ void RibBase::processRibInAnnouncement(
       processSingleRibInUpdate(vrf, kV4LocalPeerInfo, bgpAttrs, aggPfxPid);
     }
   }
-  ribCounters_.publishTotalPathCounters();
+  vrf.ribCounters().publishTotalPathCounters();
   // Subscribe any nexthops newly learned while processing this batch.
   maybeFlushNexthopSubscriptions();
   if (ribEoRReceived_) {
@@ -745,21 +738,6 @@ void RibBase::maybeFlushNexthopSubscriptions() noexcept {
   pendingNexthopSubscriptions_.clear();
 }
 
-void RibBase::replaceFibOut(RibEntry& entry, FibOutState state) {
-  DCHECK(globalConfig_.enableFibOutTracking);
-  CHECK(state.nexthops);
-  entry.fibOutState_ = std::make_shared<const FibOutState>(std::move(state));
-}
-
-void RibBase::eraseFibOut(RibEntry& entry) {
-  entry.fibOutState_.reset();
-  entry.markFibOutStateAbsent();
-}
-
-const FibOutState* RibBase::findFibOut(const RibEntry& entry) {
-  return entry.fibOutState_.get();
-}
-
 void RibBase::checkWithdrawalBeforeRouteProgrammed(
     RibVrf& vrf,
     folly::CIDRNetwork& prefix,
@@ -774,10 +752,7 @@ void RibBase::checkWithdrawalBeforeRouteProgrammed(
         DBG1,
         "The case of new prefix {} announcement followed by withdrawal during Fib-programming timer.",
         folly::IPAddress::networkToString(prefix));
-    ribCounters_.onPrefixRemoved(
-        prefix.first.isV4(), prefix.second, entry.getInactivePathCnt());
-    eraseFibOut(entry);
-    vrf.ribEntries().erase(prefix);
+    vrf.remove(entry);
   }
 }
 
@@ -811,7 +786,7 @@ void RibBase::processRibInWithdrawal(
       processSingleRibInUpdate(vrf, kV4LocalPeerInfo, bgpAttrs, aggPfxPid);
     }
   }
-  ribCounters_.publishTotalPathCounters();
+  vrf.ribCounters().publishTotalPathCounters();
   // Aggregate/local routes injected above may introduce new nexthops.
   maybeFlushNexthopSubscriptions();
   if (ribEoRReceived_) {
@@ -853,7 +828,7 @@ RibBase::processSingleRibInUpdate(
     }
     // add prefix to ribEntries_
     kv = ribEntries.emplace(std::make_pair(prefix, RibEntry(prefix))).first;
-    ribCounters_.onPrefixAdded(prefix.first.isV4(), prefix.second);
+    vrf.ribCounters().onPrefixAdded(prefix.first.isV4(), prefix.second);
   }
   auto& entry = kv->second;
   /*
@@ -910,7 +885,7 @@ RibBase::processSingleRibInUpdate(
    * this prefix's path count is add-path-correct here, and aggregate routes
    * also funnel through this method.
    */
-  ribCounters_.onPathsDelta(
+  vrf.ribCounters().onPathsDelta(
       prefix.first.isV4(),
       static_cast<int64_t>(newAllPathCnt) -
           static_cast<int64_t>(oldAllPathCnt));
@@ -1374,11 +1349,12 @@ void RibBase::processRibInNexthopUpdate(
       const bool needsPathSelection =
           isIgpCostChanged || isResolvabilityChanged;
 
+      // TODO_NH_VRF: Count unresolvable nexthops in the counters of their VRF.
       if (isResolvabilityChanged) {
         if (isResolved) {
-          ribCounters_.decrementUnresolvableNexthopCount();
+          defaultVrf_.ribCounters().decrementUnresolvableNexthopCount();
         } else {
-          ribCounters_.incrementUnresolvableNexthopCount();
+          defaultVrf_.ribCounters().incrementUnresolvableNexthopCount();
         }
       }
       if (isReachabilityChanged) {
@@ -1867,24 +1843,28 @@ std::optional<BgpRouteType> RibBase::bestpathSource(
 }
 
 void RibBase::recordBestpathSourceDelta(
+    RibCounters& ribCounters,
     const folly::CIDRNetwork& prefix,
     std::optional<BgpRouteType> oldSource,
     const RouteInfo* newBestpath) noexcept {
-  ribCounters_.onBestpathSourceChanged(
+  ribCounters.onBestpathSourceChanged(
       prefix.first.isV4(), oldSource, bestpathSource(newBestpath));
 }
 
 void RibBase::recordInactivePathDelta(
+    RibCounters& ribCounters,
     const folly::CIDRNetwork& prefix,
     uint32_t oldCount,
     const RibEntry& entry) noexcept {
-  ribCounters_.onInactivePathsDelta(
+  ribCounters.onInactivePathsDelta(
       prefix.first.isV4(),
       static_cast<int64_t>(entry.getInactivePathCnt()) -
           static_cast<int64_t>(oldCount));
 }
 
-std::pair<bool, bool> RibBase::runBestPathSelection(RibEntry& entry) noexcept {
+std::pair<bool, bool> RibBase::runBestPathSelection(
+    RibCounters& ribCounters,
+    RibEntry& entry) noexcept {
   /*
    * Capture the winner's source class (a small value, not the owning
    * shared_ptr) before selection so the delta covers every bestpath write
@@ -1908,8 +1888,9 @@ std::pair<bool, bool> RibBase::runBestPathSelection(RibEntry& entry) noexcept {
       std::optional<BgpUcmpQuantizer>(globalConfig_.ucmpQuantizer));
 
   recordBestpathSourceDelta(
-      entry.getPrefix(), oldSource, entry.getBestPathRaw());
-  recordInactivePathDelta(entry.getPrefix(), oldInactivePathCount, entry);
+      ribCounters, entry.getPrefix(), oldSource, entry.getBestPathRaw());
+  recordInactivePathDelta(
+      ribCounters, entry.getPrefix(), oldInactivePathCount, entry);
   return result;
 }
 
@@ -1963,7 +1944,8 @@ void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
     prefixesToOverwriteRouteAttributes.insert(prefix);
 
     auto pathSelectionStartTime = std::chrono::steady_clock::now();
-    auto [bestpathChanged, nexthopChanged] = runBestPathSelection(ribEntry);
+    auto [bestpathChanged, nexthopChanged] =
+        runBestPathSelection(vrf->ribCounters(), ribEntry);
     if (ribEntry.consumeNexthopResolvabilityChangePending()) {
       RibStats::incrNhtRibResolvabilityChangePrefixReevaluation();
     }
@@ -2118,7 +2100,7 @@ void RibBase::prepareFibProgramming(VrfId vrfId, bool fullSync) noexcept {
    * any such work itself.
    */
   onPrepareFibProgrammingComplete(fullSync);
-  ribCounters_.publishInactivePathCounters();
+  vrf->ribCounters().publishInactivePathCounters();
 
   // If no entry in fib update list and not full sync, skip fib programming
   if (fibBatchList.empty() && !fullSync) {
@@ -2323,7 +2305,7 @@ void RibBase::handleFibProgrammedMessage(
       auto& entry = kv->second;
 
       /* Handle prefix removed from Fib by deleteUnicastRoutes. */
-      if (handleDeletedUnicastRoute(ribEntries, entry, weightedNexthops)) {
+      if (handleDeletedUnicastRoute(*vrf, entry, weightedNexthops)) {
         continue;
       }
       /* Handle prefix whose FIB programmed nexthops are outdated. */
@@ -2369,7 +2351,7 @@ void RibBase::handleFibProgrammedMessage(
   }
 
   // publish unicast routes size.
-  // TODO(T298290036): Publish the unicast route count of every VRF.
+  // TODO_CTR_VRF(T298290036): Publish the unicast route count of every VRF.
   if (msg.vrfId == fboss::kDefaultVrf) {
     FibStats::publishTotalUCastRoutes(ribEntries.size());
   }
@@ -2386,7 +2368,7 @@ void RibBase::handleFibProgrammedMessage(
  * from Fib.
  */
 bool RibBase::handleDeletedUnicastRoute(
-    folly::F14NodeMap<folly::CIDRNetwork, RibEntry>& ribEntries,
+    RibVrf& vrf,
     RibEntry& entry,
     const std::shared_ptr<const WeightedNexthopMap>&
         weightedNexthops) noexcept {
@@ -2406,10 +2388,7 @@ bool RibBase::handleDeletedUnicastRoute(
           DBG3,
           "All paths withdrawn for {}, deleting RibEntry.",
           folly::IPAddress::networkToString(prefix));
-      ribCounters_.onPrefixRemoved(
-          prefix.first.isV4(), prefix.second, entry.getInactivePathCnt());
-      eraseFibOut(entry);
-      ribEntries.erase(prefix);
+      vrf.remove(entry);
     } else {
       XLOGF(
           DBG1,
@@ -2734,7 +2713,7 @@ void RibBase::handleAddUpdatedMultipathDelta(
   }
 }
 
-TFibNexthopDatabase RibBase::getFibNexthopDatabase() {
+TFibNexthopDatabase RibBase::getFibNexthopDatabase(VrfId vrfId) {
   TFibNexthopDatabase database;
   database.enabled() = globalConfig_.enableFibOutTracking;
   if (!globalConfig_.enableFibOutTracking) {
@@ -2743,9 +2722,14 @@ TFibNexthopDatabase RibBase::getFibNexthopDatabase() {
 
   std::exception_ptr traversalException;
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() noexcept {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    const auto& fibNexthopSets = vrf->fibNexthopSets();
     try {
-      database.nexthop_sets()->reserve(fibNexthopSets_.size());
-      fibNexthopSets_.forEach(
+      database.nexthop_sets()->reserve(fibNexthopSets.size());
+      fibNexthopSets.forEach(
           [&](const FibNexthopSet& nexthops, size_t routeRefCount) {
             database.nexthop_sets()->push_back(toThriftFibNexthopSet(
                 nexthops, static_cast<int64_t>(routeRefCount)));
@@ -2834,7 +2818,7 @@ TFibOutTable RibBase::getFibOutPrefix(
     }
     TFibOutEntry entry;
     entry.prefix() = buildTPrefix(ribEntry->first);
-    if (const auto* fibOut = findFibOut(ribEntry->second)) {
+    if (const auto* fibOut = vrf->findFibOut(ribEntry->second)) {
       auto thriftFibOut = toThriftFibOutRoute(*fibOut);
       thriftFibOut.nexthop_set_ref_count() =
           static_cast<int64_t>(fibOut->nexthops.use_count());
@@ -2845,7 +2829,7 @@ TFibOutTable RibBase::getFibOutPrefix(
   return table;
 }
 
-TRibSummary RibBase::getRibSummary(TBgpAfi afi) {
+TRibSummary RibBase::getRibSummary(TBgpAfi afi, VrfId vrfId) {
   TRibSummary summary;
   summary.afi() = afi;
 
@@ -2854,32 +2838,40 @@ TRibSummary RibBase::getRibSummary(TBgpAfi afi) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    const auto& ribCounters = vrf->ribCounters();
     const bool isV4 = afi == TBgpAfi::AFI_IPV4;
-    summary.total_prefixes() = ribCounters_.totalPrefixes(isV4);
-    summary.total_paths() = ribCounters_.totalPaths(isV4);
-    summary.inactive_paths() = ribCounters_.inactivePaths(isV4);
-    const auto& counts = ribCounters_.prefixLenCounts(isV4);
+    summary.total_prefixes() = ribCounters.totalPrefixes(isV4);
+    summary.total_paths() = ribCounters.totalPaths(isV4);
+    summary.inactive_paths() = ribCounters.inactivePaths(isV4);
+    const auto& counts = ribCounters.prefixLenCounts(isV4);
     for (size_t len = 0; len < counts.size(); ++len) {
       if (counts[len] != 0) {
         summary.prefix_length_counts()[static_cast<int16_t>(len)] = counts[len];
       }
     }
-    summary.ebgp_prefixes() = ribCounters_.ebgpPrefixes(isV4);
-    summary.ibgp_prefixes() = ribCounters_.ibgpPrefixes(isV4);
-    summary.confed_ebgp_prefixes() = ribCounters_.confedEbgpPrefixes(isV4);
-    summary.local_prefixes() = ribCounters_.localPrefixes(isV4);
+    summary.ebgp_prefixes() = ribCounters.ebgpPrefixes(isV4);
+    summary.ibgp_prefixes() = ribCounters.ibgpPrefixes(isV4);
+    summary.confed_ebgp_prefixes() = ribCounters.confedEbgpPrefixes(isV4);
+    summary.local_prefixes() = ribCounters.localPrefixes(isV4);
     // RIB-wide (not per-AFI); identical in both responses.
-    summary.unresolvable_nexthops_count() = ribCounters_.unresolvableNexthops();
+    summary.unresolvable_nexthops_count() = ribCounters.unresolvableNexthops();
     summary.routes_with_unresolved_nexthops() =
-        ribCounters_.routesWithUnresolvedNexthops(isV4);
+        ribCounters.routesWithUnresolvedNexthops(isV4);
   });
   return summary;
 }
 
-uint64_t RibBase::getNumPrefixes() {
+uint64_t RibBase::getNumPrefixes(VrfId vrfId) {
   uint64_t count = 0;
-  evb_.runImmediatelyOrRunInEventBaseThreadAndWait(
-      [&]() { count = ribCounters_.totalPrefixes(); });
+  evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    if (const auto* vrf = findVrf(vrfId)) {
+      count = vrf->ribCounters().totalPrefixes();
+    }
+  });
   return count;
 }
 std::vector<TRibEntry> RibBase::getRibEntriesForCommunities(
@@ -3400,18 +3392,23 @@ rib_policy::TRibPolicy RibBase::getRibPolicy() {
   return result;
 }
 
-void RibBase::updateEntryStats(TEntryStats& stats) noexcept {
-  stats.total_ucast_routes() = defaultVrf_.ribEntries().size();
-  stats.total_originated_routes() = localRoutes_.size();
+void RibBase::updateEntryStats(TEntryStats& stats, VrfId vrfId) noexcept {
+  evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    const auto* vrf = findVrf(vrfId);
+    if (!vrf) {
+      return;
+    }
+    stats.total_ucast_routes() = vrf->ribEntries().size();
+    stats.total_originated_routes() = localRoutes_.size();
 
-  /*
-   * total_rib_paths is the add-path-correct sum of every prefix's path count.
-   * RibCounters maintains it incrementally on the RIB evb (see onPathsDelta),
-   * so read it directly instead of walking all ribEntries_ (O(total paths)) on
-   * every getEntryStats call.
-   */
-  evb_.runImmediatelyOrRunInEventBaseThreadAndWait(
-      [&]() { stats.total_rib_paths() = ribCounters_.totalPaths(); });
+    /*
+     * total_rib_paths is the add-path-correct sum of every prefix's path count.
+     * RibCounters maintains it incrementally on the RIB evb (see onPathsDelta),
+     * so read it directly instead of walking all ribEntries_ (O(total paths))
+     * on every getEntryStats call.
+     */
+    stats.total_rib_paths() = vrf->ribCounters().totalPaths();
+  });
 }
 
 void RibBase::clearRibPolicy() {
@@ -3768,8 +3765,9 @@ NexthopInfo* FOLLY_NULLABLE RibBase::getNexthopInfo(const BgpPath& attrs) {
       nexthopInfoMap_.emplace(nexthop, NexthopInfo(nextHopStatus));
   if (inserted) {
     RibStats::incrNexthopInfoCount();
+    // TODO_NH_VRF: Count unresolvable nexthops in the counters of their VRF.
     if (!nextHopStatus.isResolvedForSelection()) {
-      ribCounters_.incrementUnresolvableNexthopCount();
+      defaultVrf_.ribCounters().incrementUnresolvableNexthopCount();
     }
   }
 
@@ -3860,8 +3858,9 @@ RibBase::NexthopInfoMap::iterator RibBase::deleteNexthopInfo(
       DBG2, "Deleting nexthop status for {} from nexthopCache", nexthop.str());
   nexthopCache_->unregisterAndRemoveNexthopStatus(nexthop);
 
+  // TODO_NH_VRF: Count unresolvable nexthops in the counters of their VRF.
   if (!it->second.isResolvedForSelection()) {
-    ribCounters_.decrementUnresolvableNexthopCount();
+    defaultVrf_.ribCounters().decrementUnresolvableNexthopCount();
   }
 
   // Delete from nexthopInfoMap_

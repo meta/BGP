@@ -157,7 +157,7 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
     EXPECT_CALL(*fib_, program_(true)).WillOnce([this, &firstExpected](bool) {
       const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
       EXPECT_FALSE(entry.isOnFibBatchList());
-      const auto* fibOut = rib_->findFibOut(entry);
+      const auto* fibOut = rib_->defaultVrf_.findFibOut(entry);
       ASSERT_NE(fibOut, nullptr);
       EXPECT_EQ(*fibOut->nexthops, firstExpected);
       EXPECT_EQ(fibOut->metadata, FibOutRouteMetadata::program());
@@ -180,7 +180,7 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
     EXPECT_CALL(*fib_, program_(false)).WillOnce([this, &secondExpected](bool) {
       const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
       EXPECT_FALSE(entry.isOnFibBatchList());
-      const auto* fibOut = rib_->findFibOut(entry);
+      const auto* fibOut = rib_->defaultVrf_.findFibOut(entry);
       ASSERT_NE(fibOut, nullptr);
       EXPECT_EQ(*fibOut->nexthops, secondExpected);
       EXPECT_EQ(fibOut->metadata, FibOutRouteMetadata::program());
@@ -207,7 +207,7 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
     rib_->prepareFibProgramming(fboss::kDefaultVrf, true);
     const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     EXPECT_TRUE(entry.isOnFibBatchList());
-    EXPECT_EQ(rib_->findFibOut(entry), nullptr);
+    EXPECT_EQ(rib_->defaultVrf_.findFibOut(entry), nullptr);
     const auto table =
         rib_->getFibOutPrefix(folly::IPAddress::networkToString(kV4Prefix1));
     ASSERT_EQ(table.entries()->size(), 1);
@@ -224,7 +224,7 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
     rib_->prepareFibProgramming(fboss::kDefaultVrf, false);
     const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     EXPECT_TRUE(entry.isOnFibBatchList());
-    const auto* fibOut = rib_->findFibOut(entry);
+    const auto* fibOut = rib_->defaultVrf_.findFibOut(entry);
     ASSERT_NE(fibOut, nullptr);
     EXPECT_EQ(*fibOut->nexthops, firstExpected);
     const auto table =
@@ -245,7 +245,7 @@ TEST_F(FibOutRibFixture, ChangesAtPlatformStagingBoundary) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     const auto& entry = rib_->defaultVrf_.ribEntries().at(kV4Prefix1);
     EXPECT_FALSE(entry.isOnFibBatchList());
-    const auto* fibOut = rib_->findFibOut(entry);
+    const auto* fibOut = rib_->defaultVrf_.findFibOut(entry);
     ASSERT_NE(fibOut, nullptr);
     EXPECT_EQ(*fibOut->nexthops, secondExpected);
   });

@@ -19,6 +19,7 @@
 #include <folly/logging/xlog.h>
 
 #include "fboss/agent/Constants.h"
+#include "neteng/fboss/bgp/cpp/BgpProfiler.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/Utils.h"
 #include "neteng/fboss/bgp/cpp/rib/RibBase.h"
@@ -314,6 +315,75 @@ RibVrf::AggregateRoutes RibVrf::aggregateRoute(
     }
   }
   return aggRoutes;
+}
+
+size_t RibVrf::populateFibBatch(Fib* FOLLY_NONNULL fib) {
+  size_t toFibTotal = 0;
+  auto iter = fibBatchList_.begin();
+  auto endIter = fibBatchList_.end();
+
+  {
+    ScopedProfile profile("RibBase::fibProgramming_batch");
+    while (iter != endIter) {
+      auto& entry = *iter;
+      const auto& prefix = entry.getPrefix();
+      const auto& weightedNexthops = entry.getMultipathWeightedNexthops();
+      const auto& bestPath = entry.getBestPath();
+      const auto& nexthopTopoInfoMap = entry.getNexthopTopoInfoMap();
+      auto routeType = BgpRouteType::UNKNOWN;
+      bool isLocalRouteBest = false;
+      if (bestPath) {
+        const auto& bestPathNexthop = bestPath->attrs->getNexthop();
+        isLocalRouteBest = (bestPathNexthop == kLocalRouteV4Nexthop) ||
+            (bestPathNexthop == kLocalRouteV6Nexthop);
+
+        routeType = *RibBase::bestpathSource(bestPath.get());
+      }
+      const auto& installToFib = entry.getInstallToFib();
+      ++iter;
+
+      auto fibOutRoute = fib->updateUnicastRouteWithBackup(
+          prefix,
+          (bestPath) ? bestPath->attrs : nullptr,
+          weightedNexthops,
+          isLocalRouteBest,
+          installToFib,
+          owner_.nexthopInfoMap_,
+          std::nullopt, /* classId */
+          nexthopTopoInfoMap,
+          routeType,
+          bestPath ? bestPath->attrs->getBackupAddr()
+                   : std::optional<folly::IPAddress>{},
+          owner_.isFibOutTrackingEnabled());
+      if (fibOutRoute) {
+        replaceFibOut(
+            entry,
+            FibOutState{
+                .nexthops = fibNexthopSets_.getOrCreate(
+                    std::move(fibOutRoute->nexthops)),
+                .metadata = fibOutRoute->metadata,
+                .topologyInfo = std::move(fibOutRoute->topologyInfo),
+            });
+      }
+      /*
+       * When enableFibOutTracking is false, the FIB update is still added to
+       * the programming batch, but no retained payload is returned. Record
+       * FibOut presence independently; explicit NONE/removal updates also
+       * count.
+       */
+      entry.markFibOutStatePresent();
+      toFibTotal++;
+
+      // log per prefix
+      XLOG_IF(
+          DBG1,
+          owner_.enableUnicastRouteLogging(prefix),
+          logRouteWithNexthops(prefix, weightedNexthops));
+    }
+  } // ScopedProfile for fibProgramming_batch
+
+  fibBatchList_.clear();
+  return toFibTotal;
 }
 
 void RibVrf::schedulePrepareFibProgrammingTimer() noexcept {

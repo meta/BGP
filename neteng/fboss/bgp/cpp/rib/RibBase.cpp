@@ -409,73 +409,7 @@ folly::coro::Task<void> RibBase::processFibProgrammingMsgLoop() noexcept {
       continue;
     }
 
-    auto& fibBatchList = vrf.fibBatchList();
-    // TODO: put the fibBatchList_ population into a separate function call
-    auto toFibTotal = 0;
-    auto iter = fibBatchList.begin();
-    auto endIter = fibBatchList.end();
-
-    {
-      ScopedProfile profile("RibBase::fibProgramming_batch");
-      while (iter != endIter) {
-        auto& entry = *iter;
-        const auto& prefix = entry.getPrefix();
-        const auto& weightedNexthops = entry.getMultipathWeightedNexthops();
-        const auto& bestPath = entry.getBestPath();
-        const auto& nexthopTopoInfoMap = entry.getNexthopTopoInfoMap();
-        auto routeType = BgpRouteType::UNKNOWN;
-        bool isLocalRouteBest = false;
-        if (bestPath) {
-          const auto& bestPathNexthop = bestPath->attrs->getNexthop();
-          isLocalRouteBest = (bestPathNexthop == kLocalRouteV4Nexthop) ||
-              (bestPathNexthop == kLocalRouteV6Nexthop);
-
-          routeType = getBgpPathType(bestPath.get());
-        }
-        const auto& installToFib = entry.getInstallToFib();
-        ++iter;
-
-        auto fibOutRoute = fib_->updateUnicastRouteWithBackup(
-            prefix,
-            (bestPath) ? bestPath->attrs : nullptr,
-            weightedNexthops,
-            isLocalRouteBest,
-            installToFib,
-            nexthopInfoMap_,
-            std::nullopt, /* classId */
-            nexthopTopoInfoMap,
-            routeType,
-            bestPath ? bestPath->attrs->getBackupAddr()
-                     : std::optional<folly::IPAddress>{},
-            globalConfig_.enableFibOutTracking);
-        if (fibOutRoute) {
-          vrf.replaceFibOut(
-              entry,
-              FibOutState{
-                  .nexthops = vrf.fibNexthopSets().getOrCreate(
-                      std::move(fibOutRoute->nexthops)),
-                  .metadata = fibOutRoute->metadata,
-                  .topologyInfo = std::move(fibOutRoute->topologyInfo),
-              });
-        }
-        /*
-         * When enableFibOutTracking is false, the FIB update is still added to
-         * the programming batch, but no retained payload is returned. Record
-         * FibOut presence independently; explicit NONE/removal updates also
-         * count.
-         */
-        entry.markFibOutStatePresent();
-        toFibTotal++;
-
-        // log per prefix
-        XLOG_IF(
-            DBG1,
-            enableUnicastRouteLogging(prefix),
-            logRouteWithNexthops(prefix, weightedNexthops));
-      }
-    } // ScopedProfile for fibProgramming_batch
-
-    fibBatchList.clear();
+    const auto toFibTotal = vrf.populateFibBatch(fib_.get());
     deleteUnusedNexthopInfos();
     if (fullSync || toFibTotal) {
       XLOGF(DBG2, "Added {} prefixes to Fib batch", toFibTotal);

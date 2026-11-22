@@ -35,6 +35,7 @@
 
 namespace facebook::bgp {
 
+class Fib;
 class RibBase;
 
 class RibVrf final {
@@ -77,6 +78,13 @@ class RibVrf final {
 
   // Adds the entry to fibBatchList_ unless it is already on it.
   void addToFibBatch(RibEntry& entry) noexcept;
+
+  /*
+   * Adds a FIB update for every entry on fibBatchList_ to the FIB batch,
+   * records each entry's FIB-out state, then clears fibBatchList_. Returns the
+   * number of entries added.
+   */
+  size_t populateFibBatch(Fib* FOLLY_NONNULL fib);
 
   FibNexthopSets& fibNexthopSets() noexcept {
     return fibNexthopSets_;

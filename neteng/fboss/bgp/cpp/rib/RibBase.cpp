@@ -2565,7 +2565,10 @@ void RibBase::handleFibSyncReq(const Fib::FibSyncReq& /* unused */) noexcept {
         "Setting FibSyncReqPending_ flag to trigger fullSync when resumed.");
     return;
   }
-  prepareFibProgramming(fboss::kDefaultVrf, true /* fullSync */);
+  // The FIB agent lost every VRF's routes; full-sync each VRF.
+  for (const auto& [vrfId, _] : ribVrfs_) {
+    prepareFibProgramming(vrfId, true /* fullSync */);
+  }
 }
 
 std::vector<TRibEntry> RibBase::getRibEntries(TBgpAfi afi, VrfId vrfId) {

@@ -1231,18 +1231,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   std::chrono::milliseconds fibBatchTime_{kFibBatchTimeDefault};
 
   /*
-   * [Initialization]
-   *
-   * One time flags:
-   *  - initialEorSent_: the flag indicates Rib has successfully programed
-   *          initial FULL_SYNC to fib and EoR has been sent out from RIB;
-   *  - ribEoRReceived_: the flag indicates Rib has received the notification
-   *                    from PeerManagerBase to unblock initial RIB computation;
-   */
-  bool initialEorSent_{false};
-  bool ribEoRReceived_{false};
-
-  /*
    * Set once the first NexthopResolutionUpdate has been processed (conditional
    * local routes, if any, advertised into ribEntries_). Gates the initial
    * full-sync when hasConditionalLocalRoutes() so the sync does not wipe

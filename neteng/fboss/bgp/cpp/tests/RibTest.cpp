@@ -10837,7 +10837,7 @@ TEST_F(
         iBgpPeer_, pathVia(kPeerAddr2), {kV4Prefix2, kDefaultPathID});
     rib_->processRibInInitialPathComputation(
         fboss::kDefaultVrf, std::chrono::seconds(60));
-    ASSERT_FALSE(rib_->ribEoRReceived_);
+    ASSERT_FALSE(rib_->defaultVrf_.ribEoRReceived());
     auto staleStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
     auto newerStatuses = nexthopCache->addOrUpdateNextHopStatus(
@@ -10852,7 +10852,7 @@ TEST_F(
     rib_->processRibInNexthopUpdate(
         RibInNexthopUpdate({staleStatuses.front(), statusesB.front()}));
 
-    EXPECT_TRUE(rib_->ribEoRReceived_);
+    EXPECT_TRUE(rib_->defaultVrf_.ribEoRReceived());
     EXPECT_TRUE(rib_->nexthopInfoMap_.at(kPeerAddr2).isResolvedForSelection());
   });
 }

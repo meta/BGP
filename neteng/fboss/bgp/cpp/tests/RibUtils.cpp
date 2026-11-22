@@ -928,7 +928,7 @@ bool RibFixture::isCanonicalRibUpdateQueueEmpty() const {
 bool RibFixture::isRibEoRReceived() const {
   bool received = false;
   rib_->evb_.runInEventBaseThreadAndWait(
-      [this, &received]() { received = rib_->ribEoRReceived_; });
+      [this, &received]() { received = rib_->defaultVrf_.ribEoRReceived(); });
   return received;
 }
 

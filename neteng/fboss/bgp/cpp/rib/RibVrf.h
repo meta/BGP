@@ -177,6 +177,20 @@ class RibVrf final {
     fullSync_ = fullSync;
   }
 
+  bool initialEorSent() const noexcept {
+    return initialEorSent_;
+  }
+  void markInitialEorSent() noexcept {
+    initialEorSent_ = true;
+  }
+
+  bool ribEoRReceived() const noexcept {
+    return ribEoRReceived_;
+  }
+  void markRibEoRReceived() noexcept {
+    ribEoRReceived_ = true;
+  }
+
   bool pendingInitialPathComputation() const noexcept {
     return pendingInitialPathComputation_;
   }
@@ -323,6 +337,16 @@ class RibVrf final {
   RibCounters ribCounters_;
 
   // ===================== Initialization =====================
+
+  /*
+   * One time flags:
+   *  - initialEorSent_: the flag indicates Rib has successfully programed
+   *          initial FULL_SYNC to fib and EoR has been sent out from RIB;
+   *  - ribEoRReceived_: the flag indicates Rib has received the notification
+   *                    from PeerManagerBase to unblock initial RIB computation;
+   */
+  bool initialEorSent_{false};
+  bool ribEoRReceived_{false};
 
   /*
    * Set when a RibInInitialPathComputation with a non-zero

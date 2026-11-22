@@ -1214,7 +1214,7 @@ bool RibDC::replaceRouteAttributePolicy(
       hasUpdate,
       needsReEvaluation,
       prefixesNeedingReEvaluation.size(),
-      ribEoRReceived_);
+      defaultVrf_.ribEoRReceived());
 
   /* We should replace routeAttributePolicy_ not only when its content changes
      but also when its expiration time changes. */
@@ -1246,7 +1246,7 @@ bool RibDC::replaceRouteAttributePolicy(
    * triggered after receiving the start signal inside
    * `processRibInInitialPathComputation`.
    */
-  if (needsReEvaluation && ribEoRReceived_) {
+  if (needsReEvaluation && defaultVrf_.ribEoRReceived()) {
     XLOG(INFO)
         << "[CTE] needsReEvaluation and ribEoRReceived, triggering path selection";
     auto& ribEntries = defaultVrf_.ribEntries();
@@ -1289,7 +1289,7 @@ bool RibDC::replaceRouteAttributePolicy(
     }
 
     defaultVrf_.schedulePrepareFibProgrammingTimer();
-  } else if (needsReEvaluation && !ribEoRReceived_) {
+  } else if (needsReEvaluation && !defaultVrf_.ribEoRReceived()) {
     XLOGF(
         INFO,
         "[CTE] replaceRouteAttributePolicy: needsReEvaluation but ribEoR not yet received; deferring path selection to initial FULL_SYNC");
@@ -1404,7 +1404,7 @@ bool RibDC::replacePathSelectionPolicy(
    * triggered after receiving the start signal inside
    * `processRibInInitialPathComputation`.
    */
-  if (hasUpdate && ribEoRReceived_) {
+  if (hasUpdate && defaultVrf_.ribEoRReceived()) {
     XLOG(INFO, "[CPS] hasUpdate and ribEoRReceived, triggering FULL_SYNC");
     /*
      * recompute all the paths, similar to fullSync but will send out the

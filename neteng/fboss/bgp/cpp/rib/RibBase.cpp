@@ -665,7 +665,7 @@ void RibBase::processRibInAnnouncement(
   vrf.ribCounters().publishTotalPathCounters();
   // Subscribe any nexthops newly learned while processing this batch.
   maybeFlushNexthopSubscriptions();
-  if (ribEoRReceived_) {
+  if (vrf.ribEoRReceived()) {
     // Monitor prefix count to detect route churn
     incrementPrefixCountForRouteChurn(pfxPathIds.size());
 
@@ -727,7 +727,7 @@ void RibBase::processRibInWithdrawal(
   vrf.ribCounters().publishTotalPathCounters();
   // Aggregate/local routes injected above may introduce new nexthops.
   maybeFlushNexthopSubscriptions();
-  if (ribEoRReceived_) {
+  if (vrf.ribEoRReceived()) {
     // Monitor prefix count to detect route churn
     incrementPrefixCountForRouteChurn(pfxPathIds.size());
 
@@ -751,7 +751,7 @@ void RibBase::processRibInInitialPathComputation(
   }
 
   // avoid duplicate initial full-sync to program FIB
-  if (ribEoRReceived_) {
+  if (vrf->ribEoRReceived()) {
     XLOG(
         DBG4,
         "Ignore RibInInitialPathComputation since Rib has already started best-path");
@@ -810,7 +810,7 @@ void RibBase::runInitialPathComputation(VrfId vrfId) noexcept {
    * hooks (called during prepareFibProgramming) can check
    * ribEoRReceived_ as a precondition
    */
-  ribEoRReceived_ = true;
+  vrf->markRibEoRReceived();
 
   // best path selection + notify programming FIB
   prepareFibProgramming(vrfId, true /* fullSync */);
@@ -1074,21 +1074,23 @@ void RibBase::mayResumeBestPathAndFibProgramming(
     }
   }
 
-  if (ribEoRReceived_) {
-    // Capture and reset the pending FibSyncReq flag
-    bool fullSync = fibSyncReqPending_;
-    fibSyncReqPending_ = false;
+  // Capture and reset the pending FibSyncReq flag
+  bool fullSync = fibSyncReqPending_;
+  fibSyncReqPending_ = false;
 
+  for (const auto& [vrfId, ribVrf] : ribVrfs_) {
+    if (!ribVrf->ribEoRReceived()) {
+      continue;
+    }
     XLOGF(
         DBG2,
-        "ResumeBestPathAndFibProgramming is triggering best-path computation and FIB programming with fullSync={}",
+        "ResumeBestPathAndFibProgramming is triggering best-path computation and FIB programming for VRF {} with fullSync={}",
+        vrfId,
         fullSync);
 
-    for (const auto& [vrfId, ribVrf] : ribVrfs_) {
-      // Best path selection + notify programming FIB (fullSync if pending)
-      prepareFibProgramming(vrfId, fullSync);
-      ribVrf->schedulePrepareFibProgrammingTimer();
-    }
+    // Best path selection + notify programming FIB (fullSync if pending)
+    prepareFibProgramming(vrfId, fullSync);
+    ribVrf->schedulePrepareFibProgrammingTimer();
   }
 }
 
@@ -1192,7 +1194,8 @@ void RibBase::processRibInNexthopUpdate(
        * The initial full sync consumes status stored before EOR. Afterwards,
        * only cost or selection eligibility changes require path selection.
        */
-      if (!needsPathSelection || !ribEoRReceived_) {
+      // TODO_NH_VRF: Check the EoR of each RouteInfo's VRF.
+      if (!needsPathSelection || !defaultVrf_.ribEoRReceived()) {
         continue;
       }
 
@@ -1241,7 +1244,9 @@ void RibBase::processRibInNexthopUpdate(
         "Nexthop update for [{}] is triggering best-path computation and FIB programming",
         folly::join(", ", triggeringNexthops));
     for (const auto& [_, ribVrf] : ribVrfs_) {
-      ribVrf->schedulePrepareFibProgrammingTimer();
+      if (ribVrf->ribEoRReceived()) {
+        ribVrf->schedulePrepareFibProgrammingTimer();
+      }
     }
   }
 
@@ -1982,14 +1987,14 @@ void RibBase::handleFibProgrammedMessage(
   auto& ribEntries = vrf->ribEntries();
 
   // Initial dump to all established peers
-  auto sendWithEoR = msg.isSync && !initialEorSent_;
+  auto sendWithEoR = msg.isSync && !vrf->initialEorSent();
   if (sendWithEoR) {
     /*
      * Mark one-time flag
      * Because of this flag, sendWithEoR can only be true once at
      * initialization.
      */
-    initialEorSent_ = true;
+    vrf->markInitialEorSent();
 
     /**
      * Send initial EOR notification to PeerMgr.
@@ -2485,22 +2490,22 @@ TFibNexthopDatabase RibBase::getFibNexthopDatabase(VrfId vrfId) {
 }
 
 void RibBase::handleFibSyncReq(const Fib::FibSyncReq& /* unused */) noexcept {
-  /*
-   * skip processing full-sync request sending from FIB
-   * since initial RIB full-sync has NOT be triggered yet
-   */
-  if (!ribEoRReceived_) {
-    return;
-  }
-  if (pauseBestPathAndFibProgramming_) {
-    fibSyncReqPending_ = true;
-    XLOG(
-        DBG2,
-        "Setting FibSyncReqPending_ flag to trigger fullSync when resumed.");
-    return;
-  }
-  // The FIB agent lost every VRF's routes; full-sync each VRF.
-  for (const auto& [vrfId, _] : ribVrfs_) {
+  // The FIB agent lost every VRF's routes; full-sync each initialized VRF.
+  for (const auto& [vrfId, ribVrf] : ribVrfs_) {
+    /*
+     * skip processing full-sync request sending from FIB
+     * since initial RIB full-sync has NOT be triggered yet
+     */
+    if (!ribVrf->ribEoRReceived()) {
+      continue;
+    }
+    if (pauseBestPathAndFibProgramming_) {
+      fibSyncReqPending_ = true;
+      XLOG(
+          DBG2,
+          "Setting FibSyncReqPending_ flag to trigger fullSync when resumed.");
+      return;
+    }
     prepareFibProgramming(vrfId, true /* fullSync */);
   }
 }

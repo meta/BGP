@@ -216,10 +216,6 @@ RibBase::RibBase(
   defaultVrf_.ribCounters().setOriginatedRoutes(
       defaultVrf_.localRoutes().size());
 
-  // bounds the deferred initial full-sync's wait for nexthop resolution
-  nexthopResolutionTimer_ = folly::AsyncTimeout::make(
-      evb_, [this]() noexcept { onNexthopResolutionTimeout(); });
-
   XLOGF(
       INFO,
       "Created Rib with fibBatchTime_= {}ms, computeUcmpFromLbwComm:{}",
@@ -259,8 +255,10 @@ RibBase::~RibBase() {
    * outstanding could invoke onNexthopResolutionTimeout() on a destroyed
    * object (use-after-free).
    */
-  if (nexthopResolutionTimer_) {
-    nexthopResolutionTimer_->cancelTimeout();
+  for (auto& [_, ribVrf] : ribVrfs_) {
+    if (ribVrf->nexthopResolutionTimer()) {
+      ribVrf->nexthopResolutionTimer()->cancelTimeout();
+    }
   }
   // reset the batch list
   for (auto& [_, ribVrf] : ribVrfs_) {
@@ -809,6 +807,15 @@ void RibBase::processRibInInitialPathComputation(
     std::chrono::milliseconds nexthopResolutionTimeout) noexcept {
   XLOG(INFO, "Processing RibInInitialPathComputation");
 
+  auto* vrf = findVrf(vrfId);
+  if (!vrf) {
+    XLOGF(
+        ERR,
+        "Ignoring RibInInitialPathComputation for non-existent VRF {}",
+        vrfId);
+    return;
+  }
+
   // avoid duplicate initial full-sync to program FIB
   if (ribEoRReceived_) {
     XLOG(
@@ -834,8 +841,8 @@ void RibBase::processRibInInitialPathComputation(
    */
   if (nexthopResolutionTimeout > std::chrono::milliseconds(0) &&
       !isInitialPathComputationReady()) {
-    pendingInitialPathComputation_ = true;
-    nexthopResolutionTimer_->scheduleTimeout(nexthopResolutionTimeout);
+    vrf->setPendingInitialPathComputation(true);
+    vrf->nexthopResolutionTimer()->scheduleTimeout(nexthopResolutionTimeout);
     XLOGF(
         INFO,
         "[Initialization] Deferring initial path computation up to {}ms: "
@@ -857,9 +864,9 @@ void RibBase::runInitialPathComputation(VrfId vrfId) noexcept {
     return;
   }
 
-  pendingInitialPathComputation_ = false;
+  vrf->setPendingInitialPathComputation(false);
   // stop the resolution timer so none is live when the full-sync runs
-  nexthopResolutionTimer_->cancelTimeout();
+  vrf->nexthopResolutionTimer()->cancelTimeout();
 
   // fib batch process list must be empty right now
   CHECK(vrf->fibBatchList().empty());
@@ -892,32 +899,44 @@ void RibBase::runInitialPathComputation(VrfId vrfId) noexcept {
 }
 
 void RibBase::maybeRunPendingInitialPathComputation() noexcept {
-  if (!pendingInitialPathComputation_) {
-    /* Already past the initial path computation stage; nothing pending. */
-    return;
+  for (const auto& [vrfId, ribVrf] : ribVrfs_) {
+    if (!ribVrf->pendingInitialPathComputation()) {
+      /* Already past the initial path computation stage; nothing pending. */
+      continue;
+    }
+    if (!isInitialPathComputationReady()) {
+      /*
+       * Not yet ready (nexthop resolution / conditional routes); skip for now.
+       */
+      return;
+    }
+    XLOGF(
+        INFO,
+        "[Initialization] Nexthop resolution / conditional routes ready; "
+        "running deferred initial path computation for VRF {}.",
+        vrfId);
+    runInitialPathComputation(vrfId);
   }
-  if (!isInitialPathComputationReady()) {
-    /* Not yet ready (nexthop resolution / conditional routes); skip for now. */
-    return;
-  }
-  XLOG(
-      INFO,
-      "[Initialization] Nexthop resolution / conditional routes ready; running "
-      "deferred initial path computation.");
-  // TODO_PMTRIZED_VRF: Make this method VRF aware in a follow-up diff.
-  runInitialPathComputation(fboss::kDefaultVrf);
 }
 
-void RibBase::onNexthopResolutionTimeout() noexcept {
-  if (!pendingInitialPathComputation_) {
+void RibBase::onNexthopResolutionTimeout(VrfId vrfId) noexcept {
+  const auto* vrf = findVrf(vrfId);
+  if (!vrf) {
+    XLOGF(
+        ERR,
+        "Ignoring nexthop resolution timeout for non-existent VRF {}",
+        vrfId);
     return;
   }
-  XLOG(
+  if (!vrf->pendingInitialPathComputation()) {
+    return;
+  }
+  XLOGF(
       ERR,
-      "[Initialization] Timed out waiting for nexthop resolution; running "
-      "initial path computation with unresolved nexthops.");
-  // TODO_PMTRIZED_VRF: Make this method VRF aware in a follow-up diff.
-  runInitialPathComputation(fboss::kDefaultVrf);
+      "[Initialization] Timed out waiting for nexthop resolution for VRF {}; "
+      "running initial path computation with unresolved nexthops.",
+      vrfId);
+  runInitialPathComputation(vrfId);
 }
 
 bool RibBase::areAllRegisteredNexthopsResolved() const noexcept {

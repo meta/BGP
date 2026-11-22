@@ -40,6 +40,10 @@ RibVrf::RibVrf(VrfId vrfId, RibBase& owner)
    */
   fibBatchTimer_ = folly::AsyncTimeout::make(
       owner_.evb_, [this]() noexcept { owner_.prepareFibProgramming(vrfId_); });
+  // bounds the deferred initial full-sync's wait for nexthop resolution
+  nexthopResolutionTimer_ = folly::AsyncTimeout::make(
+      owner_.evb_,
+      [this]() noexcept { owner_.onNexthopResolutionTimeout(vrfId_); });
 }
 
 void RibVrf::addToFibBatch(RibEntry& entry) noexcept {

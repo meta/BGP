@@ -147,6 +147,10 @@ class RibVrf final {
     return fibBatchTimer_;
   }
 
+  std::unique_ptr<folly::AsyncTimeout>& nexthopResolutionTimer() noexcept {
+    return nexthopResolutionTimer_;
+  }
+
   /*
    * Schedule the prepareFibProgramming timer.
    *
@@ -163,6 +167,13 @@ class RibVrf final {
   }
   void setFullSync(bool fullSync) noexcept {
     fullSync_ = fullSync;
+  }
+
+  bool pendingInitialPathComputation() const noexcept {
+    return pendingInitialPathComputation_;
+  }
+  void setPendingInitialPathComputation(bool pending) noexcept {
+    pendingInitialPathComputation_ = pending;
   }
 
   uint64_t ribVersion() const noexcept {
@@ -302,6 +313,24 @@ class RibVrf final {
    * EventBase alongside ribEntries_.
    */
   RibCounters ribCounters_;
+
+  // ===================== Initialization =====================
+
+  /*
+   * Set when a RibInInitialPathComputation with a non-zero
+   * nexthopResolutionTimeout arrives but not all registered nexthops are
+   * resolved yet. The initial full-sync is held off and run later by
+   * maybeRunPendingInitialPathComputation() once nexthop resolution completes,
+   * or by onNexthopResolutionTimeout() if nexthopResolutionTimer_ fires first.
+   * RIB-thread only.
+   */
+  bool pendingInitialPathComputation_{false};
+
+  /*
+   * Bounds the deferred initial full-sync's wait for nexthop resolution. Armed
+   * with the remaining EoR budget carried in RibInInitialPathComputation.
+   */
+  std::unique_ptr<folly::AsyncTimeout> nexthopResolutionTimer_;
 
   // ======================== RIB version =====================
 

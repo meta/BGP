@@ -934,8 +934,9 @@ bool RibFixture::isRibEoRReceived() const {
 
 bool RibFixture::isInitialPathComputationPending() const {
   bool pending = false;
-  rib_->evb_.runInEventBaseThreadAndWait(
-      [this, &pending]() { pending = rib_->pendingInitialPathComputation_; });
+  rib_->evb_.runInEventBaseThreadAndWait([this, &pending]() {
+    pending = rib_->defaultVrf_.pendingInitialPathComputation();
+  });
   return pending;
 }
 

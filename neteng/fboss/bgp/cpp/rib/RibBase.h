@@ -853,17 +853,18 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   void runInitialPathComputation(VrfId vrfId) noexcept;
 
   /*
-   * Run the deferred initial path computation if it is pending and all
-   * registered nexthops have since become resolved. Called after nexthop
+   * Run the deferred initial path computation of every VRF where it is pending,
+   * if all registered nexthops have since become resolved. Called after nexthop
    * reachability changes.
    */
   void maybeRunPendingInitialPathComputation() noexcept;
 
   /*
-   * nexthopResolutionTimer_ callback: the wait for nexthop resolution hit its
-   * max-cap; run the deferred initial path computation regardless.
+   * A VRF's nexthopResolutionTimer_ callback: the wait for nexthop resolution
+   * hit its max-cap; run that VRF's deferred initial path computation
+   * regardless.
    */
-  void onNexthopResolutionTimeout() noexcept;
+  void onNexthopResolutionTimeout(VrfId vrfId) noexcept;
 
   /*
    * Whether every nexthop currently registered in nexthopInfoMap_ is resolved.
@@ -1242,16 +1243,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
   bool ribEoRReceived_{false};
 
   /*
-   * Set when a RibInInitialPathComputation with a non-zero
-   * nexthopResolutionTimeout arrives but not all registered nexthops are
-   * resolved yet. The initial full-sync is held off and run later by
-   * maybeRunPendingInitialPathComputation() once nexthop resolution completes,
-   * or by onNexthopResolutionTimeout() if nexthopResolutionTimer_ fires first.
-   * RIB-thread only.
-   */
-  bool pendingInitialPathComputation_{false};
-
-  /*
    * Set once the first NexthopResolutionUpdate has been processed (conditional
    * local routes, if any, advertised into ribEntries_). Gates the initial
    * full-sync when hasConditionalLocalRoutes() so the sync does not wipe
@@ -1259,12 +1250,6 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * RIB-thread only.
    */
   bool firstNexthopResolutionProcessed_{false};
-
-  /*
-   * Bounds the deferred initial full-sync's wait for nexthop resolution. Armed
-   * with the remaining EoR budget carried in RibInInitialPathComputation.
-   */
-  std::unique_ptr<folly::AsyncTimeout> nexthopResolutionTimer_;
 
   /*
    * Flag to track if a FIB sync request was received while best-path

@@ -6175,8 +6175,6 @@ TEST_F(RibWithLocalRouteFixture, RouteAggregationPromotion) {
   auto msg = folly::coro::blockingWait(ribOutQ_.pop()).payload;
   auto ret = folly::variant_match(
       msg,
-      [&](const ShadowRibOutAnnouncement& /* unused */) { return false; },
-      [&](const ShadowRibOutWithdrawal& /* unused */) { return false; },
       [&](const RibInitialAnnouncementStart& /* unused */) { return false; },
       [&](const RibOutWithdrawal& /* unused */) { return false; },
       [&](const RibOutAnnouncement& announcement) {
@@ -8435,8 +8433,6 @@ TEST_F(RibFixture, LbwCommunityForward) {
     auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     auto ret = folly::variant_match(
         result,
-        [&](const ShadowRibOutAnnouncement& /* unused */) { return false; },
-        [&](const ShadowRibOutWithdrawal& /* unused */) { return false; },
         [&](const RibInitialAnnouncementStart& /* unused */) { return false; },
         [&](const RibOutWithdrawal& /* unused */) { return false; },
         [&](const RibOutAnnouncement& announcement) {
@@ -8525,8 +8521,6 @@ TEST_F(RibFixture, LbwCommunitySuppression1) {
     auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     auto ret = folly::variant_match(
         result,
-        [&](const ShadowRibOutAnnouncement& /* unused */) { return false; },
-        [&](const ShadowRibOutWithdrawal& /* unused */) { return false; },
         [&](const RibInitialAnnouncementStart& /* unused */) { return false; },
         [&](const RibOutWithdrawal& /* unused */) { return false; },
         [&](const RibOutAnnouncement& announcement) {
@@ -8615,8 +8609,6 @@ TEST_F(RibFixture, LbwCommunitySuppression2) {
     auto result = folly::coro::blockingWait(ribOutQ_.pop()).payload;
     auto ret = folly::variant_match(
         result,
-        [&](const ShadowRibOutAnnouncement& /* unused */) { return false; },
-        [&](const ShadowRibOutWithdrawal& /* unused */) { return false; },
         [&](const RibInitialAnnouncementStart& /* unused */) { return false; },
         [&](const RibOutWithdrawal& /* unused */) { return false; },
         [&](const RibOutAnnouncement& announcement) {

@@ -239,8 +239,6 @@ void AdjRib::processRibMessage(const RibOutPayload& ribMsg) noexcept {
       [this](const RibOutWithdrawal& withdrawal) {
         processRibOutWithdrawal(withdrawal);
       },
-      [](const ShadowRibOutAnnouncement&) {},
-      [](const ShadowRibOutWithdrawal&) {},
       [](const RibInitialAnnouncementStart& /* unused*/) {});
 }
 

@@ -1461,12 +1461,6 @@ folly::coro::Task<void> PeerManagerBase::processRibOutMsgLoop() noexcept {
            */
           handleShadowRibEntryWithdrawal(withdrawal);
         },
-        [](const ShadowRibOutAnnouncement&) {
-          XLOG(DBG3, "Processing ShadowRibOutAnnoucement");
-        },
-        [](const ShadowRibOutWithdrawal&) {
-          XLOG(DBG3, "Processing ShadowRibOutWithdrawal");
-        },
         [this](const RibInitialAnnouncementStart&) {
           XLOG(
               INFO,

@@ -498,25 +498,6 @@ struct ShadowRibOutAnnouncementEntry {
         ribVersion(ribVersion) {}
 };
 
-struct ShadowRibOutAnnouncement {
-  std::vector<ShadowRibOutAnnouncementEntry> entries;
-  bool sendWithEoR{false};
-  bool initialDump{false};
-};
-
-/*
- * ShadowRibOutWithdrawalEntry will contain all information needed to send a
- * withdrawal for different nexthops.
- */
-struct ShadowRibOutWithdrawalEntry {
-  folly::CIDRNetwork prefix; // v4 or v6 prefix with mask
-  std::vector<folly::IPAddress> nexthops; // bestpath and multipaths nexthops
-};
-
-struct ShadowRibOutWithdrawal {
-  std::vector<ShadowRibOutWithdrawalEntry> entries;
-};
-
 using ShadowRibEntry = ShadowRibOutAnnouncementEntry;
 
 /*
@@ -528,12 +509,8 @@ using ShadowRibEntry = ShadowRibOutAnnouncementEntry;
  */
 struct RibInitialAnnouncementStart {};
 
-using RibOutPayload = std::variant<
-    RibOutAnnouncement,
-    RibOutWithdrawal,
-    ShadowRibOutAnnouncement,
-    ShadowRibOutWithdrawal,
-    RibInitialAnnouncementStart>;
+using RibOutPayload = std::
+    variant<RibOutAnnouncement, RibOutWithdrawal, RibInitialAnnouncementStart>;
 
 /*
  * Envelope for ribOutQ_. The routing table is carried once per message

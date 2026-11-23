@@ -18,7 +18,10 @@
 
 namespace facebook::bgp {
 
-PeerManagerVrf::PeerManagerVrf(VrfId vrfId, PeerManagerBase& owner)
-    : vrfId_(vrfId), owner_(owner) {}
+PeerManagerVrf::PeerManagerVrf(
+    VrfId vrfId,
+    PeerManagerBase& owner,
+    folly::coro::CancellableAsyncScope& asyncScope)
+    : vrfId_(vrfId), owner_(owner), asyncScope_(asyncScope) {}
 
 } // namespace facebook::bgp

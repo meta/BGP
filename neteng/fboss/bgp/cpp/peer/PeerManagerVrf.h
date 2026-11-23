@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <folly/coro/AsyncScope.h>
+
 #include "neteng/fboss/bgp/cpp/common/Types.h"
 
 namespace facebook::bgp {
@@ -28,7 +30,10 @@ class PeerManagerBase;
  */
 class PeerManagerVrf final {
  public:
-  PeerManagerVrf(VrfId vrfId, PeerManagerBase& owner);
+  PeerManagerVrf(
+      VrfId vrfId,
+      PeerManagerBase& owner,
+      folly::coro::CancellableAsyncScope& asyncScope);
   ~PeerManagerVrf() = default;
 
   PeerManagerVrf(const PeerManagerVrf&) = delete;
@@ -44,6 +49,9 @@ class PeerManagerVrf final {
   // Identifies the routing table owned by this context.
   const VrfId vrfId_;
   [[maybe_unused]] PeerManagerBase& owner_;
+
+  // The owner's scope, for coroutines scheduled on behalf of this table.
+  [[maybe_unused]] folly::coro::CancellableAsyncScope& asyncScope_;
 };
 
 } // namespace facebook::bgp

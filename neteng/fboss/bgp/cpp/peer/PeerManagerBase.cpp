@@ -4236,7 +4236,7 @@ std::shared_ptr<AdjRib> PeerManagerBase::createAdjRib(
 PeerManagerVrf& PeerManagerBase::createVrf(VrfId vrfId) {
   auto& vrf = vrfContexts_[vrfId];
   if (!vrf) {
-    vrf = std::make_unique<PeerManagerVrf>(vrfId, *this);
+    vrf = std::make_unique<PeerManagerVrf>(vrfId, *this, asyncScope_);
   }
   return *vrf;
 }

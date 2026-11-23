@@ -20,6 +20,7 @@
   friend class FiberManagerFixture;     \
   FRIEND_TEST(FiberManagerFixture, FiberBgpParserPartialPacket);
 
+#include "neteng/fboss/bgp/cpp/lib/BgpException.h"
 #include "neteng/fboss/bgp/cpp/lib/fibers/FiberBgpParser.h"
 #include "neteng/fboss/bgp/cpp/lib/tests/BgpMessageParserTestData.h"
 
@@ -286,6 +287,7 @@ std::vector<uint8_t> const kBgpHeaderBadMarker = {
 struct DrainResult {
   bool sawError{false};
   uint32_t goodCount{0};
+  folly::exception_wrapper error; // the last error delivered
 };
 
 /*
@@ -329,6 +331,7 @@ DrainResult runParserUnderBackpressure(
             }
             if ((**popped).hasException()) {
               result.sawError = true;
+              result.error = (**popped).exception();
             } else {
               ++result.goodCount;
             }
@@ -378,6 +381,26 @@ TEST_F(FiberManagerFixture, MalformedHeaderUnderBackpressureDoesNotCrash) {
 
   EXPECT_TRUE(result.sawError);
   EXPECT_EQ(1u, result.goodCount); // the leading keepalive
+}
+
+/*
+ * A 19-byte ROUTE-REFRESH (header only) at the end of the read buffer has no
+ * AFI, subtype or SAFI. It must end this session with a Bad Message Length
+ * header error, not escape processBgpMsgBuf into the noexcept read loop.
+ */
+TEST_F(FiberManagerFixture, ShortRouteRefreshDoesNotCrash) {
+  std::vector<uint8_t> wire(kBgpKeepaliveMessage);
+  std::vector<uint8_t> shortRouteRefresh(kBgpKeepaliveMessage);
+  shortRouteRefresh[18] = 0x05; // Type (ROUTE-REFRESH), Length stays 19
+  wire.insert(wire.end(), shortRouteRefresh.begin(), shortRouteRefresh.end());
+
+  auto result = runParserUnderBackpressure(*manager, evb, wire);
+
+  EXPECT_TRUE(result.sawError);
+  EXPECT_EQ(1u, result.goodCount); // the leading keepalive
+  const auto* error = result.error.get_exception<BgpHeaderException>();
+  ASSERT_NE(nullptr, error);
+  EXPECT_EQ(BgpNotifMsgHdrErrSubCode::BN_MH_BAD_MSG_LEN, error->getSubCode());
 }
 
 TEST_F(FiberManagerFixture, FiberBgpParserGoodMessages) {

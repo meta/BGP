@@ -3140,6 +3140,62 @@ TEST_F(FiberBgpPeerFixture, WrongHeaderLengthNotificationTest) {
   evb_.loop();
 }
 
+/*
+ * A ROUTE-REFRESH with Length 19 has no room for AFI, subtype and SAFI. The
+ * peer must answer with a Message Header Error, Bad Message Length, that
+ * carries the erroneous Length (RFC 4271 section 6.1).
+ */
+TEST_F(FiberBgpPeerFixture, ShortRouteRefreshNotificationTest) {
+  auto& fm = fmWrapper_.get();
+
+  std::vector<uint8_t> routeRefresh = {
+      // clang-format off
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0x00, 0x13, // Length of BGP PDU: the header only
+      0x05, // Bgp message type (ROUTE-REFRESH)
+      // clang-format on
+  };
+
+  auto peer1 = std::make_shared<MockFiberBgpPeer>(
+      params1_,
+      fm,
+      evb_,
+      std::move(*fs0_),
+      peer1Input_,
+      peer1BoundedInput_,
+      peer1Output_);
+
+  fs1_->write(
+      std::make_unique<folly::IOBuf>(folly::IOBuf::wrapBufferAsValue(
+          routeRefresh.data(), routeRefresh.size())));
+
+  fm.addTask([&] { peer1->run(); });
+
+  fm.addTask([&] {
+    try {
+      // The OPEN from peer1 (61 bytes), then a NOTIFICATION with 2 data bytes
+      fs1_->read(61).value();
+      auto buf = fs1_->read(23).value();
+      auto notification = BgpMessageParser2::parseBgpNotificationRaw(
+          folly::IOBuf::wrapBufferAsValue(buf->data(), buf->length()));
+
+      EXPECT_EQ(BgpNotifErrCode::BN_MSG_HDR_ERR, *notification.errCode());
+      EXPECT_EQ(
+          static_cast<uint16_t>(BgpNotifMsgHdrErrSubCode::BN_MH_BAD_MSG_LEN),
+          *notification.errSubCode());
+      EXPECT_EQ(
+          std::string(reinterpret_cast<const char*>(&routeRefresh[16]), 2),
+          *notification.data());
+    } catch (...) {
+      FAIL();
+    }
+    peer1->stop();
+  });
+
+  evb_.loop();
+}
+
 // verify that we can skip checking diffferent ASN
 TEST_F(FiberBgpPeerFixture, ValidateRemoteAsTest) {
   auto& fm = fmWrapper_.get();

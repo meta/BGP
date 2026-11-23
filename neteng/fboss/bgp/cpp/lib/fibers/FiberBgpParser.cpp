@@ -192,7 +192,27 @@ void FiberBgpParser::processBgpMsgBuf(std::unique_ptr<folly::IOBuf> buf) {
       break;
     }
 
-    BgpMessageParser2::parseBgpMessage(&parserCb_, *buf_, negotiatedCaps_);
+    /*
+     * parseBgpMessage handles the Bgp* exceptions itself. Any other exception
+     * would reach the noexcept FiberBgpPeer::readSocketLoop and terminate
+     * bgpd, so report it as a parse error of this session instead. As with the
+     * header error above, push only after the catch unwinds.
+     */
+    std::optional<folly::Try<BgpMessageT>> bodyError;
+    try {
+      BgpMessageParser2::parseBgpMessage(&parserCb_, *buf_, negotiatedCaps_);
+    } catch (...) {
+      auto ew = folly::exception_wrapper(std::current_exception());
+      XLOGF(
+          ERR,
+          "Unexpected error parsing BGP message: {}",
+          folly::exceptionStr(ew));
+      bodyError = folly::Try<BgpMessageT>(std::move(ew));
+    }
+    if (bodyError) {
+      wqueue_.fiberPush(std::move(*bodyError));
+      return;
+    }
 
     /*
      * The parser's handle*Exception callbacks record any parse error rather

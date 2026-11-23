@@ -443,6 +443,22 @@ BgpRouteRefresh BgpMessageParser2::parseBgpRouteRefreshRaw(
   // Parse the header
   auto hdr =
       BgpMessageParser2::consumeBgpMsgHdr(cursor, BGP_MSG_TYPE_ROUTE_REFRESH);
+
+  /*
+   * AFI, subtype and SAFI take 4 bytes after the header. Check the length
+   * before reading them: a shorter message would read past its own end.
+   */
+  if (hdr.length < kBgpMsgHeaderLen + 4) {
+    auto errData = htons(hdr.length);
+    throw BgpHeaderException(
+        BgpNotifMsgHdrErrSubCode::BN_MH_BAD_MSG_LEN,
+        std::string(reinterpret_cast<const char*>(&errData), sizeof(errData)),
+        fmt::format(
+            "Route Refresh msg too short. Got {}, need at least {}",
+            hdr.length,
+            kBgpMsgHeaderLen + 4));
+  }
+
   // Initialize the message structure
   BgpRouteRefresh msg;
   // Parse the AFI, SAFI and message subType

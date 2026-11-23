@@ -1356,19 +1356,54 @@ TEST_F(RouteRefreshMessageTestFixture, BgpRouteRefreshMessageWrongLength) {
   // Set Message subtype to 1(BoRR)
   msg[21] = 0x01;
 
-  // Add 1 byte to the length
+  // Add 1 byte to the message and to its Length field
   msg.emplace_back(0x01);
+  msg[17] = 0x18;
 
   try {
     BgpMessageParser2::parseBgpRouteRefreshRaw(
         folly::IOBuf::wrapBufferAsValue(msg.data(), msg.size()));
+    ADD_FAILURE() << "Expected BgpRouteRefreshMsgException";
   } catch (BgpRouteRefreshMsgException const& err) {
     EXPECT_EQ(
         BgpNotificationRouteRefreshErrSubCode::BN_INVALID_MSG_LEN,
         err.getSubCode());
     EXPECT_EQ(
         std::string(err.what()),
-        "Unexpected length of Route Refresh msg. Got 23, expected 4");
+        "Unexpected length of Route Refresh msg. Got 24, expected 4");
+  }
+}
+
+/**
+ * A Route Refresh message shorter than 23 bytes has no room for AFI, subtype
+ * and SAFI. It must fail with a Bad Message Length header error, both when it
+ * ends the buffer and when more bytes follow it, for any subtype value.
+ */
+TEST_F(RouteRefreshMessageTestFixture, BgpRouteRefreshMessageTooShort) {
+  for (uint8_t length = 19; length < 23; ++length) {
+    for (uint8_t subtype : {0x00, 0x01, 0x02, 0x07}) {
+      std::vector<uint8_t> withNext(msg);
+      withNext[17] = length;
+      withNext[21] = subtype;
+      std::vector<uint8_t> alone(withNext.begin(), withNext.begin() + length);
+
+      for (const auto& buf : {alone, withNext}) {
+        SCOPED_TRACE(
+            fmt::format(
+                "length {} subtype {} buffer {}", length, subtype, buf.size()));
+        try {
+          BgpMessageParser2::parseBgpRouteRefreshRaw(
+              folly::IOBuf::wrapBufferAsValue(buf.data(), buf.size()));
+          ADD_FAILURE() << "Expected BgpHeaderException";
+        } catch (BgpHeaderException const& err) {
+          EXPECT_EQ(
+              BgpNotifMsgHdrErrSubCode::BN_MH_BAD_MSG_LEN, err.getSubCode());
+          EXPECT_EQ(
+              std::string(reinterpret_cast<const char*>(&buf[16]), 2),
+              err.getData());
+        }
+      }
+    }
   }
 }
 

@@ -16,6 +16,8 @@
 
 #include "neteng/fboss/bgp/cpp/peer/PeerManagerVrf.h"
 
+#include "neteng/fboss/bgp/cpp/config/ConfigStructs.h"
+
 namespace facebook::bgp {
 
 PeerManagerVrf::PeerManagerVrf(
@@ -23,5 +25,23 @@ PeerManagerVrf::PeerManagerVrf(
     PeerManagerBase& owner,
     folly::coro::CancellableAsyncScope& asyncScope)
     : vrfId_(vrfId), owner_(owner), asyncScope_(asyncScope) {}
+
+/**
+ * @brief  Build a Group Name as a key for a specific peer
+ *
+ * @params peerId peer for which to build groupName key
+ * @params peeringParams peering parameters for passed in peer
+ *
+ * @return std::string
+ */
+std::string PeerManagerVrf::buildAdjRibOutGroupName(
+    const nettools::bgplib::BgpPeerId& peerId,
+    const PeeringParams& peeringParams) noexcept {
+  if (peeringParams.peerGroupName.has_value()) {
+    return *peeringParams.peerGroupName;
+  }
+
+  return peerId.peerAddr.str();
+}
 
 } // namespace facebook::bgp

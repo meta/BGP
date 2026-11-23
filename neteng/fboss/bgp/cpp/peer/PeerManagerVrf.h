@@ -16,13 +16,17 @@
 
 #pragma once
 
+#include <string>
+
 #include <folly/coro/AsyncScope.h>
 
 #include "neteng/fboss/bgp/cpp/common/Types.h"
+#include "neteng/fboss/bgp/cpp/lib/BgpStructs.h"
 
 namespace facebook::bgp {
 
 class PeerManagerBase;
+struct PeeringParams;
 
 /*
  * Mutable PeerManager state for one routing table. Runs on the owner's
@@ -44,6 +48,12 @@ class PeerManagerVrf final {
   VrfId vrfId() const {
     return vrfId_;
   }
+
+  // ============================== ADJ-RIB STATE ==============================
+
+  static std::string buildAdjRibOutGroupName(
+      const nettools::bgplib::BgpPeerId& peerId,
+      const PeeringParams& peeringParams) noexcept;
 
  private:
   // Identifies the routing table owned by this context.

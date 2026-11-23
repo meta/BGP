@@ -650,10 +650,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
     return routeFilterPolicy_;
   }
 
-  std::string buildAdjRibOutGroupName(
-      const nettools::bgplib::BgpPeerId& peerId,
-      const PeeringParams& peeringParams) noexcept;
-
   /**
    * @brief Triggers a route refresh request for multiple peers and returns a
    * list of failed peer IDs.

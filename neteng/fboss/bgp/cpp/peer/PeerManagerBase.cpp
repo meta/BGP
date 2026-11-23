@@ -4130,24 +4130,6 @@ apache::thrift::ServerStream<TBgpRouteDelta> PeerManagerBase::subscribe(
 }
 
 /**
- * @brief  Build a Group Name as a key for a specific peer
- *
- * @params peerId peer for which to build groupName key
- * @params peeringParams peering parameters for passed in peer
- *
- * @return std::string
- */
-std::string PeerManagerBase::buildAdjRibOutGroupName(
-    const nettools::bgplib::BgpPeerId& peerId,
-    const PeeringParams& peeringParams) noexcept {
-  if (peeringParams.peerGroupName.has_value()) {
-    return *peeringParams.peerGroupName;
-  }
-
-  return peerId.peerAddr.str();
-}
-
-/**
  * @brief  Find AdjRibOutGroup given a group name
  *
  * @params groupName  Name of the group to be looked up
@@ -4204,7 +4186,8 @@ std::shared_ptr<AdjRib> PeerManagerBase::createAdjRib(
 
   auto peerConfig = configManager_->getConfig()->getConfigOfAPeer(peerAddr);
 
-  auto outGroupName = buildAdjRibOutGroupName(peerId, peeringParams);
+  auto outGroupName =
+      PeerManagerVrf::buildAdjRibOutGroupName(peerId, peeringParams);
   auto adjRibOutGroup = findAdjRibOutGroup(outGroupName);
   if (!adjRibOutGroup) {
     adjRibOutGroup = createAdjRibOutGroup(outGroupName);

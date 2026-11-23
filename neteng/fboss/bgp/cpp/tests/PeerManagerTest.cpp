@@ -313,7 +313,7 @@ TEST_F(PeerManagerTestFixture, buildGroupNameWithoutPeerGroupTest) {
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
 
   auto groupName =
-      mockPeerMgr->buildAdjRibOutGroupName(kPeerId3, peeringParams);
+      PeerManagerVrf::buildAdjRibOutGroupName(kPeerId3, peeringParams);
   EXPECT_EQ(kPeerId3.peerAddr.str(), groupName);
 }
 
@@ -330,7 +330,7 @@ TEST_F(PeerManagerTestFixture, buildGroupNameWithPeerGroupNameTest) {
       true /* includeStaticPeer */, false /* includeDynamicShivPeer */);
 
   auto groupName =
-      mockPeerMgr->buildAdjRibOutGroupName(kPeerId3, peeringParams);
+      PeerManagerVrf::buildAdjRibOutGroupName(kPeerId3, peeringParams);
   EXPECT_EQ(testGroupName, groupName);
 }
 

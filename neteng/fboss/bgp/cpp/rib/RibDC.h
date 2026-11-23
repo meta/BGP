@@ -363,6 +363,11 @@ class RibDC : public RibBase {
   FsdbSyncer* fsdbSyncer_{nullptr};
 
  private:
+  // Whether path selection policy (CPS) changes re-evaluate the VRF.
+  static bool isVrfCPSCapable(VrfId vrfId) noexcept {
+    return vrfId == fboss::kDefaultVrf;
+  }
+
   // Whether the VRF's routes are published to canonical FSDB.
   static bool isVrfCanonicalFsdbCapable(VrfId vrfId) noexcept {
     return vrfId == fboss::kDefaultVrf;

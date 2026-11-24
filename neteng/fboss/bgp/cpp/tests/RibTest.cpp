@@ -10021,7 +10021,7 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr1));
     EXPECT_EQ(1, rib_->nexthopInfoMap_.at(kPeerAddr2).getRouteInfoListSize());
-    EXPECT_FALSE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
+    EXPECT_FALSE(rib_->nexthopCache_->isRegistered({kPeerAddr1}));
   });
   tcData->publishStats();
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
@@ -10032,7 +10032,7 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
     EXPECT_FALSE(changedNexthopRouteInfo->isOnNextHopList());
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr2));
-    EXPECT_FALSE(rib_->nexthopCache_->isRegistered(kPeerAddr2));
+    EXPECT_FALSE(rib_->nexthopCache_->isRegistered({kPeerAddr2}));
   });
   tcData->publishStats();
   EXPECT_EQ(0, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
@@ -10053,7 +10053,7 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, firstPath);
     EXPECT_EQ(1, rib_->nexthopInfoMap_.at(kPeerAddr1).getRouteInfoListSize());
-    EXPECT_TRUE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
+    EXPECT_TRUE(rib_->nexthopCache_->isRegistered({kPeerAddr1}));
   });
   tcData->publishStats();
   EXPECT_EQ(1, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
@@ -10062,7 +10062,7 @@ TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
     rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, secondPath);
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr1));
-    EXPECT_FALSE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
+    EXPECT_FALSE(rib_->nexthopCache_->isRegistered({kPeerAddr1}));
   });
   tcData->publishStats();
   EXPECT_EQ(0, tcData->getCounter(RibStats::kRibUnresolvableNexthopsCount));
@@ -10491,9 +10491,9 @@ TEST_F(RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect) {
     rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, prefixPathId);
   });
   EXPECT_FALSE(rib_->getNexthopInfoForNexthop(kPeerAddr1).has_value());
-  EXPECT_FALSE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
+  EXPECT_FALSE(rib_->nexthopCache_->isRegistered({kPeerAddr1}));
   const auto retainedStatus =
-      rib_->nexthopCache_->registerAndGetNexthopStatus(kPeerAddr1);
+      rib_->nexthopCache_->registerAndGetNexthopStatus({kPeerAddr1});
   EXPECT_TRUE(retainedStatus.isReachable());
   EXPECT_FALSE(retainedStatus.getIgpCost().has_value());
   tcData->publishStats();
@@ -10545,7 +10545,7 @@ TEST_F(
     auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus({.ip = kPeerAddr1}, /*isReachable=*/false)});
     ASSERT_EQ(1, queuedStatuses.size());
-    EXPECT_TRUE(nexthopCache->unregisterAndRemoveNexthopStatus(kPeerAddr1));
+    EXPECT_TRUE(nexthopCache->unregisterAndRemoveNexthopStatus({kPeerAddr1}));
 
     rib_->processRibInNexthopUpdate(
         RibInNexthopUpdate(std::move(queuedStatuses)));
@@ -10572,7 +10572,7 @@ TEST_F(
     ASSERT_NE(rib_->nexthopInfoMap_.end(), nexthopInfoIt);
     EXPECT_TRUE(nexthopInfoIt->second.isReachable());
     EXPECT_EQ(std::optional<uint32_t>(100), nexthopInfoIt->second.getIgpCost());
-    EXPECT_TRUE(rib_->nexthopCache_->isRegistered(kPeerAddr1));
+    EXPECT_TRUE(rib_->nexthopCache_->isRegistered({kPeerAddr1}));
   });
 }
 
@@ -10924,7 +10924,7 @@ TEST_F(
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr1));
-    EXPECT_FALSE(nexthopCache->isRegistered(kPeerAddr1));
+    EXPECT_FALSE(nexthopCache->isRegistered({kPeerAddr1}));
   });
 }
 
@@ -10990,7 +10990,7 @@ TEST_F(
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     EXPECT_EQ(
         rib_->nexthopInfoMap_.end(), rib_->nexthopInfoMap_.find(kPeerAddr1));
-    EXPECT_FALSE(nexthopCache->isRegistered(kPeerAddr1));
+    EXPECT_FALSE(nexthopCache->isRegistered({kPeerAddr1}));
   });
 }
 
@@ -11033,7 +11033,7 @@ TEST_F(
     const auto it = rib_->nexthopInfoMap_.find(kPeerAddr1);
     ASSERT_NE(rib_->nexthopInfoMap_.end(), it);
     EXPECT_FALSE(it->second.isRouteInfoListEmpty());
-    EXPECT_TRUE(nexthopCache->isRegistered(kPeerAddr1));
+    EXPECT_TRUE(nexthopCache->isRegistered({kPeerAddr1}));
   });
 }
 

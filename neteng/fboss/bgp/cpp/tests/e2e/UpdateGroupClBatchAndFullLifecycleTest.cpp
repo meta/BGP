@@ -24,7 +24,7 @@
  *   Full lifecycle JR→JB→DB→unblock→PL drain→CL consume→DRJ→accept→JR
  */
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;

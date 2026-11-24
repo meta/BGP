@@ -21,7 +21,7 @@
 #include <stdexcept>
 #include <typeindex>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace facebook {
 namespace routing {

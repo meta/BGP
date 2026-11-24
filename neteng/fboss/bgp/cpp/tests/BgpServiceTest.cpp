@@ -21,7 +21,7 @@
 
 #include <fb303/FollyLoggingHandler.h>
 #include <fb303/ServiceData.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/FileUtil.h>
 #include <folly/ScopeGuard.h>
 #include <folly/coro/BlockingWait.h>

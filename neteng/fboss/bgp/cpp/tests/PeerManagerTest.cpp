@@ -255,7 +255,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/Optional.h>
 #include <folly/coro/BlockingWait.h>
 #include <folly/coro/Task.h>

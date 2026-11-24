@@ -34,7 +34,7 @@
  * PART 3: Route change tests (withdraw and attribute changes)
  */
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupDistributionTestCommon.h"
 

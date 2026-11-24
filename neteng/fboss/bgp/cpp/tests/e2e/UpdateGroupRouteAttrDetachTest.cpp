@@ -25,7 +25,7 @@
  *   Route with zero MED vs no MED — attribute comparison
  */
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;

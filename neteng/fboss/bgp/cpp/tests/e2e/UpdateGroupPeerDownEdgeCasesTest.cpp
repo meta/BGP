@@ -25,7 +25,7 @@
  * Peer DOWN from P-DB, comes back, immediately blocks again
  */
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;

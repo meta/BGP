@@ -16,7 +16,7 @@
 
 #include "neteng/fboss/bgp/cpp/tests/e2e/E2ETestFixture.h"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/container/small_vector.h>
 #include <folly/coro/Baton.h>
 #include <folly/coro/BlockingWait.h>

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "neteng/fboss/bgp/cpp/common/BgpError.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigStructs.h"

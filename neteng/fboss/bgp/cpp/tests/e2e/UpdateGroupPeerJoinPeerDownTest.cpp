@@ -34,7 +34,7 @@
  * PART 2: Peer down/up tests
  */
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupDistributionTestCommon.h"
 

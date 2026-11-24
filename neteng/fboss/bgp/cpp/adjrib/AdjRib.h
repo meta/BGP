@@ -23,7 +23,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <fboss/lib/RadixTree.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/CancellationToken.h>
 #include <folly/Function.h>
 #include <folly/IPAddress.h>

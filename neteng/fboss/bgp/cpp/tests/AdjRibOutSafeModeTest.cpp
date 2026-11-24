@@ -29,7 +29,7 @@
   FRIEND_TEST(AdjRibOutboundFixture, EgressSafeModeBlocksAllAdjRibs);        \
   FRIEND_TEST(AdjRibOutboundFixture, EgressExistingEntryUpdatedOverLimit);
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/coro/BlockingWait.h>
 
 #include "fboss/agent/Constants.h"

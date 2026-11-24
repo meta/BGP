@@ -24,7 +24,7 @@
  * AS-path prepend correctness through detach-recover cycle
  */
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;

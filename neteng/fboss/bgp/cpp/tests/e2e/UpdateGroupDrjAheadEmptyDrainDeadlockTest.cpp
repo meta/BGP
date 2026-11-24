@@ -61,7 +61,7 @@
  * denied churn routes take the indices above that.
  */
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "neteng/fboss/bgp/cpp/tests/PolicyUtils.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"

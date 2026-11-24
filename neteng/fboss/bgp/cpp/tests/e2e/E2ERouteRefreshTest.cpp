@@ -28,7 +28,7 @@
 
 #include <gtest/gtest.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/logging/xlog.h>
 
 #include "neteng/fboss/bgp/cpp/common/Consts.h"

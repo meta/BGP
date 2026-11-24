@@ -22,7 +22,7 @@
 #include "neteng/fboss/bgp/cpp/changeTracker/ConsumerBitManager.h"
 #include "neteng/fboss/bgp/cpp/changeTracker/TrackableObject.h"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/Function.h>
 #include <folly/container/F14Set.h>
 

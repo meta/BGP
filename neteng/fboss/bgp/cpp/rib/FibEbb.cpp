@@ -19,7 +19,7 @@
 #include <optional>
 #include <string>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/coro/Sleep.h>
 #include <folly/gen/Base.h>
 #include <folly/logging/xlog.h>

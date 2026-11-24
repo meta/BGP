@@ -20,7 +20,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/Range.h>
 #include <folly/coro/BlockingWait.h>
 #include <folly/coro/Task.h>

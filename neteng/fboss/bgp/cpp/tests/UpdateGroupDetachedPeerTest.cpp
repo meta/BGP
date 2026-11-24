@@ -256,7 +256,7 @@
       UpdateGroupDetachLifecycleTest,                                          \
       DetachedPeerDownSubtractsOwnShareFromGlobal);
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/coro/BlockingWait.h>
 #include <folly/io/async/EventBase.h>
 #include <folly/logging/LoggerDB.h>

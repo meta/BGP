@@ -26,7 +26,7 @@
 
 #include <vector>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/config/facebook/ConfigDC.h"

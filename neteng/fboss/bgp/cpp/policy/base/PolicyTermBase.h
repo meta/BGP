@@ -18,7 +18,7 @@
 
 #include <optional>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/String.h>
 #include <folly/gen/Base.h>
 #include <folly/logging/xlog.h>

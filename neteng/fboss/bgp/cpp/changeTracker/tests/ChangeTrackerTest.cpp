@@ -18,7 +18,7 @@
 
 #include <chrono>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <folly/io/async/EventBase.h>
 
 #include "neteng/fboss/bgp/cpp/changeTracker/ChangeTracker.h"

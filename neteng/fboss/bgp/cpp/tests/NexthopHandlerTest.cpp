@@ -615,19 +615,54 @@ CO_TEST_F(
             co_return std::move(stream);
           });
 
-  folly::IPAddress nexthopIp("2620:0:1cff:dead:bef1:ffff:ffff:1");
-
-  /* Register nexthop from RIB side so cache treats changes as pushable */
-  nexthopCache_->registerAndGetNexthopStatus({nexthopIp});
-
-  std::vector<NexthopStatus> updates = {
-      NexthopStatus({.ip = nexthopIp}, /*isReachable=*/true, /*igpCost=*/10u)};
-
-  EXPECT_EQ(ribInQ_.size(), 0);
-
+  const folly::IPAddress first("2620:0:1cff:dead:bef1:ffff:ffff:1");
+  const folly::IPAddress second("2620:0:1cff:dead:bef1:ffff:ffff:2");
+  const folly::IPAddress unregistered("2620:0:1cff:dead:bef1:ffff:ffff:3");
+  nexthopCache_->registerAndGetNexthopStatus({first});
+  nexthopCache_->registerAndGetNexthopStatus({second});
+  const std::vector<NexthopStatus> updates{
+      NexthopStatus({.ip = first}, /*isReachable=*/true, 10u),
+      NexthopStatus({.ip = second}, /*isReachable=*/true, 20u),
+      NexthopStatus({.ip = unregistered}, /*isReachable=*/true, 30u)};
+  CO_ASSERT_EQ(0, ribInQ_.size());
   co_await nexthopHandler_->co_updateCacheAndNotifyRib(updates);
 
-  EXPECT_EQ(ribInQ_.size(), 1);
+  CO_ASSERT_EQ(1, ribInQ_.size());
+  const auto message = co_await ribInQ_.pop();
+  const auto* update = std::get_if<RibInNexthopUpdate>(&message);
+  CO_ASSERT_NE(nullptr, update);
+  CO_ASSERT_EQ(2, update->nexthopStatuses.size());
+  std::vector<folly::IPAddress> addresses;
+  for (const auto& status : update->nexthopStatuses) {
+    addresses.push_back(status.getNexthop());
+    EXPECT_EQ(fboss::kDefaultVrf, status.getNexthopKey().nextHopVrfId);
+    EXPECT_TRUE(status.isReachable());
+    EXPECT_GT(status.getEpoch(), 0);
+  }
+  EXPECT_THAT(addresses, UnorderedElementsAre(first, second));
+  const auto cached = nexthopCache_->getNexthopStatus({unregistered});
+  CO_ASSERT_TRUE(cached.has_value());
+  EXPECT_TRUE(cached->isReachable());
+  EXPECT_EQ(30u, cached->getIgpCost());
+  EXPECT_FALSE(nexthopCache_->isRegistered({unregistered}));
+
+  co_await nexthopHandler_->co_updateCacheAndNotifyRib(updates);
+  EXPECT_TRUE(ribInQ_.empty());
+  nexthopCache_->unregisterAndRemoveNexthopStatus({first});
+  co_await nexthopHandler_->co_updateCacheAndNotifyRib(
+      {NexthopStatus({.ip = first}, /*isReachable=*/false),
+       NexthopStatus({.ip = second}, /*isReachable=*/false)});
+  CO_ASSERT_EQ(1, ribInQ_.size());
+  const auto withdrawalMessage = co_await ribInQ_.pop();
+  const auto* withdrawal = std::get_if<RibInNexthopUpdate>(&withdrawalMessage);
+  CO_ASSERT_NE(nullptr, withdrawal);
+  CO_ASSERT_EQ(1, withdrawal->nexthopStatuses.size());
+  EXPECT_EQ(second, withdrawal->nexthopStatuses.front().getNexthop());
+  EXPECT_EQ(
+      (NexthopKey{.ip = second}),
+      withdrawal->nexthopStatuses.front().getNexthopKey());
+  EXPECT_FALSE(withdrawal->nexthopStatuses.front().isReachable());
+  EXPECT_FALSE(nexthopCache_->getNexthopStatus({first})->isReachable());
 }
 
 } // namespace facebook::bgp

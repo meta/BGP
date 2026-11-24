@@ -89,6 +89,16 @@
       RibInAnnouncementRequestsNexthopSubscription);                           \
   FRIEND_TEST(RibNexthopTrackingFixture, RibInNexthopUpdate);                  \
   FRIEND_TEST(                                                                 \
+      RibNexthopTrackingFixture,                                               \
+      NondefaultCacheRegistrationDoesNotAffectRibTracking);                    \
+  FRIEND_TEST(                                                                 \
+      RibNexthopTrackingFixture, FibMetadataUsesDefaultTrackingStatus);        \
+  FRIEND_TEST(                                                                 \
+      RibNexthopTrackingFixture,                                               \
+      UntrackedResolutionVrfUpdateDoesNotChangeTrackedKey);                    \
+  FRIEND_TEST(                                                                 \
+      RibNexthopTrackingFixture, MixedResolutionKeysProcessDefaultStatuses);   \
+  FRIEND_TEST(                                                                 \
       RibNexthopTrackingFixture, ReachabilityAndResolutionAreIndependent);     \
   FRIEND_TEST(                                                                 \
       RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect); \
@@ -10692,6 +10702,202 @@ TEST_F(
     const auto& nexthopInfo = rib_->nexthopInfoMap_.at(kPeerAddr1);
     EXPECT_TRUE(nexthopInfo.isReachable());
     EXPECT_EQ(std::optional<uint32_t>(20), nexthopInfo.getIgpCost());
+  });
+}
+
+TEST_F(
+    RibNexthopTrackingFixture,
+    NondefaultCacheRegistrationDoesNotAffectRibTracking) {
+  auto* cache = rib_->nexthopCache_.get();
+  const NexthopKey underlay{.ip = kPeerAddr1};
+  const NexthopKey other{.ip = kPeerAddr1, .nextHopVrfId = 7};
+  const PrefixPathId prefixPathId{kV4Prefix1, kDefaultPathID};
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    cache->addOrUpdateNextHopStatus({NexthopStatus(
+        NexthopKey{.ip = kPeerAddr1}, /*isReachable=*/true, 10)});
+    cache->addOrUpdateNextHopStatus(
+        {NexthopStatus(other, /*isReachable=*/true, 70)});
+    cache->registerAndGetNexthopStatus(other);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
+    ASSERT_EQ(1, rib_->nexthopInfoMap_.size());
+    const auto& underlayInfo = rib_->nexthopInfoMap_.at(kPeerAddr1);
+    const auto underlayEpoch = underlayInfo.getEpoch();
+    const auto updates = cache->addOrUpdateNextHopStatus(
+        {NexthopStatus(other, /*isReachable=*/false)});
+    ASSERT_EQ(1, updates.size());
+    rib_->processRibInNexthopUpdate(RibInNexthopUpdate(updates));
+    EXPECT_FALSE(cache->getNexthopStatus(other)->isReachable());
+    EXPECT_TRUE(underlayInfo.isReachable());
+    EXPECT_EQ(10, underlayInfo.getIgpCost());
+    EXPECT_EQ(underlayEpoch, underlayInfo.getEpoch());
+    EXPECT_EQ(1, rib_->nexthopInfoMap_.size());
+    EXPECT_TRUE(cache->isRegistered(underlay));
+    EXPECT_TRUE(cache->isRegistered(other));
+
+    rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, prefixPathId);
+    EXPECT_TRUE(rib_->nexthopInfoMap_.empty());
+    EXPECT_FALSE(cache->isRegistered(underlay));
+    EXPECT_TRUE(cache->isRegistered(other));
+    EXPECT_TRUE(cache->unregisterAndRemoveNexthopStatus(other));
+    EXPECT_FALSE(cache->getNexthopStatus(other).has_value());
+  });
+}
+
+TEST_F(RibNexthopTrackingFixture, FibMetadataUsesDefaultTrackingStatus) {
+  struct FibNexthopMetadata {
+    bool isReachable;
+    std::optional<uint32_t> igpCost;
+    std::optional<bool> isConnected;
+    std::optional<std::string> ifName;
+  };
+  auto* cache = rib_->nexthopCache_.get();
+  const NexthopKey underlay{.ip = kPeerAddr1};
+  const NexthopKey other{.ip = kPeerAddr1, .nextHopVrfId = 7};
+  const auto prefix = folly::IPAddress::createNetwork("1::/64");
+  const auto attrs = pathVia(kPeerAddr1);
+  std::vector<FibNexthopMetadata> programmedStatuses;
+  EXPECT_CALL(*fib_, updateUnicastRoute_(Eq(prefix), _, _, _, _, _))
+      .Times(2)
+      .WillRepeatedly([&](const folly::CIDRNetwork&,
+                          std::shared_ptr<const BgpPath>,
+                          std::shared_ptr<const WeightedNexthopMap>,
+                          const bool,
+                          const bool,
+                          const MockFib::NexthopInfoMap& nexthopInfoMap) {
+        EXPECT_EQ(1, rib_->nexthopInfoMap_.size());
+        EXPECT_TRUE(rib_->nexthopInfoMap_.contains(kPeerAddr1));
+        EXPECT_TRUE(cache->isRegistered(underlay));
+        EXPECT_TRUE(cache->isRegistered(other));
+        EXPECT_EQ(1, nexthopInfoMap.size());
+        const auto it = nexthopInfoMap.find(kPeerAddr1);
+        if (it != nexthopInfoMap.end()) {
+          programmedStatuses.push_back(
+              FibNexthopMetadata{
+                  it->second.isReachable(),
+                  it->second.getIgpCost(),
+                  it->second.isConnected(),
+                  it->second.getIfName()});
+        }
+      });
+
+  auto fibFuture = fib_->getFibProgramFuture();
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    cache->addOrUpdateNextHopStatus({NexthopStatus(
+        NexthopKey{.ip = kPeerAddr1},
+        /*isReachable=*/true,
+        10,
+        /*isConnected=*/true,
+        /*excludeNexthopWithoutCost=*/true,
+        "po1")});
+    cache->addOrUpdateNextHopStatus({NexthopStatus(
+        other,
+        /*isReachable=*/true,
+        70,
+        /*isConnected=*/false,
+        /*excludeNexthopWithoutCost=*/true,
+        "po7")});
+    cache->registerAndGetNexthopStatus(other);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, attrs, {prefix, kDefaultPathID});
+    rib_->processRibInInitialPathComputation(
+        fboss::kDefaultVrf, std::chrono::milliseconds(0));
+  });
+  fibFuture.wait();
+
+  fibFuture = fib_->getFibProgramFuture();
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    const auto epoch = rib_->nexthopInfoMap_.at(kPeerAddr1).getEpoch();
+    const auto updates = cache->addOrUpdateNextHopStatus({NexthopStatus(
+        other,
+        /*isReachable=*/true,
+        90,
+        /*isConnected=*/false,
+        /*excludeNexthopWithoutCost=*/true,
+        "po9")});
+    EXPECT_EQ(1, updates.size());
+    rib_->processRibInNexthopUpdate(RibInNexthopUpdate(updates));
+    EXPECT_EQ(90, cache->getNexthopStatus(other)->getIgpCost());
+    EXPECT_EQ(epoch, rib_->nexthopInfoMap_.at(kPeerAddr1).getEpoch());
+    rib_->fromFibMessageQ_.push(Fib::FibSyncReq{});
+  });
+  fibFuture.wait();
+
+  cache->unregisterAndRemoveNexthopStatus(other);
+  EXPECT_FALSE(cache->isRegistered(other));
+
+  ASSERT_EQ(2, programmedStatuses.size());
+  for (const auto& status : programmedStatuses) {
+    EXPECT_TRUE(status.isReachable);
+    EXPECT_EQ(std::optional<uint32_t>(10), status.igpCost);
+    EXPECT_EQ(std::optional<bool>(true), status.isConnected);
+    EXPECT_EQ(std::optional<std::string>("po1"), status.ifName);
+  }
+}
+
+TEST_F(
+    RibNexthopTrackingFixture,
+    UntrackedResolutionVrfUpdateDoesNotChangeTrackedKey) {
+  auto* cache = rib_->nexthopCache_.get();
+  const NexthopKey underlay{.ip = kPeerAddr1};
+  const NexthopKey other{.ip = kPeerAddr1, .nextHopVrfId = 7};
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    cache->addOrUpdateNextHopStatus({NexthopStatus(
+        NexthopKey{.ip = kPeerAddr1}, /*isReachable=*/true, 10)});
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), {kV4Prefix1, kDefaultPathID});
+    const auto epoch = rib_->nexthopInfoMap_.at(underlay.ip).getEpoch();
+    const auto pending = cache->addOrUpdateNextHopStatus(
+        {NexthopStatus(NexthopKey{.ip = kPeerAddr1}, /*isReachable=*/false)});
+    ASSERT_EQ(1, pending.size());
+    rib_->processRibInNexthopUpdate(
+        RibInNexthopUpdate({NexthopStatus(other, /*isReachable=*/false)}));
+    EXPECT_EQ(1, rib_->nexthopInfoMap_.size());
+    EXPECT_FALSE(cache->getNexthopStatus(other).has_value());
+    EXPECT_TRUE(rib_->nexthopInfoMap_.at(underlay.ip).isResolvedForSelection());
+    EXPECT_EQ(epoch, rib_->nexthopInfoMap_.at(underlay.ip).getEpoch());
+
+    rib_->processRibInNexthopUpdate(RibInNexthopUpdate(pending));
+    EXPECT_FALSE(
+        rib_->nexthopInfoMap_.at(underlay.ip).isResolvedForSelection());
+    EXPECT_EQ(
+        pending.front().getEpoch(),
+        rib_->nexthopInfoMap_.at(underlay.ip).getEpoch());
+  });
+}
+
+TEST_F(RibNexthopTrackingFixture, MixedResolutionKeysProcessDefaultStatuses) {
+  auto* cache = rib_->nexthopCache_.get();
+  const NexthopKey underlay{.ip = kPeerAddr1};
+  const NexthopKey other{.ip = kPeerAddr1, .nextHopVrfId = 7};
+  rib_->evb_.runInEventBaseThreadAndWait([&]() {
+    cache->addOrUpdateNextHopStatus(
+        {NexthopStatus(underlay, true, 10), NexthopStatus(other, true, 70)});
+    cache->registerAndGetNexthopStatus(other);
+    rib_->processSingleRibInUpdateForTest(
+        iBgpPeer_, pathVia(kPeerAddr1), {kV4Prefix1, kDefaultPathID});
+
+    const auto withdrawal = cache->addOrUpdateNextHopStatus(
+        {NexthopStatus(other, false), NexthopStatus(underlay, false)});
+    ASSERT_EQ(2, withdrawal.size());
+    EXPECT_EQ(other, withdrawal.front().getNexthopKey());
+    EXPECT_EQ(underlay, withdrawal.back().getNexthopKey());
+    rib_->processRibInNexthopUpdate(RibInNexthopUpdate(withdrawal));
+    const auto& info = rib_->nexthopInfoMap_.at(kPeerAddr1);
+    EXPECT_FALSE(info.isReachable());
+    EXPECT_EQ(withdrawal.back().getEpoch(), info.getEpoch());
+
+    const auto restoration = cache->addOrUpdateNextHopStatus(
+        {NexthopStatus(underlay, true, 20), NexthopStatus(other, true, 90)});
+    ASSERT_EQ(2, restoration.size());
+    EXPECT_GT(restoration.back().getEpoch(), restoration.front().getEpoch());
+    rib_->processRibInNexthopUpdate(RibInNexthopUpdate(restoration));
+    EXPECT_TRUE(info.isReachable());
+    EXPECT_EQ(20, info.getIgpCost());
+    EXPECT_EQ(restoration.front().getEpoch(), info.getEpoch());
+    EXPECT_EQ(1, rib_->nexthopInfoMap_.size());
+    cache->unregisterAndRemoveNexthopStatus(other);
+    EXPECT_FALSE(cache->isRegistered(other));
   });
 }
 

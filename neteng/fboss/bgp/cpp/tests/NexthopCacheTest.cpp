@@ -28,7 +28,6 @@
 #include "neteng/fboss/bgp/cpp/common/RibMessage.h"
 #include "neteng/fboss/bgp/cpp/lib/coro/BackPressuredQueue.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopCache.h"
-
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopKey.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopStatus.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/Utils.h"
@@ -129,6 +128,37 @@ TEST(NexthopKeyTest, HashMapKeepsAddressesAndVrfsIndependent) {
   values.erase(otherVrf);
   EXPECT_TRUE(values.contains(underlay));
   EXPECT_FALSE(values.contains(otherVrf));
+}
+
+TEST(NexthopMessagesTest, PreservesMixedResolutionKeys) {
+  const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
+  const NexthopKey other{.ip = underlay.ip, .nextHopVrfId = 7};
+  const std::vector<NexthopStatus> statuses{
+      NexthopStatus(underlay, /*isReachable=*/true, 10),
+      NexthopStatus(other, /*isReachable=*/true, 70)};
+  const RibInNexthopUpdate update(statuses);
+  ASSERT_EQ(2, update.nexthopStatuses.size());
+  EXPECT_EQ(underlay, update.nexthopStatuses[0].getNexthopKey());
+  EXPECT_EQ(other, update.nexthopStatuses[1].getNexthopKey());
+  EXPECT_EQ(underlay.ip, update.nexthopStatuses[0].getNexthop());
+  EXPECT_EQ(underlay.ip, update.nexthopStatuses[1].getNexthop());
+  EXPECT_EQ(10, update.nexthopStatuses[0].getIgpCost());
+  EXPECT_EQ(70, update.nexthopStatuses[1].getIgpCost());
+}
+
+TEST(NexthopStatusTest, ConstructorsPreserveResolutionKey) {
+  const NexthopKey key{
+      .ip = folly::IPAddress("2001:db8::1"), .nextHopVrfId = 7};
+  const NexthopStatus status(key, true, 70);
+  EXPECT_EQ(key, status.getNexthopKey());
+  EXPECT_EQ(key.ip, status.getNexthop());
+  openr::thrift::NextHopStatus thriftStatus;
+  thriftStatus.isReachable() = true;
+  thriftStatus.igpCost() = 80;
+  const NexthopStatus converted(key, thriftStatus);
+  EXPECT_EQ(key, converted.getNexthopKey());
+  EXPECT_TRUE(converted.isReachable());
+  EXPECT_EQ(80, converted.getIgpCost());
 }
 
 class NexthopCacheTestFixture : public ::testing::Test {
@@ -649,6 +679,8 @@ TEST_F(NexthopCacheTestFixture, GetRegisteredNexthopsInSubnet) {
   cache_->registerAndGetNexthopStatus({inB});
   cache_->registerAndGetNexthopStatus({outOfSubnet});
   cache_->registerAndGetNexthopStatus({v6});
+  const NexthopKey other{.ip = inA, .nextHopVrfId = 7};
+  cache_->registerAndGetNexthopStatus(other);
   // Present in the subnet but never registered from RIB.
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = unregisteredInSubnet}, true, 1, true)});
@@ -663,6 +695,11 @@ TEST_F(NexthopCacheTestFixture, GetRegisteredNexthopsInSubnet) {
   EXPECT_THAT(
       result,
       UnorderedElementsAre(NexthopKey{.ip = inA}, NexthopKey{.ip = inB}));
+  EXPECT_THAT(
+      cache_->getRegisteredNexthopsInSubnet(
+          NexthopKey{.ip = folly::IPAddress("10.10.0.0"), .nextHopVrfId = 7},
+          16),
+      ElementsAre(other));
 }
 
 TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
@@ -709,6 +746,9 @@ TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
       {NexthopStatus({.ip = connUnreg}, true, 1, true)});
   EXPECT_FALSE(cache_->clearConnectedStatus({connUnreg}).has_value());
   cache_->addOrUpdateNextHopStatus(
+      {NexthopStatus({.ip = connUnreg}, true, 1, true)});
+  EXPECT_FALSE(cache_->clearConnectedStatus({connUnreg}).has_value());
+  cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = connUnreg}, true, 9, std::nullopt)});
   EXPECT_EQ(
       cache_->registerAndGetNexthopStatus({connUnreg}).getIgpCost().value(), 9);
@@ -717,7 +757,7 @@ TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
 TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
   std::vector<NexthopKey> fired;
   cache_->setOnNexthopRegistered(
-      [&](const NexthopKey& key) { fired.push_back(key); });
+      [&](const NexthopKey& nexthop) { fired.push_back(nexthop); });
 
   // Registering an unknown nexthop (default unreachable) fires the hook.
   folly::IPAddress unknownIp("10.0.0.1");
@@ -762,6 +802,11 @@ TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
   cache_->registerAndGetNexthopStatus({unreachableIp});
   ASSERT_EQ(fired.size(), 4);
   EXPECT_EQ(fired[3], (NexthopKey{.ip = unreachableIp}));
+  const NexthopKey other{.ip = unknownIp, .nextHopVrfId = 7};
+  const auto otherStatus = cache_->registerAndGetNexthopStatus(other);
+  ASSERT_EQ(5, fired.size());
+  EXPECT_EQ(other, fired.back());
+  EXPECT_EQ(other, otherStatus.getNexthopKey());
 }
 
 namespace {
@@ -871,7 +916,177 @@ TEST_F(NexthopCacheTestFixture, RegisterAndGetReturnsStoredEpoch) {
       cache_->getNexthopStatus({existing}).value().getEpoch());
 }
 
+TEST_F(
+    NexthopCacheTestFixture,
+    UnregisterUnreachableUnregisteredEntryRemovesIt) {
+  const folly::IPAddress ip{"2001:db8::1"};
+  cache_->addOrUpdateNextHopStatus(
+      {NexthopStatus({.ip = ip}, /*isReachable=*/false)});
+  ASSERT_TRUE(cache_->getNexthopStatus({ip}).has_value());
+  ASSERT_FALSE(cache_->isRegistered({ip}));
+  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus({ip}));
+  EXPECT_FALSE(cache_->getNexthopStatus({ip}).has_value());
+}
+
+TEST_F(NexthopCacheTestFixture, RegistrationIsIdempotentPerResolutionKey) {
+  const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
+  const NexthopKey other{.ip = underlay.ip, .nextHopVrfId = 7};
+  const auto first = cache_->registerAndGetNexthopStatus(underlay);
+  const auto repeated = cache_->registerAndGetNexthopStatus(underlay);
+  const auto otherStatus = cache_->registerAndGetNexthopStatus(other);
+  EXPECT_EQ(underlay, first.getNexthopKey());
+  EXPECT_EQ(other, otherStatus.getNexthopKey());
+  EXPECT_EQ(first.getEpoch(), repeated.getEpoch());
+  EXPECT_TRUE(cache_->isRegistered(underlay));
+  EXPECT_TRUE(cache_->isRegistered(other));
+
+  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus(underlay));
+  EXPECT_FALSE(cache_->isRegistered(underlay));
+  EXPECT_FALSE(cache_->getNexthopStatus(underlay).has_value());
+  EXPECT_TRUE(cache_->isRegistered(other));
+  EXPECT_TRUE(cache_->getNexthopStatus(other).has_value());
+}
+
 TEST_F(NexthopCacheTestFixture, ResolutionKeysHaveIndependentStatusAndEpoch) {
+  const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
+  const NexthopKey other{.ip = underlay.ip, .nextHopVrfId = 7};
+  cache_->registerAndGetNexthopStatus(underlay);
+  cache_->registerAndGetNexthopStatus(other);
+  const auto updates = cache_->addOrUpdateNextHopStatus(
+      {NexthopStatus(underlay, /*isReachable=*/true, 10),
+       NexthopStatus(other, /*isReachable=*/true, 70)});
+  ASSERT_EQ(2, updates.size());
+  EXPECT_EQ(underlay, updates[0].getNexthopKey());
+  EXPECT_EQ(other, updates[1].getNexthopKey());
+  EXPECT_GT(updates[1].getEpoch(), updates[0].getEpoch());
+  const auto underlayEpoch = cache_->getNexthopStatus(underlay)->getEpoch();
+  EXPECT_EQ(10, cache_->getNexthopStatus(underlay)->getIgpCost());
+  EXPECT_EQ(70, cache_->getNexthopStatus(other)->getIgpCost());
+  EXPECT_TRUE(cache_
+                  ->addOrUpdateNextHopStatus(
+                      {NexthopStatus(other, /*isReachable=*/true, 70)})
+                  .empty());
+
+  const auto withdrawal = cache_->addOrUpdateNextHopStatus(
+      {NexthopStatus(other, /*isReachable=*/false)});
+  ASSERT_EQ(1, withdrawal.size());
+  EXPECT_EQ(other, withdrawal.front().getNexthopKey());
+  EXPECT_GT(withdrawal.front().getEpoch(), updates.back().getEpoch());
+  EXPECT_FALSE(cache_->getNexthopStatus(other)->isReachable());
+  EXPECT_TRUE(cache_->getNexthopStatus(underlay)->isReachable());
+  EXPECT_EQ(underlayEpoch, cache_->getNexthopStatus(underlay)->getEpoch());
+  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus(other));
+  EXPECT_FALSE(cache_->getNexthopStatus(other).has_value());
+  EXPECT_TRUE(cache_->isRegistered(underlay));
+}
+
+TEST_F(NexthopCacheTestFixture, UnregisteredResolutionKeyRetainsCachedUpdates) {
+  const NexthopKey nexthop{
+      .ip = folly::IPAddress("2001:db8::1"), .nextHopVrfId = 7};
+  EXPECT_TRUE(cache_
+                  ->addOrUpdateNextHopStatus(
+                      {NexthopStatus(nexthop, /*isReachable=*/true, 10)})
+                  .empty());
+  const auto cached = cache_->getNexthopStatus(nexthop);
+  ASSERT_TRUE(cached.has_value());
+  EXPECT_EQ(nexthop, cached->getNexthopKey());
+  EXPECT_EQ(
+      cached->getEpoch(),
+      cache_->registerAndGetNexthopStatus(nexthop).getEpoch());
+  EXPECT_FALSE(cache_->unregisterAndRemoveNexthopStatus(nexthop));
+  EXPECT_FALSE(cache_->isRegistered(nexthop));
+  EXPECT_TRUE(cache_
+                  ->addOrUpdateNextHopStatus(
+                      {NexthopStatus(nexthop, /*isReachable=*/false)})
+                  .empty());
+  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus(nexthop));
+  EXPECT_FALSE(cache_->getNexthopStatus(nexthop).has_value());
+}
+
+TEST_F(
+    NexthopCacheTestFixture,
+    MixedResolutionKeysNotifyOnlyRegisteredEntries) {
+  const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
+  const NexthopKey other{.ip = underlay.ip, .nextHopVrfId = 7};
+  const NexthopKey unregistered{
+      .ip = folly::IPAddress("2001:db8::2"), .nextHopVrfId = 7};
+  cache_->registerAndGetNexthopStatus(underlay);
+  cache_->registerAndGetNexthopStatus(other);
+  updateCacheAndNotifyRib(
+      {NexthopStatus(other, true, 70),
+       NexthopStatus(unregistered, true, 80),
+       NexthopStatus(underlay, true, 10)});
+  ASSERT_EQ(1, ribInQ_.size());
+  const auto message = folly::coro::blockingWait(ribInQ_.pop());
+  const auto* update = std::get_if<RibInNexthopUpdate>(&message);
+  ASSERT_NE(nullptr, update);
+  ASSERT_EQ(2, update->nexthopStatuses.size());
+  EXPECT_EQ(other, update->nexthopStatuses[0].getNexthopKey());
+  EXPECT_EQ(underlay, update->nexthopStatuses[1].getNexthopKey());
+  EXPECT_EQ(70, update->nexthopStatuses[0].getIgpCost());
+  EXPECT_EQ(10, update->nexthopStatuses[1].getIgpCost());
+  EXPECT_GT(
+      update->nexthopStatuses[1].getEpoch(),
+      update->nexthopStatuses[0].getEpoch());
+  const auto cached = cache_->getNexthopStatus(unregistered);
+  ASSERT_TRUE(cached.has_value());
+  EXPECT_EQ(unregistered, cached->getNexthopKey());
+  EXPECT_EQ(80, cached->getIgpCost());
+  EXPECT_FALSE(cache_->isRegistered(unregistered));
+}
+
+TEST_F(NexthopCacheTestFixture, ConnectedCleanupRetainsExactResolutionKey) {
+  const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
+  const NexthopKey other{.ip = underlay.ip, .nextHopVrfId = 7};
+  cache_->registerAndGetNexthopStatus(underlay);
+  cache_->registerAndGetNexthopStatus(other);
+  cache_->addOrUpdateNextHopStatus(
+      {NexthopStatus(underlay, true, 10),
+       NexthopStatus(other, true, 70, true)});
+  const auto underlayEpoch = cache_->getNexthopStatus(underlay)->getEpoch();
+  const auto otherEpoch = cache_->getNexthopStatus(other)->getEpoch();
+  const auto cleared = cache_->clearConnectedStatus(other);
+  ASSERT_TRUE(cleared.has_value());
+  EXPECT_EQ(other, cleared->getNexthopKey());
+  EXPECT_FALSE(cleared->isReachable());
+  EXPECT_FALSE(cleared->isConnected().has_value());
+  EXPECT_GT(cleared->getEpoch(), otherEpoch);
+  EXPECT_EQ(other, cache_->getNexthopStatus(other)->getNexthopKey());
+  EXPECT_EQ(underlayEpoch, cache_->getNexthopStatus(underlay)->getEpoch());
+  EXPECT_EQ(10, cache_->getNexthopStatus(underlay)->getIgpCost());
+}
+
+TEST_F(NexthopCacheTestFixture, RegisteredUpdatesAreBatched) {
+  const NexthopKey first{
+      .ip = folly::IPAddress("2001:db8::1"), .nextHopVrfId = 7};
+  const NexthopKey second{
+      .ip = folly::IPAddress("2001:db8::2"), .nextHopVrfId = 7};
+  const NexthopKey unregistered{
+      .ip = folly::IPAddress("2001:db8::3"), .nextHopVrfId = 7};
+  cache_->registerAndGetNexthopStatus(first);
+  cache_->registerAndGetNexthopStatus(second);
+  const std::vector<NexthopStatus> updates{
+      NexthopStatus(first, /*isReachable=*/true, 10),
+      NexthopStatus(second, /*isReachable=*/true, 20),
+      NexthopStatus(unregistered, /*isReachable=*/true, 30),
+      NexthopStatus(first, /*isReachable=*/true, 10)};
+  const auto changed = cache_->addOrUpdateNextHopStatus(updates);
+  ASSERT_EQ(2, changed.size());
+  std::vector<NexthopKey> keys;
+  for (const auto& status : changed) {
+    keys.push_back(status.getNexthopKey());
+    EXPECT_GT(status.getEpoch(), 0);
+  }
+  EXPECT_THAT(keys, UnorderedElementsAre(first, second));
+  const auto cached = cache_->getNexthopStatus(unregistered);
+  ASSERT_TRUE(cached.has_value());
+  EXPECT_EQ(30, cached->getIgpCost());
+  EXPECT_FALSE(cache_->isRegistered(unregistered));
+  EXPECT_FALSE(cache_->getNexthopStatus({first.ip}).has_value());
+  EXPECT_TRUE(cache_->addOrUpdateNextHopStatus(updates).empty());
+}
+
+TEST_F(NexthopCacheTestFixture, RegistrationHookPreservesResolutionKeys) {
   const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
   const NexthopKey other{.ip = underlay.ip, .nextHopVrfId = 7};
   cache_->registerAndGetNexthopStatus(underlay);

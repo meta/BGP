@@ -25,6 +25,7 @@
 #include "neteng/fboss/bgp/cpp/common/RibMessage.h"
 #include "neteng/fboss/bgp/cpp/lib/coro/BackPressuredQueue.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopCache.h"
+#include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopKey.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopStatus.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/Utils.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
@@ -35,6 +36,23 @@ using namespace facebook::bgp;
 using namespace ::testing;
 
 namespace facebook::bgp {
+
+TEST(NexthopKeyTest, HashMapKeepsAddressesAndVrfsIndependent) {
+  const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
+  const NexthopKey otherVrf{.ip = underlay.ip, .nextHopVrfId = 7};
+  const NexthopKey otherAddress{.ip = folly::IPAddress("2001:db8::2")};
+  folly::F14FastMap<NexthopKey, int, NexthopKey::Hash> values;
+  values.emplace(underlay, 10);
+  values.emplace(otherVrf, 20);
+  values.emplace(otherAddress, 30);
+  EXPECT_EQ(3, values.size());
+  EXPECT_EQ(10, values.at(NexthopKey{.ip = underlay.ip}));
+  EXPECT_EQ(20, values.at(otherVrf));
+  EXPECT_EQ(30, values.at(otherAddress));
+  values.erase(otherVrf);
+  EXPECT_TRUE(values.contains(underlay));
+  EXPECT_FALSE(values.contains(otherVrf));
+}
 
 class NexthopCacheTestFixture : public ::testing::Test {
  protected:

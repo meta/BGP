@@ -370,7 +370,10 @@ class E2ETestFixture : public ::testing::Test {
    * walking the shadow RIB, keeping that peer in DETACHED_INIT_DUMP.
    * Call with false to resume normal dump processing for the peer.
    */
-  void testOnlyDeferInitDump(const folly::IPAddress& peerAddr, bool defer);
+  void testOnlyDeferInitDump(
+      const folly::IPAddress& peerAddr,
+      bool defer,
+      VrfId vrfId);
 
   /*
    * Test-only: defer DRJ acceptance for a specific peer.

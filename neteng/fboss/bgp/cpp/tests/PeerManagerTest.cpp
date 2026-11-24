@@ -6400,7 +6400,7 @@ TEST_F(PeerManagerTestFixture, UpdateEntryStatsTest) {
   auto mockPeerMgr = setupMockPeerManager(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
   TEntryStats stats;
-  mockPeerMgr->updateEntryStats(stats);
+  mockPeerMgr->updateEntryStats(stats, fboss::kDefaultVrf);
 
   EXPECT_EQ(stats.total_adj_ribs(), mockPeerMgr->adjRibs_.size());
   auto* vrf = mockPeerMgr->findVrf(fboss::kDefaultVrf);

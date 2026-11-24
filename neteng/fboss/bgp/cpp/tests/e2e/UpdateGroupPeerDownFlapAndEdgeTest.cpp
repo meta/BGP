@@ -25,6 +25,7 @@
  * Peer DOWN from P-DB, comes back, immediately blocks again
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -564,14 +565,14 @@ TEST_P(UpdateGroupMultiPeerTest, ReconnectAndReblock_NoInstantRedetach) {
   unblockPeer(kPeerAddr3);
   /* Larger queue for reconnection so init dump fits */
   setDefaultQueueSizes(10, 8, 0);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
 
   /* Wait for init dump to start before draining */
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
   drainPeerQueueCompletely(peerId3);
 
   /* Peer3 reconnected — NOT instantly re-detached (freq counter reset) */

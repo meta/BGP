@@ -20,6 +20,7 @@
  * divergenceRibVersion stays fixed during entire detached period
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -244,12 +245,12 @@ TEST_P(UpdateGroupMultiPeerTest, MultipleDetachRejoinVersionAccumulate) {
       "3214:1"));
 
   /* Bring peer3 back UP — enters DETACHED_INIT_DUMP */
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Bring DOWN immediately to complete cycle #1 cleanly */
   bringDownPeer(kPeerAddr3);

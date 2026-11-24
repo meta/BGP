@@ -18,6 +18,7 @@
  * E2E tests for 3-peer multi-state combos with PEER-DOWN and detachment.
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -273,13 +274,13 @@ TEST_P(UpdateGroupMultiPeerTest, JR_DID_DB_LastSyncDown) {
 
   bringDownPeer(kPeerAddr4);
   unblockPeer(kPeerAddr5);
-  testOnlyDeferInitDump(kPeerAddr4, true);
+  testOnlyDeferInitDump(kPeerAddr4, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr4);
   sendEoRToPeer(peerId4);
 
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr4, PeerUpdateState::DETACHED_INIT_DUMP));
-  testOnlyDeferInitDump(kPeerAddr4, false);
+  testOnlyDeferInitDump(kPeerAddr4, false, fboss::kDefaultVrf);
 
   /* Now: peer3=JR (last synced), peer4=DID, peer5=DB/DRJ.
    * Bring the last synced peer DOWN. */

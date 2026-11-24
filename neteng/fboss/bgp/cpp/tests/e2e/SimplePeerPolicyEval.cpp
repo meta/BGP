@@ -59,6 +59,7 @@
  * group-level suite's format so routeIndexFromPrefix works).
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupPolicyReEvalE2ECommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -528,7 +529,7 @@ TEST_P(
    */
   bringDownPeer(kPeerAddr3);
   unblockPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(subjectId);
   ASSERT_TRUE(waitForPeerState(
@@ -572,7 +573,7 @@ TEST_P(
    * ran inline -- and confirm peer3 converges back into its own split group as
    * a normal in-sync member, with the other peers still in sync in theirs.
    */
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
   EXPECT_EQ(getPeerState(kPeerAddr3), PeerUpdateState::JOINED_RUNNING);
   EXPECT_TRUE(waitForPeerState(kPeerAddr3, PeerUpdateState::JOINED_RUNNING));
   EXPECT_TRUE(isPeerInSync(kPeerAddr3));

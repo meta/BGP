@@ -265,8 +265,9 @@ void E2ETestFixture::bringUpPeerBlocked(
 
 void E2ETestFixture::testOnlyDeferInitDump(
     const folly::IPAddress& peerAddr,
-    bool defer) {
-  peerManager_->testOnlySetDeferInitDump(peerAddr, defer);
+    bool defer,
+    VrfId vrfId) {
+  peerManager_->testOnlySetDeferInitDump(peerAddr, defer, vrfId);
 }
 
 void E2ETestFixture::testOnlyDeferDrjAcceptance(

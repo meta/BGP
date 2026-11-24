@@ -23,6 +23,7 @@
 #include <thrift/lib/cpp2/Flags.h>
 #include <thrift/lib/cpp2/util/ScopedServerInterfaceThread.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/BgpServiceBB.h"
 #include "neteng/fboss/bgp/cpp/tests/PolicyUtils.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/E2ESessionTestFixture.h"
@@ -208,7 +209,7 @@ TEST_F(
   bringDownPeerAndWait(kPeerAddr4);
   ASSERT_TRUE(waitForPeerState(kPeerAddr4, PeerUpdateState::DOWN));
 
-  testOnlyDeferInitDump(kPeerAddr4, true);
+  testOnlyDeferInitDump(kPeerAddr4, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr4);
   ASSERT_TRUE(waitForSessionEstablished(kPeerAddr4));
   sendEoRToPeer(peer4);
@@ -235,7 +236,7 @@ TEST_F(
   });
   ASSERT_TRUE(policyProcessingPaused);
 
-  testOnlyDeferInitDump(kPeerAddr4, false);
+  testOnlyDeferInitDump(kPeerAddr4, false, fboss::kDefaultVrf);
   const bool receivedV4Eor = waitForEoR(peer4);
   const bool receivedV6Eor = waitForEoR(peer4);
   /*
@@ -327,7 +328,7 @@ TEST_F(
    * registered members, and a peer that is DOWN has been unregistered, so the
    * pin cannot be set before the session is back up and in the group.
    */
-  testOnlyDeferInitDump(kPeerAddr4, true);
+  testOnlyDeferInitDump(kPeerAddr4, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr4);
   ASSERT_TRUE(waitForSessionEstablished(kPeerAddr4));
   sendEoRToPeer(peer4);
@@ -335,7 +336,7 @@ TEST_F(
       waitForPeerState(kPeerAddr4, PeerUpdateState::DETACHED_INIT_DUMP, 30));
 
   testOnlyDeferDrjAcceptance(kPeerAddr4, true);
-  testOnlyDeferInitDump(kPeerAddr4, false);
+  testOnlyDeferInitDump(kPeerAddr4, false, fboss::kDefaultVrf);
   ASSERT_TRUE(waitForEoR(peer4));
   ASSERT_TRUE(waitForEoR(peer4));
   ASSERT_TRUE(waitForPeerState(

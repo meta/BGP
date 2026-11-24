@@ -27,6 +27,7 @@
  *   P-DID x E-CL-END -- CL consumed to end during init dump
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -90,12 +91,12 @@ TEST_P(UpdateGroupMultiPeerTest, DetachedInitDump_Block) {
   /* DOWN + unblock + UP -> DID */
   bringDownPeer(kPeerAddr3);
   unblockPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Block peer3 during DID -- accept DID or DB as valid */
   blockPeer(kPeerAddr3);
@@ -178,12 +179,12 @@ TEST_P(UpdateGroupMultiPeerTest, DetachedInitDump_SlowDur_NA) {
   unblockPeer(kPeerAddr3);
   /* Larger queue for reconnection so init dump (3 routes + 2 EoRs) fits */
   setDefaultQueueSizes(10, 8, 0);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Set aggressive duration threshold on already-detached peer -- no-op */
   setSlowPeerThresholds(
@@ -267,12 +268,12 @@ TEST_P(UpdateGroupMultiPeerTest, DetachedInitDump_ClEnd) {
   /* DOWN + unblock + UP -> DID */
   bringDownPeer(kPeerAddr3);
   unblockPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Inject a route during DID -- creates CL item */
   injectLocalRoutesAtRuntime({"31.45.0.0/16"}, {"3145:1"}, 150);

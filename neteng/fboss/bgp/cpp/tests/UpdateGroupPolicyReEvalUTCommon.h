@@ -893,7 +893,8 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
     triggerPeerDownOnEvb(ctx, peerId);
     expectEventualStateOnEvb(ctx, peerId, PeerUpdateState::DOWN);
 
-    ctx.peerMgr->testOnlySetDeferInitDump(peerId.peerAddr, true);
+    ctx.peerMgr->testOnlySetDeferInitDump(
+        peerId.peerAddr, true, fboss::kDefaultVrf);
     triggerPeerUpOnEvb(
         ctx,
         peerId,

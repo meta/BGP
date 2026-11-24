@@ -27,6 +27,7 @@
  *   Route refresh for all peers simultaneously — all detach
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -93,11 +94,11 @@ TEST_P(UpdateGroupMultiPeerTest, DetachedInitDump_RouteRefresh) {
   /* Down → unblock + up → enters DETACHED_INIT_DUMP */
   bringDownPeer(kPeerAddr3);
   unblockPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Simulate route refresh while peer3 is in DID */
   for (int i = 21; i <= 23; ++i) {

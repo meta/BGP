@@ -19,6 +19,7 @@
  * Stack B prefix range: 86-87.x.0.0/16.
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -456,12 +457,12 @@ TEST_P(UpdateGroupMultiPeerTest, DID_DRJ_RouteAdd) {
   /* Bring peer3 down then back up to enter DETACHED_INIT_DUMP */
   unblockPeer(kPeerAddr3);
   bringDownPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Detach peer4 via freq threshold */
   setSlowPeerThresholds(
@@ -837,12 +838,12 @@ TEST_P(UpdateGroupMultiPeerTest, JrPlusDid_RouteAdd) {
   bringDownPeer(kPeerAddr3);
   ASSERT_TRUE(waitForPeerState(kPeerAddr3, PeerUpdateState::DOWN));
   unblockPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* State: peer3=DID, peer4=JR. Inject route -- peer4 receives, CL for peer3
    */

@@ -3931,9 +3931,19 @@ void PeerManagerBase::setSessionManager(
   }
 }
 
-void PeerManagerBase::updateEntryStats(TEntryStats& stats) const noexcept {
+void PeerManagerBase::updateEntryStats(
+    TEntryStats& stats,
+    VrfId vrfId) noexcept {
   stats.total_adj_ribs() = adjRibs_.size();
-  stats.total_shadow_rib_entries() = defaultVrf_.getShadowRibEntries().size();
+  auto* vrf = findVrf(vrfId);
+  if (!vrf) {
+    XLOGF(
+        ERR,
+        "Skipping the shadow RIB entry count in updateEntryStats due to non-existent VRF {}",
+        vrfId);
+    return;
+  }
+  stats.total_shadow_rib_entries() = vrf->getShadowRibEntries().size();
 }
 
 void PeerManagerBase::saveGrState() {

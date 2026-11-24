@@ -30,6 +30,7 @@
  *   P-DRJ x E-PEER-UP -- N/A (already up)
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -113,12 +114,12 @@ TEST_P(UpdateGroupMultiPeerTest, DetachedInitDump_PolicyChg) {
   /* DOWN + unblock + UP -> DID (deferred for deterministic assertion) */
   bringDownPeer(kPeerAddr3);
   unblockPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Simulate policy change: withdraw old, inject new prefix */
   withdrawLocalRoutesAtRuntime({"72.1.0.0/16"});
@@ -197,12 +198,12 @@ TEST_P(UpdateGroupMultiPeerTest, DetachedInitDump_MraiFire) {
   /* DOWN + unblock + UP -> DID (deferred for deterministic assertion) */
   bringDownPeer(kPeerAddr3);
   unblockPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Inject 3 routes during DID -- each triggers separate MRAI cycle */
   for (int i = 0; i < 3; i++) {
@@ -281,12 +282,12 @@ TEST_P(UpdateGroupMultiPeerTest, DetachedInitDump_MultiRoute) {
   /* DOWN + unblock + UP -> DID (deferred for deterministic assertion) */
   bringDownPeer(kPeerAddr3);
   unblockPeer(kPeerAddr3);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /* Inject 4 batch routes during DID, drain one at a time for peer4 */
   for (int i = 0; i < 4; i++) {

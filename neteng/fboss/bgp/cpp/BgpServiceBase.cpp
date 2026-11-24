@@ -32,6 +32,7 @@
 #include <thrift/lib/cpp/TApplicationException.h>
 
 #include "common/network/AddressUtil.h"
+#include "fboss/agent/Constants.h"
 #include "fboss/lib/LogThriftCall.h"
 #include "magic_enum/magic_enum.hpp"
 #include "neteng/fboss/bgp/cpp/BgpProfiler.h"
@@ -2196,7 +2197,27 @@ BgpServiceBase::co_getEntryStats() {
   };
 
   auto stats = std::make_unique<TEntryStats>();
-  peerMgr_.updateEntryStats(*stats);
+
+  auto peerMgrStats = co_await co_runOnEvbWithTimeout(
+      peerMgr_.getEventBase(),
+      [this]() {
+        TEntryStats s;
+        peerMgr_.updateEntryStats(s, fboss::kDefaultVrf);
+        return s;
+      },
+      kPeerMgrThriftHandlerTimeout);
+
+  if (peerMgrStats.hasValue()) {
+    stats->total_adj_ribs() = *peerMgrStats.value().total_adj_ribs();
+    stats->total_shadow_rib_entries() =
+        *peerMgrStats.value().total_shadow_rib_entries();
+  } else {
+    if (peerMgrStats.exception().is_compatible_with<folly::FutureTimeout>()) {
+      XLOGF(ERR, "getEntryStats timed out — PeerManager evb unresponsive");
+    } else {
+      XLOGF(ERR, "getEntryStats failed: {}", peerMgrStats.exception().what());
+    }
+  }
 
   auto ribStats = co_await co_runOnEvbWithTimeout(
       rib_.getEventBase(),
@@ -2536,7 +2557,9 @@ BgpServiceBase::co_getChangeListEntries(TBgpAfi afi) {
 
   auto result = co_await co_runOnEvbWithTimeout(
       peerMgr_.getEventBase(),
-      [this, afi]() { return peerMgr_.getChangeListEntries(afi); },
+      [this, afi]() {
+        return peerMgr_.getChangeListEntries(afi, fboss::kDefaultVrf);
+      },
       kPeerMgrThriftHandlerTimeout);
 
   if (result.hasValue()) {
@@ -2570,7 +2593,9 @@ BgpServiceBase::co_getShadowRibEntries(TBgpAfi afi) {
 
   auto result = co_await co_runOnEvbWithTimeout(
       peerMgr_.getEventBase(),
-      [this, afi]() { return peerMgr_.getShadowRibEntries(afi); },
+      [this, afi]() {
+        return peerMgr_.getShadowRibEntries(afi, fboss::kDefaultVrf);
+      },
       kPeerMgrThriftHandlerTimeout);
 
   if (result.hasValue()) {
@@ -2604,7 +2629,9 @@ BgpServiceBase::co_getShadowRibEntriesCanonical(TBgpAfi afi) {
 
   auto result = co_await co_runOnEvbWithTimeout(
       peerMgr_.getEventBase(),
-      [this, afi]() { return peerMgr_.getShadowRibEntriesCanonical(afi); },
+      [this, afi]() {
+        return peerMgr_.getShadowRibEntriesCanonical(afi, fboss::kDefaultVrf);
+      },
       kPeerMgrThriftHandlerTimeout);
 
   if (result.hasValue()) {
@@ -2640,7 +2667,9 @@ BgpServiceBase::co_getChangeListEntriesCanonical(TBgpAfi afi) {
 
   auto result = co_await co_runOnEvbWithTimeout(
       peerMgr_.getEventBase(),
-      [this, afi]() { return peerMgr_.getChangeListEntriesCanonical(afi); },
+      [this, afi]() {
+        return peerMgr_.getChangeListEntriesCanonical(afi, fboss::kDefaultVrf);
+      },
       kPeerMgrThriftHandlerTimeout);
 
   if (result.hasValue()) {

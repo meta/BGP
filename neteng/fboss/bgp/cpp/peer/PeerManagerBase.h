@@ -479,21 +479,26 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
           std::shared_ptr<nettools::bgplib::BgpPeerDisplayInfo>>&
           allPeers) noexcept;
 
-  // Get current shadowRibEntries by address family
+  // Get current shadowRibEntries in @vrfId by address family
   std::vector<neteng::fboss::bgp::thrift::TRibEntry> getShadowRibEntries(
-      neteng::fboss::bgp_attr::TBgpAfi afi);
+      neteng::fboss::bgp_attr::TBgpAfi afi,
+      VrfId vrfId);
 
-  // Get current shadowRibEntries by address family in canonical form
+  // Get current shadowRibEntries in @vrfId by address family in canonical form
   neteng::fboss::bgp::thrift::TCanonicalRibState getShadowRibEntriesCanonical(
-      neteng::fboss::bgp_attr::TBgpAfi afi);
+      neteng::fboss::bgp_attr::TBgpAfi afi,
+      VrfId vrfId);
 
-  // Get current changeList entries by address family
+  // Get current changeList entries in @vrfId by address family
   std::vector<neteng::fboss::bgp::thrift::TRibEntry> getChangeListEntries(
-      neteng::fboss::bgp_attr::TBgpAfi afi);
+      neteng::fboss::bgp_attr::TBgpAfi afi,
+      VrfId vrfId);
 
-  // Get current changeList entries by address family in canonical form
+  // Get current changeList entries in @vrfId by address family in canonical
+  // form
   neteng::fboss::bgp::thrift::TCanonicalRibState getChangeListEntriesCanonical(
-      neteng::fboss::bgp_attr::TBgpAfi afi);
+      neteng::fboss::bgp_attr::TBgpAfi afi,
+      VrfId vrfId);
 
   /**
    * Utility method to turn a RibEntry to tRibEntry
@@ -543,9 +548,10 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
     return policyManager_;
   }
 
-  // update entry stats
+  // update entry stats for @vrfId. Must run on the PeerManager EventBase.
   void updateEntryStats(
-      neteng::fboss::bgp::thrift::TEntryStats& stats) const noexcept;
+      neteng::fboss::bgp::thrift::TEntryStats& stats,
+      VrfId vrfId) noexcept;
 
   // Return an active stream of Multi-path routes from RIB
   apache::thrift::ServerStream<neteng::fboss::bgp::thrift::TBgpRouteDelta>
@@ -774,14 +780,17 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   PeerManagerVrf& quarantineVrf_;
 
   /*
-   * Test-only: defer the shadow RIB walk for a specific peer.
+   * Test-only: defer the shadow RIB walk for a specific peer in @vrfId.
    * When deferred, processRibDumpReq re-buffers the request instead of
    * walking, keeping that peer in DETACHED_INIT_DUMP.
    */
-  void testOnlySetDeferInitDump(const folly::IPAddress& peerAddr, bool defer) {
-    evb_.runInEventBaseThreadAndWait([this, peerAddr, defer]() {
+  void testOnlySetDeferInitDump(
+      const folly::IPAddress& peerAddr,
+      bool defer,
+      VrfId vrfId) {
+    evb_.runInEventBaseThreadAndWait([this, peerAddr, defer, vrfId]() {
       for (auto& [peerId, adjRib] : adjRibs_) {
-        if (peerId.peerAddr == peerAddr) {
+        if (peerId.peerAddr == peerAddr && adjRib->getVrfId() == vrfId) {
           adjRib->testOnlyDeferInitDump = defer;
         }
       }

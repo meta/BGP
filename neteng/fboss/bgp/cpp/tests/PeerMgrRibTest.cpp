@@ -3761,7 +3761,8 @@ TEST_F(PeerManagerTestFixture, GetShadowRibEntriesCanonical) {
    * Both announced prefixes convert. The getter does not populate best_path
    * (FSDB-only); each entry instead carries its best path via is_best_path.
    */
-  auto state = peerMgr->getShadowRibEntriesCanonical(TBgpAfi::AFI_IPV4);
+  auto state = peerMgr->getShadowRibEntriesCanonical(
+      TBgpAfi::AFI_IPV4, fboss::kDefaultVrf);
   ASSERT_EQ(2, state.rib_entries()->size());
   for (const auto& [prefixStr, entry] : *state.rib_entries()) {
     EXPECT_FALSE(entry.best_path().has_value()) << prefixStr;
@@ -3778,12 +3779,14 @@ TEST_F(PeerManagerTestFixture, GetShadowRibEntriesCanonical) {
   // No IPv6 routes announced, and AFI_ALL is unsupported by this getter.
   EXPECT_EQ(
       0,
-      peerMgr->getShadowRibEntriesCanonical(TBgpAfi::AFI_IPV6)
+      peerMgr
+          ->getShadowRibEntriesCanonical(TBgpAfi::AFI_IPV6, fboss::kDefaultVrf)
           .rib_entries()
           ->size());
   EXPECT_EQ(
       0,
-      peerMgr->getShadowRibEntriesCanonical(TBgpAfi::AFI_ALL)
+      peerMgr
+          ->getShadowRibEntriesCanonical(TBgpAfi::AFI_ALL, fboss::kDefaultVrf)
           .rib_entries()
           ->size());
 }
@@ -3811,13 +3814,15 @@ TEST_F(PeerManagerTestFixture, GetChangeListEntriesCanonical) {
   // Unsupported AFI short-circuits before touching the change list.
   EXPECT_EQ(
       0,
-      peerMgr->getChangeListEntriesCanonical(TBgpAfi::AFI_ALL)
+      peerMgr
+          ->getChangeListEntriesCanonical(TBgpAfi::AFI_ALL, fboss::kDefaultVrf)
           .rib_entries()
           ->size());
   // Empty (but live) change list iterates to an empty canonical state.
   EXPECT_EQ(
       0,
-      peerMgr->getChangeListEntriesCanonical(TBgpAfi::AFI_IPV4)
+      peerMgr
+          ->getChangeListEntriesCanonical(TBgpAfi::AFI_IPV4, fboss::kDefaultVrf)
           .rib_entries()
           ->size());
 }

@@ -22,6 +22,7 @@
  * (P-JR + P-JB + P-DRJ) × E-SLOW-DUR(JB)
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -305,12 +306,12 @@ TEST_P(UpdateGroupMultiPeerTest, JrDidDb_PeerDownOnLastInSync) {
   bringDownPeer(kPeerAddr4);
   ASSERT_TRUE(waitForPeerState(kPeerAddr4, PeerUpdateState::DOWN));
   unblockPeer(kPeerAddr4);
-  testOnlyDeferInitDump(kPeerAddr4, true);
+  testOnlyDeferInitDump(kPeerAddr4, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr4);
   sendEoRToPeer(peerId4);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr4, PeerUpdateState::DETACHED_INIT_DUMP));
-  testOnlyDeferInitDump(kPeerAddr4, false);
+  testOnlyDeferInitDump(kPeerAddr4, false, fboss::kDefaultVrf);
 
   /* Now: peer3=JR (last in-sync), peer4=DID, peer5=DB.
    * Bring peer3 DOWN — last in-sync peer goes away.

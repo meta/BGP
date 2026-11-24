@@ -453,11 +453,14 @@ TRibEntry PeerManagerBase::createTRibEntry(
  * @brief  retrieve all the entries currently present in the shadow RIB
  *
  * @param  AFI - Address family for which entries to be retrieved
+ * @param  vrfId - VRF whose entries are retrieved
  *
  * @return vector<TRibEntry>  return a full list of entries for a given
  *                            AFI
  */
-std::vector<TRibEntry> PeerManagerBase::getShadowRibEntries(TBgpAfi afi) {
+std::vector<TRibEntry> PeerManagerBase::getShadowRibEntries(
+    TBgpAfi afi,
+    VrfId vrfId) {
   std::vector<TRibEntry> tRibEntries;
 
   if (afi != TBgpAfi::AFI_IPV4 && afi != TBgpAfi::AFI_IPV6) {
@@ -465,12 +468,12 @@ std::vector<TRibEntry> PeerManagerBase::getShadowRibEntries(TBgpAfi afi) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    auto* vrf = findVrf(fboss::kDefaultVrf);
+    auto* vrf = findVrf(vrfId);
     if (!vrf) {
       XLOGF(
           ERR,
           "Ignoring getShadowRibEntries request due to non-existent VRF {}",
-          fboss::kDefaultVrf);
+          vrfId);
       return;
     }
 
@@ -489,7 +492,7 @@ std::vector<TRibEntry> PeerManagerBase::getShadowRibEntries(TBgpAfi afi) {
 }
 
 neteng::fboss::bgp::thrift::TCanonicalRibState
-PeerManagerBase::getShadowRibEntriesCanonical(TBgpAfi afi) {
+PeerManagerBase::getShadowRibEntriesCanonical(TBgpAfi afi, VrfId vrfId) {
   CanonicalRibBuilder builder;
 
   if (afi != TBgpAfi::AFI_IPV4 && afi != TBgpAfi::AFI_IPV6) {
@@ -497,12 +500,12 @@ PeerManagerBase::getShadowRibEntriesCanonical(TBgpAfi afi) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    auto* vrf = findVrf(fboss::kDefaultVrf);
+    auto* vrf = findVrf(vrfId);
     if (!vrf) {
       XLOGF(
           ERR,
           "Ignoring getShadowRibEntriesCanonical request due to non-existent VRF {}",
-          fboss::kDefaultVrf);
+          vrfId);
       return;
     }
 
@@ -525,11 +528,14 @@ PeerManagerBase::getShadowRibEntriesCanonical(TBgpAfi afi) {
  * @brief  retrieve all the entries currently present in the changeList
  *
  * @param  AFI - Address family for which entries to be retrieved
+ * @param  vrfId - VRF whose entries are retrieved
  *
  * @return vector<TRibEntry>  return a full list of entries for a given
  *                            AFI
  */
-std::vector<TRibEntry> PeerManagerBase::getChangeListEntries(TBgpAfi afi) {
+std::vector<TRibEntry> PeerManagerBase::getChangeListEntries(
+    TBgpAfi afi,
+    VrfId vrfId) {
   std::vector<TRibEntry> tRibEntries;
 
   if (afi != TBgpAfi::AFI_IPV4 && afi != TBgpAfi::AFI_IPV6) {
@@ -537,12 +543,12 @@ std::vector<TRibEntry> PeerManagerBase::getChangeListEntries(TBgpAfi afi) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    auto* vrf = findVrf(fboss::kDefaultVrf);
+    auto* vrf = findVrf(vrfId);
     if (!vrf) {
       XLOGF(
           ERR,
           "Ignoring getChangeListEntries request due to non-existent VRF {}",
-          fboss::kDefaultVrf);
+          vrfId);
       return;
     }
 
@@ -570,7 +576,7 @@ std::vector<TRibEntry> PeerManagerBase::getChangeListEntries(TBgpAfi afi) {
 }
 
 neteng::fboss::bgp::thrift::TCanonicalRibState
-PeerManagerBase::getChangeListEntriesCanonical(TBgpAfi afi) {
+PeerManagerBase::getChangeListEntriesCanonical(TBgpAfi afi, VrfId vrfId) {
   CanonicalRibBuilder builder;
 
   if (afi != TBgpAfi::AFI_IPV4 && afi != TBgpAfi::AFI_IPV6) {
@@ -578,12 +584,12 @@ PeerManagerBase::getChangeListEntriesCanonical(TBgpAfi afi) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
-    auto* vrf = findVrf(fboss::kDefaultVrf);
+    auto* vrf = findVrf(vrfId);
     if (!vrf) {
       XLOGF(
           ERR,
           "Ignoring getChangeListEntriesCanonical request due to non-existent VRF {}",
-          fboss::kDefaultVrf);
+          vrfId);
       return;
     }
 

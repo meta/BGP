@@ -1286,6 +1286,7 @@ TEST_F(BgpServiceTestFixture, ThriftParallelRejectionTest) {
 
 // Test co_getEntryStats endpoint
 TEST_F(BgpServiceTestFixture, GetEntryStatsTest) {
+  auto peerMgrThread = peerManager_->runInThread();
   auto ribThread = rib_->runInThread();
 
   auto stats = folly::coro::blockingWait(service_->co_getEntryStats());
@@ -1296,7 +1297,9 @@ TEST_F(BgpServiceTestFixture, GetEntryStatsTest) {
   EXPECT_EQ(*stats->total_shadow_rib_entries(), 0);
   EXPECT_EQ(*stats->total_netlink_wrapper_interfaces(), 0);
   rib_->stop();
+  peerManager_->stop();
   ribThread.join();
+  peerMgrThread.join();
 }
 
 /*

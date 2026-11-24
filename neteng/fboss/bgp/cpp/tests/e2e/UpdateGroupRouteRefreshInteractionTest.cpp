@@ -27,6 +27,7 @@
  * Session teardown while Route Refresh is deferred
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 #include <folly/coro/BlockingWait.h>
@@ -255,7 +256,7 @@ TEST_P(UpdateGroupRouteRefreshTest, JoinedBlocked_RouteRefreshWaitsForUnblock) {
    * Hold the private dump so the Route Refresh transition is observable. The
    * request must detach peer3 while preserving its blocked state.
    */
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   sendRouteRefreshToPeer(
       peerId3, BgpUpdateAfi::AFI_IPv4, BgpUpdateSafi::SAFI_UNICAST);
 
@@ -267,7 +268,7 @@ TEST_P(UpdateGroupRouteRefreshTest, JoinedBlocked_RouteRefreshWaitsForUnblock) {
    * Let the replay materialize while peer3 is still blocked. It must remain on
    * peer3's private lane and produce no messages for peer4.
    */
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
   waitForRibDumpScheduled(kPeerAddr3, false);
   EXPECT_EQ(drainPeerQueueCompletely(peerId4, 3, 10), 0);
 
@@ -340,7 +341,7 @@ TEST_P(
    * Issue a real Route Refresh while peer3 is already detached. Hold its dump
    * long enough to verify that no second detachment or sibling replay occurs.
    */
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   sendRouteRefreshToPeer(
       peerId3, BgpUpdateAfi::AFI_IPv4, BgpUpdateSafi::SAFI_UNICAST);
 
@@ -351,7 +352,7 @@ TEST_P(
    * Complete the dump while peer3 remains blocked; the replay is materialized
    * on its private packing list but cannot be transmitted yet.
    */
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
   waitForRibDumpScheduled(kPeerAddr3, false);
   EXPECT_EQ(drainPeerQueueCompletely(peerId4, 3, 10), 0);
 
@@ -455,7 +456,7 @@ TEST_P(UpdateGroupRouteRefreshTest, DetachedInitDump_RouteRefreshDefer) {
    * reconnect initial dump and deferred replay can drain without re-blocking.
    */
   setDefaultQueueSizes(20, 18, 2);
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   /* Peer3 re-entering existing group -> DETACHED_INIT_DUMP */
@@ -466,7 +467,7 @@ TEST_P(UpdateGroupRouteRefreshTest, DetachedInitDump_RouteRefreshDefer) {
   sendRouteRefreshToPeer(
       peerId3, BgpUpdateAfi::AFI_IPv4, BgpUpdateSafi::SAFI_UNICAST);
   waitForRibDumpScheduled(kPeerAddr3, true);
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
   const auto replayCounts = countPrefixOccurrencesAndDrain(
       peerId3,
       folly::IPAddress::createNetwork("30.20.0.0/16"),
@@ -562,12 +563,12 @@ TEST_P(UpdateGroupRouteRefreshTest, ReadyToJoin_RouteRefreshDefersAcceptance) {
   drainPeerQueueCompletely(peerId3);
   drainPeerQueueCompletely(peerId4);
 
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   sendRouteRefreshToPeer(
       peerId3, BgpUpdateAfi::AFI_IPv4, BgpUpdateSafi::SAFI_UNICAST);
   ASSERT_TRUE(waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_RUNNING));
   waitForRibDumpScheduled(kPeerAddr3, true);
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
   waitForRibDumpScheduled(kPeerAddr3, false);
 
   const auto replayCounts = countPrefixOccurrencesAndDrain(
@@ -619,7 +620,7 @@ TEST_P(UpdateGroupRouteRefreshTest, AllPeers_ConcurrentRouteRefresh) {
   drainPeerQueueCompletely(peerId5);
 
   for (const auto& peerAddr : {kPeerAddr3, kPeerAddr4, kPeerAddr5}) {
-    testOnlyDeferInitDump(peerAddr, true);
+    testOnlyDeferInitDump(peerAddr, true, fboss::kDefaultVrf);
   }
   sendRouteRefreshToPeer(
       peerId3, BgpUpdateAfi::AFI_IPv4, BgpUpdateSafi::SAFI_UNICAST);
@@ -633,7 +634,7 @@ TEST_P(UpdateGroupRouteRefreshTest, AllPeers_ConcurrentRouteRefresh) {
     waitForRibDumpScheduled(peerAddr, true);
   }
   for (const auto& peerAddr : {kPeerAddr3, kPeerAddr4, kPeerAddr5}) {
-    testOnlyDeferInitDump(peerAddr, false);
+    testOnlyDeferInitDump(peerAddr, false, fboss::kDefaultVrf);
   }
   for (const auto& peerAddr : {kPeerAddr3, kPeerAddr4, kPeerAddr5}) {
     waitForRibDumpScheduled(peerAddr, false);
@@ -677,14 +678,14 @@ TEST_P(UpdateGroupRouteRefreshTest, DuplicateRouteRefreshCoalescesActiveAfi) {
   const auto replayPrefix = folly::IPAddress::createNetwork("30.41.0.0/16");
   establishAndDrainTwoPeerBaselineRoute(replayPrefix, "3041:1", peerIds);
 
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   sendRouteRefreshToPeer(
       peerId3, BgpUpdateAfi::AFI_IPv4, BgpUpdateSafi::SAFI_UNICAST);
   ASSERT_TRUE(waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_RUNNING));
   waitForRibDumpScheduled(kPeerAddr3, true);
 
   processRouteRefreshEventForTesting(peerId3, BgpUpdateAfi::AFI_IPv4);
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
   waitForRibDumpScheduled(kPeerAddr3, false);
 
   const auto replayCounts = countPrefixOccurrencesAndDrain(
@@ -719,7 +720,7 @@ TEST_P(UpdateGroupRouteRefreshTest, PeerDownDiscardsDeferredRouteRefresh) {
   const auto replayPrefix = folly::IPAddress::createNetwork("30.50.0.0/16");
   establishAndDrainTwoPeerBaselineRoute(replayPrefix, "3050:1", peerIds);
 
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   sendRouteRefreshToPeer(
       peerId3, BgpUpdateAfi::AFI_IPv4, BgpUpdateSafi::SAFI_UNICAST);
   waitForRibDumpScheduled(kPeerAddr3, true);
@@ -732,7 +733,7 @@ TEST_P(UpdateGroupRouteRefreshTest, PeerDownDiscardsDeferredRouteRefresh) {
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP));
   waitForRibDumpScheduled(kPeerAddr3, true);
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
   waitForRibDumpScheduled(kPeerAddr3, false);
   const auto reconnectCounts = countPrefixOccurrencesAndDrain(
       peerId3,

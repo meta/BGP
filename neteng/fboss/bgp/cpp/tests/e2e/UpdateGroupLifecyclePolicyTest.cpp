@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupSlowPeerTestCommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -320,12 +321,12 @@ TEST_P(UpdateGroupLifecycleTest, RouteChangeDuringInitDump) {
   unblockPeer(kPeerAddr3);
 
   /* Bring peer3 UP -- reconnects to existing group → DETACHED_INIT_DUMP */
-  testOnlyDeferInitDump(kPeerAddr3, true);
+  testOnlyDeferInitDump(kPeerAddr3, true, fboss::kDefaultVrf);
   bringUpPeer(kPeerAddr3);
   sendEoRToPeer(peerId3);
   ASSERT_TRUE(
       waitForPeerState(kPeerAddr3, PeerUpdateState::DETACHED_INIT_DUMP, 30));
-  testOnlyDeferInitDump(kPeerAddr3, false);
+  testOnlyDeferInitDump(kPeerAddr3, false, fboss::kDefaultVrf);
 
   /*
    * While peer3 is in DETACHED_INIT_DUMP, inject a route.

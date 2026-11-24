@@ -36,6 +36,7 @@
  * group's sync peer and every survivor converges. Prefix range 36.0.x.0/24.
  */
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/tests/e2e/UpdateGroupPolicyReEvalE2ECommon.h"
 
 using namespace facebook::nettools::bgplib;
@@ -1260,7 +1261,7 @@ TEST_P(GroupWithNoSyncPeersE2ETest, DetachedInitDumpPeerPromotesAfterRelease) {
   recordDrainedRoutes(didPeer);
   bringDownPeer(didPeer.peerAddr);
   unblockPeer(didPeer.peerAddr, /*maxRetries=*/0);
-  testOnlyDeferInitDump(didPeer.peerAddr, true);
+  testOnlyDeferInitDump(didPeer.peerAddr, true, fboss::kDefaultVrf);
   bringUpPeer(didPeer.peerAddr);
   sendEoRToPeer(didPeer);
   ASSERT_TRUE(waitForPeerState(
@@ -1292,7 +1293,7 @@ TEST_P(GroupWithNoSyncPeersE2ETest, DetachedInitDumpPeerPromotesAfterRelease) {
       10, { EXPECT_EVENTUALLY_TRUE(getRibVersion() > frozenVersion); });
 
   /* Release the pin: the dump completes and the peer promotes itself. */
-  testOnlyDeferInitDump(didPeer.peerAddr, false);
+  testOnlyDeferInitDump(didPeer.peerAddr, false, fboss::kDefaultVrf);
   drainUntil(
       {didPeer},
       [&]() {
@@ -1359,7 +1360,7 @@ TEST_P(GroupWithNoSyncPeersE2ETest, LevelPeerPromotesAgainstFrozenGroup) {
   recordDrainedRoutes(didPeer);
   bringDownPeer(didPeer.peerAddr);
   unblockPeer(didPeer.peerAddr, /*maxRetries=*/0);
-  testOnlyDeferInitDump(didPeer.peerAddr, true);
+  testOnlyDeferInitDump(didPeer.peerAddr, true, fboss::kDefaultVrf);
   bringUpPeer(didPeer.peerAddr);
   sendEoRToPeer(didPeer);
   ASSERT_TRUE(waitForPeerState(
@@ -1382,7 +1383,7 @@ TEST_P(GroupWithNoSyncPeersE2ETest, LevelPeerPromotesAgainstFrozenGroup) {
    */
   const auto frozenVersion = getGroupRibVersion(didPeer.peerAddr);
   testOnlyDeferDrjAcceptance(didPeer.peerAddr, true);
-  testOnlyDeferInitDump(didPeer.peerAddr, false);
+  testOnlyDeferInitDump(didPeer.peerAddr, false, fboss::kDefaultVrf);
   drainUntil(
       {didPeer},
       [&]() {

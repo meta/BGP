@@ -996,6 +996,11 @@ class AdjRib : boost::noncopyable,
     return peeringParams_.peerAddr;
   }
 
+  // Get the routing table of this AdjRib
+  VrfId getVrfId() const noexcept {
+    return peeringParams_.vrfId;
+  }
+
   // Get peeringParams of this AdjRib
   const PeeringParams getPeeringParams() const noexcept {
     return peeringParams_;
@@ -1726,7 +1731,7 @@ class AdjRib : boost::noncopyable,
   void reschedulePackingTimers() noexcept;
 
   /*
-   * Test-only: when true, PeerManagerBase::processRibDumpReq re-buffers the
+   * Test-only: when true, PeerManagerVrf::processRibDumpReq re-buffers the
    * request for this peer instead of walking the shadow RIB, keeping the
    * peer in DETACHED_INIT_DUMP. Read/written on the EventBase thread.
    */

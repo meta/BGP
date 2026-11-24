@@ -724,6 +724,11 @@ bool E2ETestFixture::waitForRouteInShadowRib(
   auto& evb = peerManager_->getEventBase();
   bool found = false;
 
+  auto* vrf = peerManager_->findVrf(fboss::kDefaultVrf);
+  if (!vrf) {
+    XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+    return false;
+  }
   /*
    * Use deterministic retry loop instead of sleep
    * This matches the pattern used in readOutboundUpdateToPeer()
@@ -736,9 +741,9 @@ bool E2ETestFixture::waitForRouteInShadowRib(
      */
     found = folly::via(
                 &evb,
-                [this, prefix, fromPeer]() -> bool {
-                  auto it = peerManager_->shadowRibEntries_.find(prefix);
-                  if (it == peerManager_->shadowRibEntries_.end()) {
+                [vrf, prefix, fromPeer]() -> bool {
+                  auto it = vrf->getShadowRibEntries().find(prefix);
+                  if (it == vrf->getShadowRibEntries().end()) {
                     return false;
                   }
                   /*
@@ -805,6 +810,11 @@ bool E2ETestFixture::verifyRouteNotInShadowRib(
 
   auto& evb = peerManager_->getEventBase();
 
+  auto* vrf = peerManager_->findVrf(fboss::kDefaultVrf);
+  if (!vrf) {
+    XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+    return false;
+  }
   /*
    * Wait for the route to NOT be present in shadowRib. With change list
    * tracker and backpressure enabled, there can be a delay between the
@@ -814,9 +824,9 @@ bool E2ETestFixture::verifyRouteNotInShadowRib(
   for (int i = 0; i < waitRetries; ++i) {
     bool found = folly::via(
                      &evb,
-                     [this, prefix]() -> bool {
-                       return peerManager_->shadowRibEntries_.find(prefix) !=
-                           peerManager_->shadowRibEntries_.end();
+                     [vrf, prefix]() -> bool {
+                       return vrf->getShadowRibEntries().find(prefix) !=
+                           vrf->getShadowRibEntries().end();
                      })
                      .wait()
                      .value();
@@ -3686,8 +3696,13 @@ size_t E2ETestFixture::getShadowRibEntriesCount() {
   }
 
   size_t count = 0;
+  auto* vrf = peerManager_->findVrf(fboss::kDefaultVrf);
+  if (!vrf) {
+    XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+    return 0;
+  }
   peerManager_->getEventBase().runInEventBaseThreadAndWait(
-      [&]() { count = peerManager_->shadowRibEntries_.size(); });
+      [&]() { count = vrf->getShadowRibEntries().size(); });
 
   return count;
 }
@@ -3702,10 +3717,12 @@ void E2ETestFixture::triggerRibDumpForPeer(
   }
 
   BgpPeerId peerId{peerAddr, peerAddr.asV4().toLongHBO()};
+  auto* vrf = peerManager_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   peerManager_->getEventBase().runInEventBaseThreadAndWait([&]() {
     auto adjRib = peerManager_->findAdjRib(peerId);
     if (adjRib) {
-      peerManager_->processRibDumpReq(
+      vrf->processRibDumpReq(
           adjRib, RibDumpReq(peerId, sendAddPath), sendWithEoR);
     }
   });

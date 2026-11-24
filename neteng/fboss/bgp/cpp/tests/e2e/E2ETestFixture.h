@@ -1345,7 +1345,7 @@ class E2ETestFixture : public ::testing::Test {
   size_t getShadowRibEntriesCount();
 
   /*
-   * Run PeerManagerBase::processRibDumpReq for an already-connected peer on the
+   * Run PeerManagerVrf::processRibDumpReq for an already-connected peer on the
    * PeerManager event base, simulating a re-dump (e.g. from egress-policy
    * re-evaluation). Requires friendship to call the private method.
    */

@@ -39,10 +39,10 @@ using ShadowRibEntriesMap = folly::F14NodeMap<
     std::unique_ptr<TrackableObject<ShadowRibEntry>>>;
 
 /*
- * Non-owning view of PeerManagerBase's shadow RIB handed to an update group:
- * the entries map plus a live reference to the PeerManager's max seen RIB
- * version (maxRibVersion_). Both bind to PeerManagerBase members, which
- * outlive every group it creates.
+ * Non-owning view of a PeerManagerVrf's shadow RIB handed to an update group:
+ * the entries map plus a live reference to the VRF's max seen RIB version
+ * (maxRibVersion_). Both bind to PeerManagerVrf members, which outlive every
+ * group its PeerManagerBase creates.
  */
 struct ShadowRibView {
   const ShadowRibEntriesMap& entries;

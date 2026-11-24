@@ -319,8 +319,10 @@ TEST_F(PeerManagerTestFixture, UpdateShadowRibEntryUtil) {
       true, /* newlyInstalledInLocalRib */
       std::chrono::system_clock::now() /* installTimeStamp */};
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // Call the function to test
-  peerMgr->updateShadowRibEntryUtil(srEntry, entry);
+  vrf->updateShadowRibEntryUtil(srEntry, entry);
 
   // Verify that srEntry has been updated correctly
   EXPECT_NE(srEntry.prefix, entry.prefix);
@@ -357,11 +359,13 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryBestpathTest) {
       facebook::fb303::ThreadCachedServiceData::getShared()->hasCounter(
           RibStats::kTotalShadowRibEntries));
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   {
     /*
      * Step 0: verify the empty ShadowRib collection
      */
-    EXPECT_EQ(0, peerMgr->shadowRibEntries_.size());
+    EXPECT_EQ(0, vrf->getShadowRibEntries().size());
   }
   {
     /*
@@ -374,10 +378,9 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryBestpathTest) {
         false, /* sendWithEoR */
         false /* addpath */
     );
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg1));
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto& srEntry1 = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto& srEntry1 = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_NE(nullptr, srEntry1.bestpath);
     EXPECT_EQ(0, srEntry1.multipaths.size());
     const auto bestpath1 = srEntry1.bestpath;
@@ -393,10 +396,9 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryBestpathTest) {
         false, /* sendWithEoR */
         false /* addpath */
     );
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg2));
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto& srEntry2 = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto& srEntry2 = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_NE(nullptr, srEntry2.bestpath);
     EXPECT_EQ(0, srEntry2.multipaths.size());
     const auto bestpath2 = srEntry2.bestpath;
@@ -415,9 +417,9 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryBestpathTest) {
     RibOutWithdrawal withdrawal{};
     withdrawal.entries.emplace_back(kV4Prefix2, kDefaultPathID);
 
-    peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    EXPECT_TRUE(peerMgr->shadowRibEntries_.contains(kV4Prefix1));
+    vrf->handleShadowRibEntryWithdrawal(withdrawal);
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    EXPECT_TRUE(vrf->getShadowRibEntries().contains(kV4Prefix1));
   }
   {
     /*
@@ -426,8 +428,8 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryBestpathTest) {
     RibOutWithdrawal withdrawal{};
     withdrawal.entries.emplace_back(kV4Prefix1, kDefaultPathID);
 
-    peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
-    EXPECT_EQ(0, peerMgr->shadowRibEntries_.size());
+    vrf->handleShadowRibEntryWithdrawal(withdrawal);
+    EXPECT_EQ(0, vrf->getShadowRibEntries().size());
     EXPECT_EQ(
         0,
         facebook::fb303::ThreadCachedServiceData::getShared()->getCounter(
@@ -452,11 +454,13 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathTest) {
 
   PathId pathId = kV4Nexthop1;
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   {
     /*
      * Step 0: verify the empty ShadowRib collection
      */
-    EXPECT_EQ(0, peerMgr->shadowRibEntries_.size());
+    EXPECT_EQ(0, vrf->getShadowRibEntries().size());
   }
   {
     /*
@@ -470,10 +474,9 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathTest) {
         true, /* addPath */
         0); /* pathIdToSend */
 
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg1));
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto& srEntry1 = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto& srEntry1 = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_EQ(nullptr, srEntry1.bestpath);
     EXPECT_EQ(1, srEntry1.multipaths.size());
     const auto peerBefore = srEntry1.multipaths.at(pathId)->peer;
@@ -491,10 +494,9 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathTest) {
         true, /* addPath */
         0); /* pathIdToSend */
 
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg2));
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto& srEntry2 = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto& srEntry2 = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_EQ(nullptr, srEntry2.bestpath);
     EXPECT_EQ(1, srEntry2.multipaths.size());
     const auto peerAfter = srEntry2.multipaths.at(pathId)->peer;
@@ -515,10 +517,9 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathTest) {
         true, /* addPath */
         1); /* pathIdToSend */
 
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg3));
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto& srEntry = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg3));
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto& srEntry = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_EQ(nullptr, srEntry.bestpath);
 
     // multipath is extended with a different nexthop
@@ -532,9 +533,9 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathTest) {
     RibOutWithdrawal withdrawal{};
     withdrawal.addPathEntries.emplace_back(kV4Prefix2, 15);
 
-    peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto& srEntry = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryWithdrawal(withdrawal);
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto& srEntry = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_EQ(2, srEntry.multipaths.size());
   }
   {
@@ -549,9 +550,9 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathTest) {
     //  2. an existing path with expected ID. Expect path to be erased.
     withdrawal.addPathEntries.emplace_back(kV4Prefix1, 1, kV4Nexthop2);
 
-    peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto& srEntry = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryWithdrawal(withdrawal);
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto& srEntry = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_EQ(1, srEntry.multipaths.size());
     EXPECT_TRUE(srEntry.multipaths.contains(pathId));
   }
@@ -571,6 +572,8 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathKeyedByPathId) {
       ribOutQ_,
       nbrRouteChangeQ_);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   for (const uint32_t pathIdToSend : {0u, 1u}) {
     auto msg = createRibSingleAnnounce(
         kV4Prefix1, /* prefix */
@@ -579,11 +582,10 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMultipathKeyedByPathId) {
         false, /* sendWithEoR */
         true, /* addPath */
         pathIdToSend);
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg));
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg));
   }
 
-  const auto& srEntry = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+  const auto& srEntry = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
   EXPECT_EQ(2, srEntry.multipaths.size());
   EXPECT_TRUE(srEntry.multipaths.contains(PathId{uint32_t{0}}));
   EXPECT_TRUE(srEntry.multipaths.contains(PathId{uint32_t{1}}));
@@ -603,6 +605,8 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryWithdrawalByPathId) {
       ribOutQ_,
       nbrRouteChangeQ_);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   for (const uint32_t pathIdToSend : {0u, 1u}) {
     auto msg = createRibSingleAnnounce(
         kV4Prefix1, /* prefix */
@@ -611,15 +615,14 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryWithdrawalByPathId) {
         false, /* sendWithEoR */
         true, /* addPath */
         pathIdToSend);
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg));
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg));
   }
 
   RibOutWithdrawal withdrawal{};
   withdrawal.addPathEntries.emplace_back(kV4Prefix1, 1, kV4Nexthop1);
-  peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
+  vrf->handleShadowRibEntryWithdrawal(withdrawal);
 
-  const auto& srEntry = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+  const auto& srEntry = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
   EXPECT_EQ(1, srEntry.multipaths.size());
   EXPECT_TRUE(srEntry.multipaths.contains(PathId{uint32_t{0}}));
 }
@@ -634,11 +637,13 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryEmptyAttrTest) {
       ribOutQ_,
       nbrRouteChangeQ_);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   {
     /*
      * Step 0: verify the empty ShadowRib collection
      */
-    EXPECT_EQ(0, peerMgr->shadowRibEntries_.size());
+    EXPECT_EQ(0, vrf->getShadowRibEntries().size());
   }
   {
     /*
@@ -658,10 +663,10 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryEmptyAttrTest) {
     // deliberately reset attrs
     announcement.addPathEntries.front().attrs = nullptr;
 
-    peerMgr->handleShadowRibEntryAnnouncement(announcement);
+    vrf->handleShadowRibEntryAnnouncement(announcement);
 
     // shadowRib entry will not be updated
-    EXPECT_EQ(0, peerMgr->shadowRibEntries_.size());
+    EXPECT_EQ(0, vrf->getShadowRibEntries().size());
   }
 }
 
@@ -697,17 +702,17 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMixpathTest) {
       true, /* addPath */
       0); /* pathIdToSend */
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   {
     /*
      * Step 1: push a bestpath update followed by a multipath update to make
      * sure state is consistent.
      */
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg1));
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg2));
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto* srEntry = &peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto* srEntry = &vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_NE(nullptr, srEntry->bestpath);
     EXPECT_EQ(1, srEntry->multipaths.size());
     const auto peerBefore = srEntry->multipaths.at(pathId)->peer;
@@ -719,14 +724,14 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMixpathTest) {
      */
     RibOutWithdrawal withdrawal{};
     withdrawal.entries.emplace_back(kV4Prefix1, 0);
-    peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
+    vrf->handleShadowRibEntryWithdrawal(withdrawal);
     /*
      * Only bestpath is explicitly withdrwan. Not multipath, hence
      * shadowRibEntry would still stick around
      */
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
 
-    srEntry = &peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    srEntry = &vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_EQ(nullptr, srEntry->bestpath);
     EXPECT_EQ(1, srEntry->multipaths.size());
 
@@ -734,12 +739,10 @@ TEST_F(PeerManagerTestFixture, ShadowRibEntryMixpathTest) {
      * Step 3: push a multipath update followed by a bestpath update to make
      * sure state is consistent.
      */
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg2));
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg1));
-    EXPECT_EQ(1, peerMgr->shadowRibEntries_.size());
-    const auto& srEntry1 = peerMgr->shadowRibEntries_.at(kV4Prefix1)->get();
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+    EXPECT_EQ(1, vrf->getShadowRibEntries().size());
+    const auto& srEntry1 = vrf->getShadowRibEntries().at(kV4Prefix1)->get();
     EXPECT_NE(nullptr, srEntry1.bestpath);
     EXPECT_EQ(1, srEntry1.multipaths.size());
     const auto peerAfter = srEntry1.multipaths.at(pathId)->peer;
@@ -764,9 +767,11 @@ TEST_F(PeerManagerTestFixture, RibDumpReqNegativeTest) {
       nbrRouteChangeQ_);
 
   auto& evb = peerMgr->getEventBase();
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -841,15 +846,17 @@ CO_TEST_F(PeerManagerTestFixture, ShadowRibEntryMultiUpdateTest) {
   auto boundedOutQ2 = std::make_shared<AdjRib::AdjRibOutQueueT>(
       kMaxEgressQueueSize, kEgressQueueHighWatermark, kEgressQueueLowWatermark);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  CO_ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   peerMgr->ribInitialAnnouncementStarted_ = true;
   peerMgr->ribInitialAnnouncementDone_ = true;
@@ -872,13 +879,13 @@ CO_TEST_F(PeerManagerTestFixture, ShadowRibEntryMultiUpdateTest) {
       false, /* sendWithEoR */
       false /* addPath */
   );
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
 
   /*
    * No EoR sent and hence no changeListConsumer registered and hence no
    * items in changeList
    */
-  auto changeItem = peerMgr->getChangeListTracker()->getHead();
+  auto changeItem = vrf->getChangeListTracker()->getHead();
   EXPECT_EQ(nullptr, changeItem);
 
   /*
@@ -907,11 +914,11 @@ CO_TEST_F(PeerManagerTestFixture, ShadowRibEntryMultiUpdateTest) {
       false, /* sendWithEoR */
       false /* addPath */
   );
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
 
   RibOutWithdrawal ribWithdrawal;
   ribWithdrawal.entries.emplace_back(kV4Prefix1, kDefaultPathID);
-  peerMgr->handleShadowRibEntryWithdrawal(ribWithdrawal);
+  vrf->handleShadowRibEntryWithdrawal(ribWithdrawal);
 
   co_await adjRib1->getChangeListConsumer()->consumeChanges();
   evb.loopOnce();
@@ -924,7 +931,7 @@ CO_TEST_F(PeerManagerTestFixture, ShadowRibEntryMultiUpdateTest) {
    * shadowRib should have correctly removed withdrawn entry
    * and thus now shadowRib should be empty
    */
-  EXPECT_EQ(0, peerMgr->shadowRibEntries_.size());
+  EXPECT_EQ(0, vrf->getShadowRibEntries().size());
 }
 
 CO_TEST_F(PeerManagerTestFixture, RibDumpReqPositiveTest) {
@@ -958,25 +965,27 @@ CO_TEST_F(PeerManagerTestFixture, RibDumpReqPositiveTest) {
   auto boundedOutQ2 = std::make_shared<AdjRib::AdjRibOutQueueT>(
       kMaxEgressQueueSize, kEgressQueueHighWatermark, kEgressQueueLowWatermark);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  CO_ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn2),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   /*
    * mark EoR ready to simulate initial Fib sync done and initial
@@ -1026,13 +1035,13 @@ CO_TEST_F(PeerManagerTestFixture, RibDumpReqPositiveTest) {
   );
 
   // populate mutlipath first without bestpath
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
 
   /*
    * No EoR sent and hence no changeListConsumer registered and hence no
    * items in changeList
    */
-  auto changeItem = peerMgr->getChangeListTracker()->getHead();
+  auto changeItem = vrf->getChangeListTracker()->getHead();
   EXPECT_EQ(nullptr, changeItem);
 
   {
@@ -1050,15 +1059,13 @@ CO_TEST_F(PeerManagerTestFixture, RibDumpReqPositiveTest) {
      *
      * populate bestpath
      */
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg1));
-    peerMgr->handleShadowRibEntryAnnouncement(
-        std::get<RibOutAnnouncement>(msg3));
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+    vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg3));
 
     /*
      * Since Ribdump was sent, updates now published to the changeList
      */
-    auto changeItemAfterDump = peerMgr->getChangeListTracker()->getHead();
+    auto changeItemAfterDump = vrf->getChangeListTracker()->getHead();
     EXPECT_NE(nullptr, changeItemAfterDump);
     auto& srEntry = changeItemAfterDump->getTypedObject();
     EXPECT_EQ(1, srEntry.publishCount);
@@ -1187,9 +1194,11 @@ TEST_F(
   auto& evb = peerMgr_->getEventBase();
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   peerMgr_->adjRibs_[kPeerId1] = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1242,9 +1251,11 @@ TEST_F(
 
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   peerMgr_->adjRibs_[kPeerId1] = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1313,9 +1324,11 @@ TEST_F(
 
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   peerMgr_->adjRibs_[kPeerId1] = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1378,11 +1391,13 @@ TEST_F(RibInitialAnnouncementTestFixture, HandleBufferedRibDumpReqsTest) {
   BgpPeerId peerId;
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   for (int i = 0; i < numPeers; ++i) {
     peerId = BgpPeerId(folly::IPAddressV4::fromLongHBO(i), i);
     peerMgr_->adjRibs_[peerId] = setupAdjRib(
         evb,
-        peerMgr_->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         peerId,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -1436,9 +1451,11 @@ TEST_F(
   auto& evb = peerMgr_->getEventBase();
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1466,9 +1483,11 @@ TEST_F(
   auto& evb = peerMgr_->getEventBase();
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1495,9 +1514,11 @@ TEST_F(
   auto& evb = peerMgr_->getEventBase();
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1529,9 +1550,11 @@ TEST_F(
   auto& evb = peerMgr_->getEventBase();
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1561,9 +1584,11 @@ TEST_F(
   auto& evb = peerMgr_->getEventBase();
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1647,9 +1672,11 @@ TEST_F(
       kV4Prefix1, kV4Nexthop1, kLocalRouteAs, false, false);
   auto v6Announcement = createRibSingleAnnounce(
       kV6Prefix1, kV6Nexthop1, kLocalRouteAs, false, false);
-  peerMgr_->handleShadowRibEntryAnnouncement(
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
+  vrf->handleShadowRibEntryAnnouncement(
       std::get<RibOutAnnouncement>(v4Announcement));
-  peerMgr_->handleShadowRibEntryAnnouncement(
+  vrf->handleShadowRibEntryAnnouncement(
       std::get<RibOutAnnouncement>(v6Announcement));
 
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_))
@@ -1688,9 +1715,11 @@ TEST_F(
       kV4Prefix1, kV4Nexthop1, kLocalRouteAs, false, false);
   auto v6Announcement = createRibSingleAnnounce(
       kV6Prefix1, kV6Nexthop1, kLocalRouteAs, false, false);
-  peerMgr_->handleShadowRibEntryAnnouncement(
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
+  vrf->handleShadowRibEntryAnnouncement(
       std::get<RibOutAnnouncement>(v4Announcement));
-  peerMgr_->handleShadowRibEntryAnnouncement(
+  vrf->handleShadowRibEntryAnnouncement(
       std::get<RibOutAnnouncement>(v6Announcement));
 
   bool delivered = false;
@@ -1738,9 +1767,11 @@ TEST_F(
       kV4Prefix1, kV4Nexthop1, kLocalRouteAs, false, false);
   auto v6Announcement = createRibSingleAnnounce(
       kV6Prefix1, kV6Nexthop1, kLocalRouteAs, false, false);
-  peerMgr_->handleShadowRibEntryAnnouncement(
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
+  vrf->handleShadowRibEntryAnnouncement(
       std::get<RibOutAnnouncement>(v4Announcement));
-  peerMgr_->handleShadowRibEntryAnnouncement(
+  vrf->handleShadowRibEntryAnnouncement(
       std::get<RibOutAnnouncement>(v6Announcement));
 
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_))
@@ -1776,9 +1807,11 @@ TEST_F(
   auto& evb = peerMgr_->getEventBase();
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -1814,9 +1847,11 @@ TEST_F(
       kV4Prefix1, kV4Nexthop1, kLocalRouteAs, false, false);
   auto v6Announcement = createRibSingleAnnounce(
       kV6Prefix1, kV6Nexthop1, kLocalRouteAs, false, false);
-  peerMgr_->handleShadowRibEntryAnnouncement(
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
+  vrf->handleShadowRibEntryAnnouncement(
       std::get<RibOutAnnouncement>(v4Announcement));
-  peerMgr_->handleShadowRibEntryAnnouncement(
+  vrf->handleShadowRibEntryAnnouncement(
       std::get<RibOutAnnouncement>(v6Announcement));
 
   std::vector<folly::CIDRNetwork> replayedPrefixes;
@@ -2253,9 +2288,11 @@ TEST_F(
 
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   peerMgr_->adjRibs_[kPeerId1] = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -2303,9 +2340,11 @@ TEST_F(
 
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   peerMgr_->adjRibs_[kPeerId1] = setupAdjRib(
       evb,
-      peerMgr_->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -2351,11 +2390,13 @@ TEST_F(
   BgpPeerId peerId;
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
+  auto* vrf = peerMgr_->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   for (int i = 0; i < numPeers; ++i) {
     peerId = BgpPeerId(folly::IPAddressV4::fromLongHBO(i), i);
     peerMgr_->adjRibs_[peerId] = setupAdjRib(
         evb,
-        peerMgr_->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         peerId,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -2887,9 +2928,11 @@ TEST_F(PeerManagerTestFixture, ReplicateRibMessageInitialadjRibsTest) {
   // batons used to do synchronization to notify destruction sequence
   folly::fibers::Baton baton1, baton2;
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -2897,7 +2940,7 @@ TEST_F(PeerManagerTestFixture, ReplicateRibMessageInitialadjRibsTest) {
   adjRib1->setInInitialAnnouncement();
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -2995,25 +3038,27 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
   auto boundedOutQ2 = std::make_shared<AdjRib::AdjRibOutQueueT>(
       kMaxEgressQueueSize, kEgressQueueHighWatermark, kEgressQueueLowWatermark);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  CO_ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn2),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   peerMgr->ribInitialAnnouncementStarted_ = true;
   peerMgr->ribInitialAnnouncementDone_ = true;
@@ -3063,14 +3108,14 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
       false /* addPath */);
 
   // Populate multipaths first
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg3));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg3));
   // Then populate bestpaths
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg4));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg4));
 
   // No consumer registered yet, so no items in changeList
-  auto changeItem = peerMgr->getChangeListTracker()->getHead();
+  auto changeItem = vrf->getChangeListTracker()->getHead();
   EXPECT_EQ(nullptr, changeItem);
 
   // Step 0.2: Send RibDumpReq for both adjRibs
@@ -3119,10 +3164,8 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
    * Add multipath first, then bestpath (bestpath should be one of the
    * multipaths)
    */
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg5a));
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg5b));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg5a));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg5b));
 
   co_await adjRib1->getChangeListConsumer()->consumeChanges();
   co_await adjRib2->getChangeListConsumer()->consumeChanges();
@@ -3145,13 +3188,13 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
       false /* sendWithEoR */,
       true /* addPath */,
       kMinPathIDToSend + 3);
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg6));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg6));
 
   /*
    * Verify the bitmap: only addpath consumer (adjRib2) should have the bit
    * set
    */
-  changeItem = peerMgr->getChangeListTracker()->getHead();
+  changeItem = vrf->getChangeListTracker()->getHead();
   EXPECT_NE(nullptr, changeItem);
   // adjRib2 (addpath capable) should have bit set
   EXPECT_TRUE(
@@ -3194,10 +3237,8 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
       kLocalRouteAs,
       false /* sendWithEoR */,
       false /* addPath */);
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg7a));
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg7b));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg7a));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg7b));
 
   // Immediately add another multipath BEFORE consuming the bestpath change
   auto msg8 = createRibSingleAnnounce(
@@ -3207,7 +3248,7 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
       false /* sendWithEoR */,
       true /* addPath */,
       kMinPathIDToSend + 5);
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg8));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg8));
 
   // Now consume - bestpath change should be delivered to BOTH adjribs
   co_await adjRib1->getChangeListConsumer()->consumeChanges();
@@ -3237,10 +3278,10 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
       false /* sendWithEoR */,
       true /* addPath */,
       kMinPathIDToSend + 6);
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg9));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg9));
 
   // Verify: initial multipath publish has only addpath bit set
-  changeItem = peerMgr->getChangeListTracker()->getHead();
+  changeItem = vrf->getChangeListTracker()->getHead();
   EXPECT_NE(nullptr, changeItem);
   EXPECT_TRUE(
       BitmapUtils::isBitSet(
@@ -3259,14 +3300,13 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
       false /* sendWithEoR */,
       true /* addPath */,
       kMinPathIDToSend + 7);
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg10a));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg10a));
 
   /*
    * Verify: after second multipath publish (item already on list with
    * multipath), bitmap should remain ONLY addpath
    */
-  changeItem = peerMgr->getChangeListTracker()->getHead();
+  changeItem = vrf->getChangeListTracker()->getHead();
   EXPECT_NE(nullptr, changeItem);
   EXPECT_TRUE(
       BitmapUtils::isBitSet(
@@ -3284,8 +3324,7 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
       kLocalRouteAs,
       false /* sendWithEoR */,
       false /* addPath */);
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg10b));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg10b));
 
   // Consume changes - both adjribs should receive the update
   co_await adjRib1->getChangeListConsumer()->consumeChanges();
@@ -3320,27 +3359,29 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationAddPathTest) {
   auto boundedOutQ2 = std::make_shared<AdjRib::AdjRibOutQueueT>(
       kMaxEgressQueueSize, kEgressQueueHighWatermark, kEgressQueueLowWatermark);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  CO_ASSERT_NE(nullptr, vrf);
   // Create adjRib1: add-path capable peer
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   // Create adjRib2: non-add-path capable peer
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn2),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   peerMgr->ribInitialAnnouncementStarted_ = true;
   peerMgr->ribInitialAnnouncementDone_ = true;
@@ -3378,7 +3419,7 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationAddPathTest) {
       false,
       true /* addPath */,
       kMinPathIDToSend);
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
 
   // Consume changes for both adjRibs
   co_await adjRib1->getChangeListConsumer()->consumeChanges();
@@ -3413,27 +3454,29 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationMixTest) {
   auto boundedOutQ2 = std::make_shared<AdjRib::AdjRibOutQueueT>(
       kMaxEgressQueueSize, kEgressQueueHighWatermark, kEgressQueueLowWatermark);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  CO_ASSERT_NE(nullptr, vrf);
   // Create adjRib1: add-path capable peer
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   // Create adjRib2: non-add-path capable peer
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn2),
       sessionTerminateBaton_,
       config,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
 
   peerMgr->ribInitialAnnouncementStarted_ = true;
   peerMgr->ribInitialAnnouncementDone_ = true;
@@ -3479,10 +3522,8 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationMixTest) {
       kMinPathIDToSend);
   auto msg1b = createRibSingleAnnounce(
       kV4Prefix1, kV4Nexthop1, kLocalRouteAs, false, false /* addPath */);
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg1a));
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg1b));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1a));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1b));
 
   co_await adjRib1->getChangeListConsumer()->consumeChanges();
   co_await adjRib2->getChangeListConsumer()->consumeChanges();
@@ -3503,7 +3544,7 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationMixTest) {
       false,
       true /* addPath */,
       kMinPathIDToSend);
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
 
   co_await adjRib1->getChangeListConsumer()->consumeChanges();
   co_await adjRib2->getChangeListConsumer()->consumeChanges();
@@ -3528,10 +3569,8 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationMixTest) {
       kMinPathIDToSend + 1);
   auto msg3b = createRibSingleAnnounce(
       kV4Prefix3, kV4Nexthop3, kLocalRouteAs, false, false /* addPath */);
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg3a));
-  peerMgr->handleShadowRibEntryAnnouncement(
-      std::get<RibOutAnnouncement>(msg3b));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg3a));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg3b));
 
   co_await adjRib1->getChangeListConsumer()->consumeChanges();
   co_await adjRib2->getChangeListConsumer()->consumeChanges();
@@ -3588,18 +3627,20 @@ TEST_F(PeerManagerTestFixture, MaxRibVersionCountsPrefixChunks) {
   announcement.addPathEntries.push_back(
       makeAddPathEntry(kV4Prefix2, kV4Nexthop1, 100 /* ribVersion */));
 
-  peerMgr->handleShadowRibEntryAnnouncement(announcement);
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
+  vrf->handleShadowRibEntryAnnouncement(announcement);
 
-  EXPECT_EQ(2, peerMgr->getMaxRibVersion());
-  EXPECT_EQ(1, peerMgr->shadowRibEntries_.at(kV4Prefix1)->get().ribVersion);
-  EXPECT_EQ(2, peerMgr->shadowRibEntries_.at(kV4Prefix2)->get().ribVersion);
+  EXPECT_EQ(2, vrf->getMaxRibVersion());
+  EXPECT_EQ(1, vrf->getShadowRibEntries().at(kV4Prefix1)->get().ribVersion);
+  EXPECT_EQ(2, vrf->getShadowRibEntries().at(kV4Prefix2)->get().ribVersion);
 
   /* A withdrawal for a prefix the shadow RIB never had still opens a chunk. */
   RibOutWithdrawal withdrawal{};
   withdrawal.entries.emplace_back(kV4Prefix3, kDefaultPathID);
-  peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
+  vrf->handleShadowRibEntryWithdrawal(withdrawal);
 
-  EXPECT_EQ(3, peerMgr->getMaxRibVersion());
+  EXPECT_EQ(3, vrf->getMaxRibVersion());
 }
 
 /*
@@ -3617,6 +3658,8 @@ TEST_F(PeerManagerTestFixture, MaxRibVersionNeverMovesBackwards) {
       ribOutQ_,
       nbrRouteChangeQ_);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto announceBestpath = [&](const folly::CIDRNetwork& prefix,
                               uint64_t ribVersion) {
     auto msg = std::get<RibOutAnnouncement>(createRibSingleAnnounce(
@@ -3626,7 +3669,7 @@ TEST_F(PeerManagerTestFixture, MaxRibVersionNeverMovesBackwards) {
         false /* sendWithEoR */,
         false /* addPath */));
     msg.entries.back().ribVersion = ribVersion;
-    peerMgr->handleShadowRibEntryAnnouncement(msg);
+    vrf->handleShadowRibEntryAnnouncement(msg);
   };
 
   auto withdrawBestpath = [&](const folly::CIDRNetwork& prefix,
@@ -3634,7 +3677,7 @@ TEST_F(PeerManagerTestFixture, MaxRibVersionNeverMovesBackwards) {
     RibOutWithdrawal withdrawal{};
     withdrawal.entries.emplace_back(prefix, kDefaultPathID);
     withdrawal.entries.back().ribVersion = ribVersion;
-    peerMgr->handleShadowRibEntryWithdrawal(withdrawal);
+    vrf->handleShadowRibEntryWithdrawal(withdrawal);
   };
 
   /*
@@ -3643,7 +3686,7 @@ TEST_F(PeerManagerTestFixture, MaxRibVersionNeverMovesBackwards) {
    */
   const std::vector<uint64_t> kOutOfOrderRibVersions = {9000, 9000, 3, 1, 1, 2};
   std::vector<uint64_t> observed;
-  uint64_t previous = peerMgr->getMaxRibVersion();
+  uint64_t previous = vrf->getMaxRibVersion();
   ASSERT_EQ(0, previous);
 
   for (size_t i = 0; i < kOutOfOrderRibVersions.size(); ++i) {
@@ -3654,7 +3697,7 @@ TEST_F(PeerManagerTestFixture, MaxRibVersionNeverMovesBackwards) {
     } else {
       withdrawBestpath(prefix, kOutOfOrderRibVersions[i]);
     }
-    const auto current = peerMgr->getMaxRibVersion();
+    const auto current = vrf->getMaxRibVersion();
     EXPECT_GT(current, previous)
         << "step " << i << " with RIB version " << kOutOfOrderRibVersions[i]
         << " failed to advance the shadow RIB version";
@@ -3669,9 +3712,9 @@ TEST_F(PeerManagerTestFixture, MaxRibVersionNeverMovesBackwards) {
      */
     if (isAnnouncement) {
       EXPECT_EQ(
-          current, peerMgr->shadowRibEntries_.at(prefix)->get().ribVersion);
+          current, vrf->getShadowRibEntries().at(prefix)->get().ribVersion);
     } else {
-      EXPECT_FALSE(peerMgr->shadowRibEntries_.contains(prefix));
+      EXPECT_FALSE(vrf->getShadowRibEntries().contains(prefix));
     }
   }
 
@@ -3703,14 +3746,16 @@ TEST_F(PeerManagerTestFixture, GetShadowRibEntriesCanonical) {
       kLocalRouteAs,
       false /* EoR */,
       false /* addpath */);
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg1));
   auto msg2 = createRibSingleAnnounce(
       kV4Prefix2,
       kV4Nexthop2,
       kLocalRouteAs,
       false /* EoR */,
       false /* addpath */);
-  peerMgr->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
+  vrf->handleShadowRibEntryAnnouncement(std::get<RibOutAnnouncement>(msg2));
 
   /*
    * Both announced prefixes convert. The getter does not populate best_path

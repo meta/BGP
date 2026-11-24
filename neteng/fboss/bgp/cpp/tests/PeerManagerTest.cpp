@@ -590,22 +590,24 @@ TEST_F(PeerManagerTestFixture, AdjRibOutGroupPeerEntriesTest) {
   folly::EventBase evb;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // start testing peer field by field
   fm.addTask([&] {
     // Create two adjRibs
     auto adjRib1 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId1,
         AsNum(kAsn1),
         sessionTerminateBaton_,
         config);
     peerMgr->adjRibs_[kPeerId1] = adjRib1;
-    EXPECT_NE(peerMgr->getChangeListTracker(), nullptr);
+    EXPECT_NE(vrf->getChangeListTracker(), nullptr);
     adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group");
     auto adjRib2 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId2,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -701,12 +703,14 @@ TEST_F(PeerManagerTestFixture, AdjRibOutGroupAddPathPeerEntriesTest) {
   folly::EventBase evb;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // start testing peer field by field
   fm.addTask([&] {
     // Create two adjRibs
     auto adjRib1 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId1,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -716,7 +720,7 @@ TEST_F(PeerManagerTestFixture, AdjRibOutGroupAddPathPeerEntriesTest) {
     adjRib1->sendAddPath_ = true;
     auto adjRib2 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId2,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -1593,6 +1597,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTest) {
 
   folly::fibers::Baton adjRibReadyBaton, nbrDownSentBaton;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   fm.addTask([&] {
     // Create previous incarnation file with one static peer
     createGrState({kPeerId3});
@@ -1608,7 +1614,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTest) {
     // Create an adjRib for this peer
     auto adjRib = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId3,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -1722,6 +1728,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor) {
 
   folly::fibers::Baton adjRibReadyBaton, nbrDownSentBaton;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   fm.addTask([&] {
     /*
      * Create previous incarnation file with one static peer and one dynamic
@@ -1740,7 +1748,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor) {
     // Create an adjRib for a new Peer
     auto adjRib = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId3,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -1866,6 +1874,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
 
   folly::fibers::Baton adjRibReadyBaton, nbrDownSentBaton;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   fm.addTask([&] {
     /*
      * Create previous incarnation file with one static peer and one dynamic
@@ -1881,7 +1891,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
     // Create an adjRib for a new Peer
     auto adjRib = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId3,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -2585,6 +2595,8 @@ TEST_F(PeerManagerTestFixture, NbrDownAfterGRTest) {
 
   folly::fibers::Baton adjRibReadyBaton, nbrDownSentBaton;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   fm.addTask([&] {
     peerMgr->addPeersToSessionMgr();
 
@@ -2594,7 +2606,7 @@ TEST_F(PeerManagerTestFixture, NbrDownAfterGRTest) {
     // Create an adjRib
     auto adjRib1 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId1,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -2704,7 +2716,9 @@ TEST_F(PeerManagerTestFixture, HandleNeighborReachabilityMsgTest) {
       setupMockAdjRib(evb, kPeerId1, AsNum(kAsn1), sessionTerminateBaton_);
   peerMgr->adjRibs_[kPeerId1] = adjRib;
   EXPECT_EQ(1, peerMgr->adjRibs_.size());
-  EXPECT_NE(peerMgr->getChangeListTracker(), nullptr);
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
+  EXPECT_NE(vrf->getChangeListTracker(), nullptr);
   // Only one peer's session is stopped.
   EXPECT_CALL(*sessionMgr, stopPeer(kPeerAddr1, false /* withGR */)).Times(1);
   // adjRib should be called once on peerMgr->stop() and nowhere else.
@@ -3010,9 +3024,11 @@ TEST_F(PeerManagerTestFixture, SetRouteFilterPolicyTest) {
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3023,7 +3039,7 @@ TEST_F(PeerManagerTestFixture, SetRouteFilterPolicyTest) {
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3219,9 +3235,11 @@ TEST_F(PeerManagerTestFixture, SetRouteFilterPolicyVersionCheckTest) {
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3344,9 +3362,11 @@ TEST_F(PeerManagerTestFixture, IdenticalRouteFilterPolicyPreservesPendingWork) {
   peerMgr->setSessionManager(sessionMgr);
 
   auto& evb = peerMgr->getEventBase();
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3432,9 +3452,11 @@ TEST_F(PeerManagerTestFixture, SetRouteFilterPolicyForceUpdateTest) {
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3562,9 +3584,11 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3574,7 +3598,7 @@ TEST_F(
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3584,7 +3608,7 @@ TEST_F(
 
   auto adjRib3 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId3,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3686,9 +3710,11 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3698,7 +3724,7 @@ TEST_F(
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3708,7 +3734,7 @@ TEST_F(
 
   auto adjRib3 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId3,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3922,9 +3948,11 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3934,7 +3962,7 @@ TEST_F(
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -3944,7 +3972,7 @@ TEST_F(
 
   auto adjRib3 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId3,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4095,9 +4123,11 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4107,7 +4137,7 @@ TEST_F(
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4117,7 +4147,7 @@ TEST_F(
 
   auto adjRib3 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId3,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4312,9 +4342,11 @@ TEST_F(PeerManagerTestFixture, GoldenPrefixesPolicyStatusTestDropMode) {
   EXPECT_FALSE(peerMgr->goldenPrefixesPolicyActive_);
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4325,7 +4357,7 @@ TEST_F(PeerManagerTestFixture, GoldenPrefixesPolicyStatusTestDropMode) {
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4397,9 +4429,11 @@ TEST_F(PeerManagerTestFixture, GoldenPrefixesPolicyStatusTestSwitchLimitUnset) {
   EXPECT_FALSE(peerMgr->goldenPrefixesPolicyActive_);
 
   auto& evb = peerMgr->getEventBase();
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4410,7 +4444,7 @@ TEST_F(PeerManagerTestFixture, GoldenPrefixesPolicyStatusTestSwitchLimitUnset) {
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4495,6 +4529,8 @@ TEST_F(PeerManagerTestFixture, PolicyCachePeriodicEvictionTest) {
   const PolicyAttributesMask dummyMask2;
   std::string kDummyPolicyName = "DummyPolicy";
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   fm.addTask([&] {
     peerMgr->addPeersToSessionMgr();
 
@@ -4504,14 +4540,14 @@ TEST_F(PeerManagerTestFixture, PolicyCachePeriodicEvictionTest) {
     // Create two adjRibs
     auto adjRib1 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId1,
         AsNum(kAsn1),
         sessionTerminateBaton_,
         config);
     auto adjRib2 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId2,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -4690,9 +4726,11 @@ TEST_P(ClearRouteFiltersFixture, ClearIngressEgressRouteFiltersPolicyTest) {
   peerMgr->setSessionManager(sessionMgr);
 
   auto& evb = peerMgr->getEventBase();
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4703,7 +4741,7 @@ TEST_P(ClearRouteFiltersFixture, ClearIngressEgressRouteFiltersPolicyTest) {
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4801,9 +4839,11 @@ TEST_P(
   peerMgr->setSessionManager(sessionMgr);
 
   auto& evb = peerMgr->getEventBase();
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4889,9 +4929,11 @@ TEST_F(PeerManagerTestFixture, ClearGoldenPrefixesPolicyTest) {
   peerMgr->setSessionManager(sessionMgr);
 
   auto& evb = peerMgr->getEventBase();
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4902,7 +4944,7 @@ TEST_F(PeerManagerTestFixture, ClearGoldenPrefixesPolicyTest) {
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4984,9 +5026,11 @@ TEST_F(PeerManagerTestFixture, DisableScubaLoggingTest) {
   peerMgr->setSessionManager(sessionMgr);
 
   auto& evb = peerMgr->getEventBase();
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -4996,7 +5040,7 @@ TEST_F(PeerManagerTestFixture, DisableScubaLoggingTest) {
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -5238,20 +5282,22 @@ TEST_F(PeerManagerTestFixture, TriggerSafeModeMsgTest) {
 
   folly::EventBase evb;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   fm.addTask([&] {
     peerMgr->addPeersToSessionMgr();
 
     // Create two adjRibs
     auto adjRib1 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId1,
         AsNum(kAsn1),
         sessionTerminateBaton_,
         config);
     auto adjRib2 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId2,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -6357,8 +6403,10 @@ TEST_F(PeerManagerTestFixture, UpdateEntryStatsTest) {
   mockPeerMgr->updateEntryStats(stats);
 
   EXPECT_EQ(stats.total_adj_ribs(), mockPeerMgr->adjRibs_.size());
+  auto* vrf = mockPeerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   EXPECT_EQ(
-      stats.total_shadow_rib_entries(), mockPeerMgr->shadowRibEntries_.size());
+      stats.total_shadow_rib_entries(), vrf->getShadowRibEntries().size());
 }
 
 /**
@@ -6399,10 +6447,12 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // Setup AdjRibs with different peer groups
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -6418,7 +6468,7 @@ TEST_F(
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -6452,7 +6502,7 @@ TEST_F(
 
   auto adjRib3 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId3,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -6469,7 +6519,7 @@ TEST_F(
 
   auto adjRib4 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId4,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -6657,10 +6707,12 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // Setup AdjRibs with different IP addresses
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -6675,7 +6727,7 @@ TEST_F(
 
   auto adjRib2 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId2,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -6690,7 +6742,7 @@ TEST_F(
 
   auto adjRib3 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId3,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -6836,10 +6888,12 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // Setup AdjRib with existing policies
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -6926,10 +6980,12 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // Setup AdjRib
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -7016,10 +7072,12 @@ TEST_F(PeerManagerDynamicPolicyEvaluationFixture, StalePolicyUpdateIsSkipped) {
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // Setup AdjRib
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -7121,10 +7179,12 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // Setup AdjRib
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -7223,10 +7283,12 @@ TEST_F(
 
   auto& evb = peerMgr->getEventBase();
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   // Setup AdjRib
   auto adjRib1 = setupAdjRib(
       evb,
-      peerMgr->getChangeListTracker(),
+      vrf->getChangeListTracker(),
       kPeerId1,
       AsNum(kAsn1),
       sessionTerminateBaton_,
@@ -7417,11 +7479,13 @@ TEST_F(PeerManagerTestFixture, MarkDaemonShutdownClearsAdjRibTreesTest) {
   folly::EventBase evb;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   fm.addTask([&] {
     // Create two AdjRibs with a shared AdjRibOutGroup
     auto adjRib1 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId1,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -7433,7 +7497,7 @@ TEST_F(PeerManagerTestFixture, MarkDaemonShutdownClearsAdjRibTreesTest) {
 
     auto adjRib2 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId2,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -7599,6 +7663,8 @@ TEST_F(PeerManagerTestFixture, GetEffectivePostOutPrefixCountTest) {
   folly::EventBase evb;
   auto& fm = folly::fibers::getFiberManager(evb, options_);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   fm.addTask([&] {
     /*
      * Case 1: In-sync update-group peer (per-peer=0, group>0).
@@ -7606,7 +7672,7 @@ TEST_F(PeerManagerTestFixture, GetEffectivePostOutPrefixCountTest) {
      */
     auto adjRib1 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId1,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -7636,7 +7702,7 @@ TEST_F(PeerManagerTestFixture, GetEffectivePostOutPrefixCountTest) {
      */
     auto adjRib2 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId2,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -7662,7 +7728,7 @@ TEST_F(PeerManagerTestFixture, GetEffectivePostOutPrefixCountTest) {
      */
     auto adjRib3 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId3,
         AsNum(kAsn1),
         sessionTerminateBaton_,

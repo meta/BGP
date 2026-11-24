@@ -821,7 +821,12 @@ PeerManagerTestFixture::setupMockSessionManager(
     std::shared_ptr<MockPeerManager>& mockPeerMgr) {
   // mockPeerMgr should not be empty
   EXPECT_TRUE(mockPeerMgr != nullptr);
-  EXPECT_TRUE(mockPeerMgr->changeListTracker_ != nullptr);
+  auto* vrf = mockPeerMgr->findVrf(fboss::kDefaultVrf);
+  if (!vrf) {
+    XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+    return nullptr;
+  }
+  EXPECT_TRUE(vrf->getChangeListTracker() != nullptr);
 
   auto globalConfig = config_->getBgpGlobalConfig();
 

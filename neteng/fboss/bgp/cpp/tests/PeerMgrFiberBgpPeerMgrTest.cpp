@@ -809,21 +809,23 @@ CO_TEST_F(PeerManagerTestFixture, CleanupPeerState_ResetsChangeListConsumer) {
   auto mockAdjRib =
       setupMockAdjRib(evb, kPeerId3, AsNum(kPeerAsn3), terminateBaton);
 
+  auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+  CO_ASSERT_NE(nullptr, vrf);
   /*
    * Wire a real AdjRibOutConsumer back to the AdjRib — the same shape
    * PeerManagerBase::createAdjRib produces in the UG-disabled path. This is
    * the cycle cleanupPeerState must break.
    */
   std::shared_ptr<ChangeTracker<ShadowRibEntry>> changeListTracker =
-      peerMgr->getChangeListTracker();
+      vrf->getChangeListTracker();
   std::shared_ptr<AdjRib> adjRibBase = mockAdjRib;
   auto changeListConsumer = std::make_shared<AdjRibOutConsumer>(
       changeListTracker,
       adjRibBase,
       "ChangeList Consumer",
       evb,
-      peerMgr->addPathConsumerBitmap_,
-      peerMgr->nonAddPathConsumerBitmap_);
+      vrf->getAddPathConsumerBitmap(),
+      vrf->getNonAddPathConsumerBitmap());
   mockAdjRib->setChangeListConsumer(changeListConsumer);
   CO_ASSERT_NE(nullptr, mockAdjRib->getChangeListConsumer());
 

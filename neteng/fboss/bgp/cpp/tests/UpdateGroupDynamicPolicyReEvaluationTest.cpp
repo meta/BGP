@@ -185,9 +185,14 @@ class UpdateGroupDynamicPolicyReEvaluationTest : public PeerManagerTestFixture {
 
     auto& evb = peerMgr->getEventBase();
 
+    auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return {};
+    }
     auto adjRib1 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId1,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -201,7 +206,7 @@ class UpdateGroupDynamicPolicyReEvaluationTest : public PeerManagerTestFixture {
 
     auto adjRib2 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId2,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -215,7 +220,7 @@ class UpdateGroupDynamicPolicyReEvaluationTest : public PeerManagerTestFixture {
 
     auto adjRib3 = setupAdjRib(
         evb,
-        peerMgr->getChangeListTracker(),
+        vrf->getChangeListTracker(),
         kPeerId3,
         AsNum(kAsn1),
         sessionTerminateBaton_,
@@ -444,6 +449,8 @@ TEST_F(
     adjRib->isAfiIpv4Negotiated_ = true;
   });
 
+  auto* vrf = ctx.peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   /*
    * Phase 1: Populate the ShadowRib with 5 prefixes via
    * handleShadowRibEntryAnnouncement so processRibDumpReq has entries to walk.
@@ -468,7 +475,7 @@ TEST_F(
           attrs);
       announcement.entries.back().ribVersion = i;
     }
-    ctx.peerMgr->handleShadowRibEntryAnnouncement(announcement);
+    vrf->handleShadowRibEntryAnnouncement(announcement);
   });
 
   /*
@@ -476,13 +483,13 @@ TEST_F(
    * Use PeerManagerBase's bitmaps so publishChange stamps consumer bits
    * correctly.
    */
-  auto& addPathBitmap = ctx.peerMgr->addPathConsumerBitmap_;
-  auto& nonAddPathBitmap = ctx.peerMgr->nonAddPathConsumerBitmap_;
+  auto& addPathBitmap = vrf->getAddPathConsumerBitmap();
+  auto& nonAddPathBitmap = vrf->getNonAddPathConsumerBitmap();
   std::shared_ptr<AdjRibOutGroupConsumer> groupConsumer;
   evb.runInEventBaseThreadAndWait([&]() {
     auto group = ctx.adjRib1->getUpdateGroup();
     group->setChangeListTracker(
-        ctx.peerMgr->changeListTracker_, addPathBitmap, nonAddPathBitmap);
+        vrf->getChangeListTracker(), addPathBitmap, nonAddPathBitmap);
     group->registerGroupConsumer();
     groupConsumer = group->getChangeListConsumer();
   });
@@ -506,7 +513,7 @@ TEST_F(
           peer,
           attrs);
     }
-    ctx.peerMgr->handleShadowRibEntryAnnouncement(announcement);
+    vrf->handleShadowRibEntryAnnouncement(announcement);
   });
 
   /*
@@ -530,7 +537,7 @@ TEST_F(
      * will NOT have the per-peer bit set.
      */
     adjRib->registerDetachedConsumerAtGroupPosition(
-        ctx.peerMgr->changeListTracker_,
+        vrf->getChangeListTracker(),
         groupConsumer,
         addPathBitmap,
         nonAddPathBitmap);
@@ -623,7 +630,7 @@ TEST_F(
      * Clear shadowRibEntries_ while changeListTracker_ is still alive,
      * so ChangeItems properly unlink from the change list.
      */
-    ctx.peerMgr->shadowRibEntries_.clear();
+    vrf->getShadowRibEntries().clear();
   });
   // Drain any async work triggered by cleanup
   evb.runInEventBaseThreadAndWait([]() {});
@@ -661,6 +668,8 @@ TEST_F(
   auto ctx = setUp(true /* enableUpdateGroup */);
   auto& evb = ctx.peerMgr->getEventBase();
 
+  auto* vrf = ctx.peerMgr->findVrf(fboss::kDefaultVrf);
+  ASSERT_NE(nullptr, vrf);
   auto announce = [&](bool addPathOnly, const folly::CIDRNetwork& prefix) {
     auto attrs = std::make_shared<BgpPath>(*buildBgpPathFields(1, 1, 0, 0));
     attrs->publish();
@@ -671,7 +680,7 @@ TEST_F(
     auto& entries =
         addPathOnly ? announcement.addPathEntries : announcement.entries;
     entries.emplace_back(prefix, addPathOnly ? 1 : kDefaultPathID, peer, attrs);
-    ctx.peerMgr->handleShadowRibEntryAnnouncement(announcement);
+    vrf->handleShadowRibEntryAnnouncement(announcement);
   };
 
   /*
@@ -691,12 +700,11 @@ TEST_F(
         1 /* groupId */,
         true /* enableUpdateGroup */,
         groupKey,
-        ShadowRibView{
-            ctx.peerMgr->shadowRibEntries_, ctx.peerMgr->maxRibVersion_});
+        vrf->getShadowRibView());
     group->setChangeListTracker(
-        ctx.peerMgr->changeListTracker_,
-        ctx.peerMgr->addPathConsumerBitmap_,
-        ctx.peerMgr->nonAddPathConsumerBitmap_);
+        vrf->getChangeListTracker(),
+        vrf->getAddPathConsumerBitmap(),
+        vrf->getNonAddPathConsumerBitmap());
     group->registerGroupConsumer();
     groupConsumer = group->getChangeListConsumer();
   });
@@ -715,7 +723,7 @@ TEST_F(
       [&]() { announce(true, kAddPathOnlyPrefix); });
 
   evb.runInEventBaseThreadAndWait([&]() {
-    ASSERT_EQ(kVersionAfterAddPathOnly, ctx.peerMgr->getMaxRibVersion());
+    ASSERT_EQ(kVersionAfterAddPathOnly, vrf->getMaxRibVersion());
     ASSERT_EQ(0, group->getLastSeenRibVersion());
 
     group->reEvaluateSyncPeersEgressPolicy();
@@ -740,7 +748,7 @@ TEST_F(
      * Clear shadowRibEntries_ while changeListTracker_ is still alive, so
      * ChangeItems properly unlink from the change list.
      */
-    ctx.peerMgr->shadowRibEntries_.clear();
+    vrf->getShadowRibEntries().clear();
   });
   evb.runInEventBaseThreadAndWait([]() {});
 

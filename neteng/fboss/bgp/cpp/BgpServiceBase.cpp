@@ -2312,7 +2312,7 @@ folly::coro::Task<int64_t> BgpServiceBase::co_getRibVersion() {
 
   auto result = co_await co_runOnEvbWithTimeout(
       peerMgr_.getEventBase(),
-      [this]() { return peerMgr_.getMaxRibVersion(); },
+      [this]() { return peerMgr_.getDefaultVrf().getMaxRibVersion(); },
       kRibThriftHandlerTimeout);
 
   if (result.hasValue()) {

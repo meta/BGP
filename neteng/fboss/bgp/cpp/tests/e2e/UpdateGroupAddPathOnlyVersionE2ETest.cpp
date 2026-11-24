@@ -27,7 +27,7 @@
  *   - A non-add-path consumer registers its bit in nonAddPathConsumerBitmap_
  *     (AdjRibOutGroupConsumer::setBitmap / AdjRibOutConsumer::setBitmap). An
  *     add-path-only change is published with addPathConsumerBitmap_
- *     (PeerManagerBase::getConsumerBitmapForChange(isBestpathChange=false)), so
+ *     (PeerManagerVrf::getConsumerBitmapForChange(isBestpathChange=false)), so
  *     such a consumer is never marked for it.
  *   - Adding a second, equal-cost path for an existing prefix is exactly that
  *     change: RibBase emits only addPathEntries because commitMultipaths() is
@@ -96,16 +96,26 @@ class UpdateGroupAddPathOnlyVersionE2ETest : public SlowPeerTestBase {
   /* Current RIB version, read on the RIB event base to avoid a TSAN race. */
   uint64_t getRibVersion() {
     uint64_t version = 0;
+    auto* vrf = peerManager_->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return 0;
+    }
     peerManager_->getEventBase().runInEventBaseThreadAndWait(
-        [&]() { version = peerManager_->getMaxRibVersion(); });
+        [&]() { version = vrf->getMaxRibVersion(); });
     return version;
   }
 
   /* PeerManager's max seen RIB version, read on its event base. */
   uint64_t getMaxRibVersion() {
     uint64_t version = 0;
+    auto* vrf = peerManager_->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return 0;
+    }
     peerManager_->getEventBase().runInEventBaseThreadAndWait(
-        [&]() { version = peerManager_->getMaxRibVersion(); });
+        [&]() { version = vrf->getMaxRibVersion(); });
     return version;
   }
 

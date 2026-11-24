@@ -717,7 +717,7 @@ void AdjRibOutGroup::walkAndProcessShadowRib(bool sendWithEoR) {
     /*
      * If this shadow rib entry is already on a changeList for this group's
      * consumer, skip it from the dump. Mirrors
-     * PeerManagerBase::processRibDumpReq at the peer level.
+     * PeerManagerVrf::processRibDumpReq at the peer level.
      */
     if (changeListTracker_ && changeListConsumer_ &&
         changeListTracker_->isConsumerSetOnTrackableObject(

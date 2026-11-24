@@ -465,8 +465,17 @@ std::vector<TRibEntry> PeerManagerBase::getShadowRibEntries(TBgpAfi afi) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    auto* vrf = findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(
+          ERR,
+          "Ignoring getShadowRibEntries request due to non-existent VRF {}",
+          fboss::kDefaultVrf);
+      return;
+    }
+
     auto expectIPv4 = afi == TBgpAfi::AFI_IPV4;
-    for (const auto& srEntry : shadowRibEntries_) {
+    for (const auto& srEntry : vrf->getShadowRibEntries()) {
       const auto& prefix = srEntry.first;
       auto isIPv4 = prefix.first.family() == AF_INET;
       if ((expectIPv4 && !isIPv4) || (!expectIPv4 && isIPv4)) {
@@ -488,8 +497,17 @@ PeerManagerBase::getShadowRibEntriesCanonical(TBgpAfi afi) {
   }
 
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    auto* vrf = findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(
+          ERR,
+          "Ignoring getShadowRibEntriesCanonical request due to non-existent VRF {}",
+          fboss::kDefaultVrf);
+      return;
+    }
+
     auto expectIPv4 = afi == TBgpAfi::AFI_IPV4;
-    for (const auto& srEntry : shadowRibEntries_) {
+    for (const auto& srEntry : vrf->getShadowRibEntries()) {
       const auto& prefix = srEntry.first;
       auto isIPv4 = prefix.first.family() == AF_INET;
       if (expectIPv4 != isIPv4) {
@@ -518,17 +536,27 @@ std::vector<TRibEntry> PeerManagerBase::getChangeListEntries(TBgpAfi afi) {
     return tRibEntries;
   }
 
-  if (!changeListTracker_) {
-    return tRibEntries;
-  }
-
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    auto* vrf = findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(
+          ERR,
+          "Ignoring getChangeListEntries request due to non-existent VRF {}",
+          fboss::kDefaultVrf);
+      return;
+    }
+
+    const auto& changeListTracker = vrf->getChangeListTracker();
+    if (!changeListTracker) {
+      return;
+    }
+
     auto expectIPv4 = afi == TBgpAfi::AFI_IPV4;
 
-    auto changeItem = changeListTracker_->getHead();
+    auto changeItem = changeListTracker->getHead();
     while (changeItem) {
       auto& srEntry = changeItem->getTypedObject();
-      changeItem = get_next(changeItem, changeListTracker_->getChangeList());
+      changeItem = get_next(changeItem, changeListTracker->getChangeList());
       const auto& prefix = srEntry.prefix;
       auto isIPv4 = prefix.first.family() == AF_INET;
       if ((expectIPv4 && !isIPv4) || (!expectIPv4 && isIPv4)) {
@@ -549,17 +577,27 @@ PeerManagerBase::getChangeListEntriesCanonical(TBgpAfi afi) {
     return builder.build();
   }
 
-  if (!changeListTracker_) {
-    return builder.build();
-  }
-
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    auto* vrf = findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(
+          ERR,
+          "Ignoring getChangeListEntriesCanonical request due to non-existent VRF {}",
+          fboss::kDefaultVrf);
+      return;
+    }
+
+    const auto& changeListTracker = vrf->getChangeListTracker();
+    if (!changeListTracker) {
+      return;
+    }
+
     auto expectIPv4 = afi == TBgpAfi::AFI_IPV4;
 
-    auto changeItem = changeListTracker_->getHead();
+    auto changeItem = changeListTracker->getHead();
     while (changeItem) {
       auto& srEntry = changeItem->getTypedObject();
-      changeItem = get_next(changeItem, changeListTracker_->getChangeList());
+      changeItem = get_next(changeItem, changeListTracker->getChangeList());
       const auto& prefix = srEntry.prefix;
       auto isIPv4 = prefix.first.family() == AF_INET;
       if (expectIPv4 != isIPv4) {

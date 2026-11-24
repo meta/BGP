@@ -336,15 +336,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   }
 
   /*
-   * A global tracker tracking changes from the RIB
-   * Every changes to the ShadowRib must be published to this change list
-   * tracker
-   */
-  const std::shared_ptr<ChangeTracker<ShadowRibEntry>>& getChangeListTracker() {
-    return changeListTracker_;
-  }
-
-  /*
    * Various UI/CLI/Thrift service handlers
    * These will be invoked from a service handler thread, will be
    * scheduled to run in appropriate thread
@@ -488,11 +479,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
           std::shared_ptr<nettools::bgplib::BgpPeerDisplayInfo>>&
           allPeers) noexcept;
 
-  // Current version of the shadow RIB. See @maxRibVersion_.
-  uint64_t getMaxRibVersion() const noexcept {
-    return maxRibVersion_;
-  }
-
   // Get current shadowRibEntries by address family
   std::vector<neteng::fboss::bgp::thrift::TRibEntry> getShadowRibEntries(
       neteng::fboss::bgp_attr::TBgpAfi afi);
@@ -631,6 +617,12 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
       std::unique_ptr<PeerToPolicyMap> peerToPolicyNames) noexcept;
 
   bool getIsInitialized() const;
+  bool isRibAllocatedPathIdEnabled() const noexcept {
+    return enableRibAllocatedPathId_;
+  }
+  bool isUpdateGroupEnabled() const noexcept {
+    return enableUpdateGroup_;
+  }
 
   // Creates the context for @vrfId if it does not exist, and returns it.
   PeerManagerVrf& createVrf(VrfId vrfId);
@@ -780,23 +772,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
 
   // The quarantine VRF's context in @vrfContexts_.
   PeerManagerVrf& quarantineVrf_;
-
-  // A tracker for tracking ShadowRibEntries_ updates
-  std::shared_ptr<ChangeTracker<ShadowRibEntry>> changeListTracker_{nullptr};
-
-  // Bitmap of add-path capable consumers for selective notification
-  ConsumerBitmap addPathConsumerBitmap_;
-
-  // Bitmap of non-add-path consumers for bestpath changes
-  ConsumerBitmap nonAddPathConsumerBitmap_;
-
-  /*
-   * Get the appropriate consumer bitmap for a change.
-   * - Bestpath changes use nonAddPathConsumerBitmap_
-   * - Multipath changes use addPathConsumerBitmap_
-   * ChangeTracker handles ORing if item is already on changelist
-   */
-  const ConsumerBitmap& getConsumerBitmapForChange(bool isBestpathChange);
 
   /*
    * Test-only: defer the shadow RIB walk for a specific peer.
@@ -949,10 +924,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   folly::coro::Task<void> processRibDumpReqWithCancellationCoro(
       std::shared_ptr<AdjRib> adjRib,
       RibDumpReq ribDumpReq);
-  void processRibDumpReq(
-      const std::shared_ptr<AdjRib>& adjRib,
-      const RibDumpReq& ribDumpReq,
-      bool sendWithEoR);
 
   /*
    * Whether a rib dump is pending for this peer in either form: buffered in
@@ -1166,6 +1137,7 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    * Create adjRibOutGroup
    */
   std::shared_ptr<AdjRibOutGroup> createAdjRibOutGroup(
+      PeerManagerVrf& vrf,
       const std::string& groupName) noexcept;
 
   /**
@@ -1176,6 +1148,7 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
 
   // Create adjRib
   std::shared_ptr<AdjRib> createAdjRib(
+      PeerManagerVrf& vrf,
       const nettools::bgplib::BgpPeerId& peerId,
       const PeeringParams& peeringParams) noexcept;
 
@@ -1365,40 +1338,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    */
   folly::coro::Task<void> periodicEvictFromDeduplicatorLoop() noexcept;
 
-  void processChangeItemCompleteCallback(
-      TrackableObject<ShadowRibEntry>* trackedObject);
-
-  /*
-   * @brief: create/update shadow rib entries to local shadowRib collection
-   *
-   * @param: RibOutAnnouncement from ribOutQ to create/update local collection
-   */
-  void handleShadowRibEntryAnnouncement(RibOutAnnouncement& announcement);
-
-  /*
-   * @brief: delete shadow rib entries to local shadowRib collection
-   *
-   * @param: RibOutWithdrawal from ribOutQ to remove local collection
-   */
-  void handleShadowRibEntryWithdrawal(RibOutWithdrawal& withdrawal);
-
-  PathId getPathId(const RibOutAnnouncementEntry& entry);
-
-  std::optional<PathId> getPathId(const RibOutWithdrawalEntry& entry);
-  /*
-   * @brief: util function to update the common attribute of shadow rib entries
-   *
-   * @param: srEntry - this is the ShadowRibEntry to be updated
-   * @param: entry - this is RibOut entry used as the SoT
-   *
-   * The version stamped on @srEntry is @maxRibVersion_, which the entry's
-   * chunk has already advanced. @entry.ribVersion is not used: the shadow RIB
-   * versions its own contents.
-   */
-  void updateShadowRibEntryUtil(
-      ShadowRibEntry& srEntry,
-      const RibOutAnnouncementEntry& entry);
-
   folly::IPAddress streamPeerAddr_;
 
   std::unique_ptr<PeeringParams> streamPeeringParams_;
@@ -1519,42 +1458,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
       folly::IPAddress /* peerAddr */,
       std::unordered_set<nettools::bgplib::BgpPeerId>>
       peerAddrToIds_;
-
-  /*
-   * [Shadow Rib]
-   *
-   * Shadow rib collection is the data structure which stores the:
-   *
-   * prefix -> ShadowRibEntry
-   *
-   * This collection will be used to handle RibDumpReq independently without
-   * adding extra burdens to ribOut message queue.
-   */
-  ShadowRibEntriesMap shadowRibEntries_;
-
-  /*
-   * The maxRibVersion_ represents a numbering space which increments
-   * on every prefix route change seen from RIB. The shadowRibEntry associated
-   * to that prefix will receive its ribVersion value from the
-   * maxRibVersion_.
-   *
-   * Though RIB also maintains its own rib versioning,
-   * we currently are not able to guarantee that the vector of RIB entries
-   * processed by PeerManager is ordered increasing by RIB version.
-   * So, temporarily, we will let the shadowRibEntries_ be enumerated
-   * by maxRibVersion_; and subsequently the changelist will be using
-   * the number space associated to according to PeerManager::maxRibVersion_.
-   */
-  uint64_t maxRibVersion_{0};
-
-  /*
-   * Sole mutator of @maxRibVersion_. The counter only ever steps forward, one
-   * step per contiguous prefix chunk, so every write goes through here rather
-   * than touching the member directly. Reads go through getMaxRibVersion().
-   * Also advances the bgpcpp.rib.tableVersion ODS counter, which reports this
-   * sequence rather than the loc-RIB's.
-   */
-  void incrementMaxRibVersion() noexcept;
 
   /*
    * AdjRib will post this baton when session is terminated (both message

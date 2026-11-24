@@ -1158,7 +1158,7 @@ TEST_F(
  * DETACHED_INIT_DUMP branch of registerPeer(). Its per-peer CL consumer, set
  * during session establishment but never registered with the ChangeTracker,
  * must be reset here. Otherwise registerDetachedConsumer() (called later from
- * PeerManagerBase::processRibDumpReq) short-circuits on its
+ * PeerManagerVrf::processRibDumpReq) short-circuits on its
  * `if (changeListConsumer_)` guard, changeListConsumeTimer_ is never created,
  * and detached CL consumption never starts. Mirrors the INIT-branch reset
  * (inspired by D100483403).

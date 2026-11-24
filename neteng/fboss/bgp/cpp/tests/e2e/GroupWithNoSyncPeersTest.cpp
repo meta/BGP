@@ -310,9 +310,12 @@ class GroupWithNoSyncPeersE2ETest : public UpdateGroupPolicyReEvalE2EBase {
    */
   uint64_t getRibVersion() {
     auto& evb = peerManager_->getEventBase();
-    return folly::via(
-               &evb, [this]() { return peerManager_->getMaxRibVersion(); })
-        .get();
+    auto* vrf = peerManager_->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return 0;
+    }
+    return folly::via(&evb, [vrf]() { return vrf->getMaxRibVersion(); }).get();
   }
 
   /* Bring a set of peers down, one at a time. */

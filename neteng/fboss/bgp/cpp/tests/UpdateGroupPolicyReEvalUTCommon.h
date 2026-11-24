@@ -164,14 +164,18 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
       TestContext& ctx,
       folly::EventBase& evb,
       const std::shared_ptr<AdjRibOutGroup>& sourceGroup) {
+    auto* vrf = ctx.peerMgr->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return nullptr;
+    }
     return std::make_shared<AdjRibOutGroup>(
         evb,
         "split_target",
         sourceGroup->getGroupId() + 1,
         /*enableUpdateGroup=*/true,
         sourceGroup->getGroupKey(),
-        ShadowRibView{
-            ctx.peerMgr->shadowRibEntries_, ctx.peerMgr->maxRibVersion_},
+        vrf->getShadowRibView(),
         ctx.peerMgr->getPolicyManager());
   }
 
@@ -373,6 +377,11 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
     XLOG(INFO) << "publishRouteUpdates ribBaseVersion " << ribBaseVersion;
     auto& evb = ctx.peerMgr->getEventBase();
 
+    auto* vrf = ctx.peerMgr->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return;
+    }
     evb.runInEventBaseThreadAndWait([&]() {
       TinyPeerInfo peer(
           kPeerAddr2, kAsn1, kPeerRouterId2, BgpSessionType::EBGP, false);
@@ -421,7 +430,7 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
         announcement.entries.back().ribVersion = ribBaseVersion * 100 + i + 1;
       }
 
-      ctx.peerMgr->handleShadowRibEntryAnnouncement(announcement);
+      vrf->handleShadowRibEntryAnnouncement(announcement);
     });
   }
 
@@ -436,6 +445,11 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
   uint64_t publishAddPathOnlyUpdate(TestContext& ctx) {
     auto& evb = ctx.peerMgr->getEventBase();
     uint64_t maxRibVersion = 0;
+    auto* vrf = ctx.peerMgr->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return 0;
+    }
     evb.runInEventBaseThreadAndWait([&]() {
       TinyPeerInfo peer(
           kPeerAddr2, kAsn1, kPeerRouterId2, BgpSessionType::EBGP, false);
@@ -449,9 +463,9 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
           peer,
           attrs);
       announcement.addPathEntries.back().ribVersion =
-          ctx.peerMgr->getMaxRibVersion() + 1;
-      ctx.peerMgr->handleShadowRibEntryAnnouncement(announcement);
-      maxRibVersion = ctx.peerMgr->getMaxRibVersion();
+          vrf->getMaxRibVersion() + 1;
+      vrf->handleShadowRibEntryAnnouncement(announcement);
+      maxRibVersion = vrf->getMaxRibVersion();
     });
     return maxRibVersion;
   }
@@ -1762,18 +1776,23 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
       adjRibs[peerId] = std::move(adjRib);
     }
 
+    auto* vrf = peerMgr->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return {};
+    }
     /*
      * Wire each group's change list tracker/bitmaps. The group consumer is
      * registered later by the initial dump (buildAndScheduleSendInitialDump-
      * FromShadowRib), so we don't register it here to avoid
      * double-registration.
      */
-    auto changeListTracker = peerMgr->getChangeListTracker();
+    auto changeListTracker = vrf->getChangeListTracker();
     for (auto& [key, group] : peerMgr->updateGroupManager_->getAllGroups()) {
       group->setChangeListTracker(
           changeListTracker,
-          peerMgr->addPathConsumerBitmap_,
-          peerMgr->nonAddPathConsumerBitmap_);
+          vrf->getAddPathConsumerBitmap(),
+          vrf->getNonAddPathConsumerBitmap());
     }
 
     peerMgr->ribInitialAnnouncementStarted_ = true;

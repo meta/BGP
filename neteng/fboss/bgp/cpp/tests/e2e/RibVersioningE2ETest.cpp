@@ -57,8 +57,13 @@ class RibVersioningE2ETest : public E2ETestFixture {
    */
   uint64_t getRibVersion() {
     uint64_t version = 0;
+    auto* vrf = peerManager_->findVrf(fboss::kDefaultVrf);
+    if (!vrf) {
+      XLOGF(ERR, "Non-existent VRF {}", fboss::kDefaultVrf);
+      return 0;
+    }
     peerManager_->getEventBase().runInEventBaseThreadAndWait(
-        [&]() { version = peerManager_->getMaxRibVersion(); });
+        [&]() { version = vrf->getMaxRibVersion(); });
     return version;
   }
 };

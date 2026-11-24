@@ -36,6 +36,11 @@
   FRIEND_TEST(NeighborWatcherFibTest, StopAfterSubscribeIsClean);
 
 #include <folly/CancellationToken.h>
+#define FsdbFibWatcher_TEST_FRIENDS                                      \
+  FRIEND_TEST(                                                           \
+      FsdbFibWatcherTest, PartialRegistrationKeepsSuccessfulVrfResults); \
+  FRIEND_TEST(FsdbFibWatcherTest, OverlappingSnapshotsPreserveLatestResolution);
+
 #include <folly/IPAddress.h>
 #include <folly/coro/Baton.h>
 #include <folly/coro/BlockingWait.h>
@@ -59,6 +64,54 @@
 namespace facebook::bgp {
 
 using namespace ::testing;
+
+namespace {
+template <typename... Args>
+concept CanAddPeerAddress = requires(FsdbFibWatcher& watcher, Args... args) {
+  watcher.addPeerAddress(args...);
+};
+template <typename... Args>
+concept CanRemovePeerAddress = requires(FsdbFibWatcher& watcher, Args... args) {
+  watcher.removePeerAddress(args...);
+};
+template <typename... Args>
+concept CanRegisterPeers = requires(FsdbFibWatcher& watcher, Args... args) {
+  watcher.registerPeers(args...);
+};
+template <typename... Args>
+concept CanFilterNexthops =
+    requires(const FsdbFibWatcher& watcher, Args... args) {
+      watcher.filterNewNexthops(args...);
+    };
+template <typename... Args>
+concept CanAddNexthopPaths = requires(FsdbFibWatcher& watcher, Args... args) {
+  watcher.addNexthopPaths(args...);
+};
+template <typename... Args>
+concept CanRequestNexthops = requires(NeighborWatcher& watcher, Args... args) {
+  watcher.requestNexthopSubscribe(args...);
+};
+using NexthopAddresses = std::vector<folly::IPAddress>;
+using NexthopKeys = std::vector<NexthopKey>;
+static_assert(CanAddPeerAddress<NexthopKey>);
+static_assert(!CanAddPeerAddress<folly::IPAddress>);
+static_assert(!CanAddPeerAddress<folly::IPAddress, uint16_t>);
+static_assert(CanRemovePeerAddress<NexthopKey>);
+static_assert(!CanRemovePeerAddress<folly::IPAddress>);
+static_assert(!CanRemovePeerAddress<folly::IPAddress, uint16_t>);
+static_assert(CanRegisterPeers<NexthopKeys>);
+static_assert(!CanRegisterPeers<NexthopAddresses>);
+static_assert(!CanRegisterPeers<NexthopAddresses, uint16_t>);
+static_assert(CanFilterNexthops<NexthopKeys>);
+static_assert(!CanFilterNexthops<NexthopAddresses>);
+static_assert(!CanFilterNexthops<NexthopAddresses, uint16_t>);
+static_assert(CanAddNexthopPaths<NexthopKeys, bool>);
+static_assert(!CanAddNexthopPaths<NexthopAddresses, bool>);
+static_assert(!CanAddNexthopPaths<NexthopAddresses, bool, uint16_t>);
+static_assert(CanRequestNexthops<NexthopKeys>);
+static_assert(!CanRequestNexthops<NexthopAddresses>);
+static_assert(!CanRequestNexthops<NexthopAddresses, uint16_t>);
+} // namespace
 
 /**
  * Test constants: representative peer addresses used across tests.
@@ -165,6 +218,24 @@ class ThrowingFsdbFibWatcher : public FsdbFibWatcher {
   }
 };
 
+class InspectableFsdbSubManager : public fboss::fsdb::FsdbCowStateSubManager {
+ public:
+  using fboss::fsdb::FsdbCowStateSubManager::FsdbCowStateSubManager;
+
+  void setNextSubscriptionKeyForTest(fboss::fsdb::SubscriptionKey key) {
+    nextKey_ = key;
+  }
+
+  std::vector<std::vector<std::string>> paths() const {
+    std::vector<std::vector<std::string>> result;
+    result.reserve(subscribePaths_.size());
+    for (const auto& [key, path] : subscribePaths_) {
+      result.push_back(*path.path());
+    }
+    return result;
+  }
+};
+
 std::shared_ptr<fboss::fsdb::FsdbCowStateSubManager> makeTestSubMgr() {
   return std::make_shared<fboss::fsdb::FsdbCowStateSubManager>(
       fboss::fsdb::SubscriptionOptions("test"),
@@ -195,6 +266,56 @@ class FsdbFibWatcherTest : public ::testing::Test {
  * Peer address management tests
  * ---------------------------------------------------------------------------
  */
+
+TEST_F(FsdbFibWatcherTest, PartialRegistrationKeepsSuccessfulVrfResults) {
+  auto subMgr = std::make_shared<InspectableFsdbSubManager>(
+      fboss::fsdb::SubscriptionOptions("partial-registration-test"),
+      fboss::utils::ConnectionOptions("::1", 0));
+  auto watcher =
+      std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
+  const NexthopKey nexthop{.ip = kPeerV4, .nextHopVrfId = 7};
+  nexthopCache_->registerAndGetNexthopStatus(nexthop);
+  nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
+
+  /* The first switch's path was registered before the partial failure. */
+  watcher->switchIds_ = {"id=0", "id=1"};
+  watcher->registeredFsdbPaths_.insert("id=0|7|10.0.0.1/32");
+  subMgr->addPath(watcher->fsdbStateRootPath_.agent()
+                      .switchState()
+                      .fibsInfoMap()["id=0"]
+                      .fibsMap()[7]
+                      .fibV4()["10.0.0.1/32"]);
+  subMgr->subscribe([](const auto&) {});
+  /* A different path using the existing key is rejected before staging. */
+  subMgr->setNextSubscriptionKeyForTest(0);
+  EXPECT_THROW(
+      watcher->addFsdbPathsForNexthop(
+          NexthopKey{.ip = kPeerV4, .nextHopVrfId = 7}, /*liveAdd=*/true),
+      fboss::fsdb::FsdbException);
+  EXPECT_EQ(1, subMgr->paths().size());
+
+  folly::coro::blockingWait(watcher->co_processFibUpdate(
+      fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+          makeCowDataWithRoute("10.0.0.1/32", /*isV4=*/true, {17}, 7),
+          {},
+          {makeFibPath("10.0.0.1/32", 7)},
+          std::nullopt,
+          std::nullopt,
+          /*streamRevision=*/std::nullopt}));
+  const auto status = nexthopCache_->getNexthopStatus(nexthop);
+  ASSERT_TRUE(status.has_value());
+  EXPECT_TRUE(status->isReachable());
+  EXPECT_EQ(17, status->getIgpCost());
+  EXPECT_FALSE(nexthopCache_->getNexthopStatus({kPeerV4})->isReachable());
+
+  subMgr->setNextSubscriptionKeyForTest(1);
+  EXPECT_NO_THROW(watcher->addNexthopPaths(
+      {NexthopKey{.ip = kPeerV4, .nextHopVrfId = 7}}, /*liveAdd=*/true));
+  EXPECT_EQ(2, subMgr->paths().size());
+  EXPECT_TRUE(
+      watcher->filterNewNexthops({NexthopKey{.ip = kPeerV4, .nextHopVrfId = 7}})
+          .empty());
+}
 
 TEST_F(FsdbFibWatcherTest, AddPeerAddress) {
   /**
@@ -1492,6 +1613,301 @@ TEST_F(NeighborWatcherFibTest, StopAfterSubscribeIsClean) {
 
   nbrWatcher->stop();
   nbrWatcherThread.join();
+}
+
+CO_TEST_F(FsdbFibWatcherTest, FibResultsNotifyRegisteredKeys) {
+  auto watcher = std::make_shared<FsdbFibWatcher>(
+      nexthopCache_, ribInQ_, &evb_, makeTestSubMgr());
+  watcher->registerPeers(
+      {NexthopKey{.ip = kPeerV6}, NexthopKey{.ip = kPeerV6_2}});
+  evb_.loopOnce();
+  nexthopCache_->registerAndGetNexthopStatus({kPeerV6});
+  nexthopCache_->registerAndGetNexthopStatus({kPeerV6_2});
+  auto snapshot =
+      makeCowDataWithRoute("fdad:500::d:0/128", /*isV4=*/false, {10})
+          ->toThrift();
+  auto& fib =
+      snapshot.agent()->switchState()->fibsInfoMap()->at("id=0").fibsMap()->at(
+          0);
+  fib.fibV6()["fdad:50c:1::d:0/128"] = fib.fibV6()->at("fdad:500::d:0/128");
+  auto data = std::make_shared<fboss::thrift_cow::FsdbCowStateRoot>(
+      std::move(snapshot));
+  data->publish();
+  co_await watcher->co_processFibUpdate(
+      fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+          data,
+          {},
+          {makeFibPath("fdad:500::d:0/128"),
+           makeFibPath("fdad:50c:1::d:0/128")},
+          std::nullopt,
+          std::nullopt,
+          /*streamRevision=*/std::nullopt});
+  CO_ASSERT_EQ(1, ribInQ_.size());
+  const auto message = co_await ribInQ_.pop();
+  const auto* update = std::get_if<RibInNexthopUpdate>(&message);
+  CO_ASSERT_NE(nullptr, update);
+  CO_ASSERT_EQ(2, update->nexthopStatuses.size());
+  std::vector<folly::IPAddress> addresses;
+  for (const auto& status : update->nexthopStatuses) {
+    EXPECT_EQ(fboss::kDefaultVrf, status.getNexthopKey().nextHopVrfId);
+    addresses.push_back(status.getNexthop());
+    EXPECT_TRUE(status.isReachable());
+    EXPECT_EQ(10, status.getIgpCost());
+    EXPECT_GT(status.getEpoch(), 0);
+  }
+  EXPECT_THAT(addresses, UnorderedElementsAre(kPeerV6, kPeerV6_2));
+
+  nexthopCache_->unregisterAndRemoveNexthopStatus({kPeerV6});
+  co_await watcher->co_markNeedsReconcile();
+  co_await watcher->co_processFibUpdate(
+      fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+          makeCowDataWithoutRoute(),
+          {},
+          {},
+          std::nullopt,
+          std::nullopt,
+          /*streamRevision=*/std::nullopt});
+  CO_ASSERT_EQ(1, ribInQ_.size());
+  const auto withdrawalMessage = co_await ribInQ_.pop();
+  const auto* withdrawal = std::get_if<RibInNexthopUpdate>(&withdrawalMessage);
+  CO_ASSERT_NE(nullptr, withdrawal);
+  CO_ASSERT_EQ(1, withdrawal->nexthopStatuses.size());
+  EXPECT_EQ(
+      (NexthopKey{.ip = kPeerV6_2}),
+      withdrawal->nexthopStatuses.front().getNexthopKey());
+  EXPECT_FALSE(withdrawal->nexthopStatuses.front().isReachable());
+  EXPECT_FALSE(nexthopCache_->getNexthopStatus({kPeerV6})->isReachable());
+}
+
+TEST_F(FsdbFibWatcherTest, PathsAndDedupUseNextHopVrf) {
+  constexpr uint16_t nextHopVrfId = 7;
+  const NexthopKey underlay{.ip = kPeerV6};
+  const NexthopKey other{.ip = kPeerV6, .nextHopVrfId = nextHopVrfId};
+  auto subMgr = std::make_shared<InspectableFsdbSubManager>(
+      fboss::fsdb::SubscriptionOptions("test"),
+      fboss::utils::ConnectionOptions("::1", 0));
+  auto watcher =
+      std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
+  watcher->addNexthopPaths({underlay}, /*liveAdd=*/false);
+  EXPECT_THAT(watcher->filterNewNexthops({other}), ElementsAre(other));
+  watcher->addNexthopPaths({other, other}, /*liveAdd=*/false);
+  EXPECT_TRUE(watcher->filterNewNexthops({underlay}).empty());
+  EXPECT_TRUE(watcher->filterNewNexthops({other}).empty());
+
+  const auto basePath =
+      thriftpath::RootThriftPath<fboss::fsdb::FsdbOperStateRoot>()
+          .agent()
+          .switchState()
+          .fibsInfoMap()["id=0"]
+          .fibsMap();
+  EXPECT_THAT(
+      subMgr->paths(),
+      UnorderedElementsAre(
+          basePath[fboss::kDefaultVrf].fibV6()["fdad:500::d:0/128"].idTokens(),
+          basePath[nextHopVrfId].fibV6()["fdad:500::d:0/128"].idTokens()));
+}
+
+CO_TEST_F(FsdbFibWatcherTest, ResultsAndReconcileStayInNextHopVrf) {
+  constexpr uint16_t nextHopVrfId = 7;
+  const NexthopKey underlay{.ip = kPeerV6};
+  const NexthopKey other{.ip = kPeerV6, .nextHopVrfId = nextHopVrfId};
+  auto watcher = std::make_shared<FsdbFibWatcher>(
+      nexthopCache_, ribInQ_, &evb_, makeTestSubMgr());
+  watcher->registerPeers({underlay, other});
+  evb_.loopOnce();
+  nexthopCache_->registerAndGetNexthopStatus(underlay);
+  nexthopCache_->registerAndGetNexthopStatus(other);
+
+  const auto defaultData =
+      makeCowDataWithRoute("fdad:500::d:0/128", /*isV4=*/false, {10});
+  auto snapshot = defaultData->toThrift();
+  const auto otherSnapshot =
+      makeCowDataWithRoute(
+          "fdad:500::d:0/128", /*isV4=*/false, {20}, nextHopVrfId)
+          ->toThrift();
+  snapshot.agent()
+      ->switchState()
+      ->fibsInfoMap()
+      ->at("id=0")
+      .fibsMap()[nextHopVrfId] = otherSnapshot.agent()
+                                     ->switchState()
+                                     ->fibsInfoMap()
+                                     ->at("id=0")
+                                     .fibsMap()
+                                     ->at(nextHopVrfId);
+  auto bothData = std::make_shared<fboss::thrift_cow::FsdbCowStateRoot>(
+      std::move(snapshot));
+  bothData->publish();
+  co_await watcher->co_processFibUpdate(
+      fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+          bothData,
+          {},
+          {makeFibPath("fdad:500::d:0/128"),
+           makeFibPath("fdad:500::d:0/128", nextHopVrfId)},
+          std::nullopt,
+          std::nullopt,
+          std::nullopt});
+  CO_ASSERT_EQ(1, ribInQ_.size());
+  const auto message = co_await ribInQ_.pop();
+  const auto* mixedUpdate = std::get_if<RibInNexthopUpdate>(&message);
+  CO_ASSERT_NE(nullptr, mixedUpdate);
+  CO_ASSERT_EQ(2, mixedUpdate->nexthopStatuses.size());
+  std::vector<std::pair<NexthopKey, uint32_t>> received;
+  for (const auto& status : mixedUpdate->nexthopStatuses) {
+    CO_ASSERT_TRUE(status.getIgpCost().has_value());
+    received.emplace_back(status.getNexthopKey(), *status.getIgpCost());
+    EXPECT_TRUE(status.isReachable());
+    EXPECT_GT(status.getEpoch(), 0);
+  }
+  EXPECT_THAT(
+      received, UnorderedElementsAre(Pair(underlay, 10), Pair(other, 20)));
+
+  co_await watcher->co_markNeedsReconcile();
+  co_await watcher->co_processFibUpdate(
+      fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+          defaultData, {}, {}, std::nullopt, std::nullopt, std::nullopt});
+  CO_ASSERT_EQ(1, ribInQ_.size());
+  const auto withdrawal = co_await ribInQ_.pop();
+  const auto* update = std::get_if<RibInNexthopUpdate>(&withdrawal);
+  CO_ASSERT_NE(nullptr, update);
+  CO_ASSERT_EQ(1, update->nexthopStatuses.size());
+  EXPECT_EQ(other, update->nexthopStatuses.front().getNexthopKey());
+  EXPECT_FALSE(update->nexthopStatuses.front().isReachable());
+  EXPECT_TRUE(nexthopCache_->getNexthopStatus({kPeerV6})->isReachable());
+  EXPECT_FALSE(nexthopCache_
+                   ->getNexthopStatus(
+                       NexthopKey{.ip = kPeerV6, .nextHopVrfId = nextHopVrfId})
+                   ->isReachable());
+
+  co_await watcher->co_markNeedsReconcile();
+  co_await watcher->co_processFibUpdate(
+      fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+          bothData, {}, {}, std::nullopt, std::nullopt, std::nullopt});
+  CO_ASSERT_EQ(1, ribInQ_.size());
+  const auto restoration = co_await ribInQ_.pop();
+  const auto* restored = std::get_if<RibInNexthopUpdate>(&restoration);
+  CO_ASSERT_NE(nullptr, restored);
+  CO_ASSERT_EQ(1, restored->nexthopStatuses.size());
+  EXPECT_EQ(other, restored->nexthopStatuses.front().getNexthopKey());
+  EXPECT_TRUE(restored->nexthopStatuses.front().isReachable());
+}
+
+TEST_F(FsdbFibWatcherTest, OverlappingSnapshotsPreserveLatestResolution) {
+  constexpr uint16_t otherVrf = 7;
+  const std::string v4Prefix = "10.0.0.1/32";
+  const std::string v6Prefix = "fdad:500::d:0/128";
+  const NexthopKey v4{.ip = kPeerV4};
+  const NexthopKey v6{.ip = kPeerV6, .nextHopVrfId = otherVrf};
+  nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage> queue{1};
+  auto watcher = std::make_shared<FsdbFibWatcher>(
+      nexthopCache_, queue, &evb_, makeTestSubMgr());
+  watcher->switchIds_ = {"id=0"};
+  watcher->addNexthopPaths({NexthopKey{.ip = kPeerV4}}, /*liveAdd=*/false);
+  watcher->addNexthopPaths(
+      {NexthopKey{.ip = kPeerV6, .nextHopVrfId = otherVrf}}, /*liveAdd=*/false);
+  nexthopCache_->addOrUpdateNextHopStatus(
+      {NexthopStatus(v4, /*isReachable=*/true, 1),
+       NexthopStatus(v6, /*isReachable=*/true, 1)});
+  nexthopCache_->registerAndGetNexthopStatus(v4);
+  nexthopCache_->registerAndGetNexthopStatus(v6);
+
+  auto snapshot =
+      makeCowDataWithRoute(v4Prefix, /*isV4=*/true, {10})->toThrift();
+  const auto otherSnapshot =
+      makeCowDataWithRoute(v6Prefix, /*isV4=*/false, {10}, otherVrf)
+          ->toThrift();
+  snapshot.agent()
+      ->switchState()
+      ->fibsInfoMap()
+      ->at("id=0")
+      .fibsMap()[otherVrf] = otherSnapshot.agent()
+                                 ->switchState()
+                                 ->fibsInfoMap()
+                                 ->at("id=0")
+                                 .fibsMap()
+                                 ->at(otherVrf);
+  auto oldData =
+      std::make_shared<fboss::thrift_cow::FsdbCowStateRoot>(snapshot);
+  oldData->publish();
+
+  /* The full queue suspends the older snapshot at its first notification. */
+  queue.forcePush(RibInNexthopUpdate(std::vector<NexthopStatus>{}));
+  folly::ManualExecutor executor;
+  auto oldFuture =
+      folly::coro::co_withExecutor(
+          &executor,
+          watcher->co_processFibUpdate(
+              fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+                  oldData,
+                  {},
+                  {makeFibPath(v4Prefix), makeFibPath(v6Prefix, otherVrf)},
+                  std::nullopt,
+                  std::nullopt,
+                  std::nullopt}))
+          .start();
+  executor.drain();
+  EXPECT_FALSE(oldFuture.isReady());
+  EXPECT_EQ(10, nexthopCache_->getNexthopStatus(v4)->getIgpCost());
+  EXPECT_EQ(10, nexthopCache_->getNexthopStatus(v6)->getIgpCost());
+
+  /* Each later snapshot changes one prefix, so neither can suspend midway. */
+  auto v4Future = folly::coro::co_withExecutor(
+                      &executor,
+                      watcher->co_processFibUpdate(
+                          fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+                              makeCowDataWithRoute(
+                                  v6Prefix, /*isV4=*/false, {10}, otherVrf),
+                              {},
+                              {makeFibPath(v4Prefix)},
+                              std::nullopt,
+                              std::nullopt,
+                              std::nullopt}))
+                      .start();
+  executor.drain();
+  EXPECT_FALSE(v4Future.isReady());
+  auto v6Future = folly::coro::co_withExecutor(
+                      &executor,
+                      watcher->co_processFibUpdate(
+                          fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
+                              makeCowDataWithoutRoute(),
+                              {},
+                              {makeFibPath(v6Prefix, otherVrf)},
+                              std::nullopt,
+                              std::nullopt,
+                              std::nullopt}))
+                      .start();
+  executor.drain();
+  EXPECT_FALSE(v6Future.isReady());
+  const auto latestV4 = nexthopCache_->getNexthopStatus(v4);
+  const auto latestV6 = nexthopCache_->getNexthopStatus(v6);
+  EXPECT_FALSE(latestV4->isReachable());
+  EXPECT_FALSE(latestV6->isReachable());
+
+  /* Drain the sentinel and three notifications, resuming all snapshots. */
+  for (size_t i = 0; i < 4; ++i) {
+    if (!queue.empty()) {
+      auto pop = folly::coro::co_withExecutor(&executor, queue.pop()).start();
+      executor.drain();
+      EXPECT_TRUE(pop.isReady());
+      std::move(pop).get();
+    }
+    executor.drain();
+  }
+  queue.close();
+  executor.drain();
+  EXPECT_TRUE(oldFuture.isReady());
+  EXPECT_TRUE(v4Future.isReady());
+  EXPECT_TRUE(v6Future.isReady());
+  std::move(oldFuture).get();
+  std::move(v4Future).get();
+  std::move(v6Future).get();
+
+  const auto finalV4 = nexthopCache_->getNexthopStatus(v4);
+  const auto finalV6 = nexthopCache_->getNexthopStatus(v6);
+  EXPECT_FALSE(finalV4->isReachable());
+  EXPECT_FALSE(finalV6->isReachable());
+  EXPECT_EQ(latestV4->getEpoch(), finalV4->getEpoch());
+  EXPECT_EQ(latestV6->getEpoch(), finalV6->getEpoch());
 }
 
 } // namespace facebook::bgp

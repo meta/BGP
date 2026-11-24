@@ -780,8 +780,9 @@ void RibBase::processRibInInitialPathComputation(
     XLOGF(
         INFO,
         "[Initialization] Deferring initial path computation up to {}ms: "
-        "nexthop resolution / conditional routes not ready yet.",
-        nexthopResolutionTimeout.count());
+        "nexthop resolution / conditional routes not ready yet (vrf={}).",
+        nexthopResolutionTimeout.count(),
+        vrfId);
     return;
   }
 
@@ -1097,9 +1098,10 @@ void RibBase::mayResumeBestPathAndFibProgramming(
 void RibBase::processRibInNexthopUpdate(
     const RibInNexthopUpdate& nexthopUpdate) noexcept {
   if (!enableNexthopTracking_ || !nexthopCache_) {
-    XLOG(
+    XLOGF(
         WARNING,
-        "Nexthop tracking is not enabled or nexthopCache is null, ignoring nexthop update");
+        "Nexthop tracking is not enabled or nexthopCache is null, ignoring nexthop update (tracking vrf={})",
+        fboss::kDefaultVrf);
     return;
   }
   bool needPathSelection = false;
@@ -1113,7 +1115,11 @@ void RibBase::processRibInNexthopUpdate(
       continue;
     }
     const auto& nexthopIp = nexthop.ip;
-    XLOGF(DBG2, "Processing nexthop update for {}", nexthopIp.str());
+    XLOGF(
+        DBG2,
+        "Processing nexthop update for {} (vrf={})",
+        nexthopIp.str(),
+        nexthop.nextHopVrfId);
 
     // Check if the nexthop exists in nexthopInfoMap_
     auto it = nexthopInfoMap_.find(nexthopIp);
@@ -1127,8 +1133,9 @@ void RibBase::processRibInNexthopUpdate(
           it->second.getEpoch() > queuedStatus.getEpoch()) {
         XLOGF(
             DBG2,
-            "Skipping stale nexthop update for {}: epoch {} is older than {}",
+            "Skipping stale nexthop update for {} (vrf={}): epoch {} is older than {}",
             nexthopIp.str(),
+            nexthop.nextHopVrfId,
             queuedStatus.getEpoch(),
             it->second.getEpoch());
         RibStats::incrNhtRibStaleUpdateSkipped();
@@ -1142,8 +1149,9 @@ void RibBase::processRibInNexthopUpdate(
       if (!cachedStatus.has_value()) {
         XLOGF(
             ERR,
-            "Ignoring nexthop update for {}: RIB has a NexthopInfo but NexthopCache has no entry. The RIB keeps the old status.",
-            nexthopIp.str());
+            "Ignoring nexthop update for {} (vrf={}): RIB has a NexthopInfo but NexthopCache has no entry. The RIB keeps the old status.",
+            nexthopIp.str(),
+            nexthop.nextHopVrfId);
         continue;
       }
       const NexthopStatus& nexthopStatus = *cachedStatus;
@@ -1179,8 +1187,9 @@ void RibBase::processRibInNexthopUpdate(
       if (isReachabilityChanged || isIgpCostChanged || isResolvabilityChanged) {
         XLOGF(
             DBG1,
-            "Updating nexthop {} status: reachable={} -> {}, igpCost={} -> {}, resolvedForSelection={} -> {}",
+            "Updating nexthop {} (vrf={}) status: reachable={} -> {}, igpCost={} -> {}, resolvedForSelection={} -> {}",
             nexthopIp.str(),
+            nexthop.nextHopVrfId,
             it->second.isReachable(),
             isReachable,
             it->second.getIgpCost().has_value()
@@ -1203,7 +1212,8 @@ void RibBase::processRibInNexthopUpdate(
         continue;
       }
 
-      triggeringNexthops.push_back(nexthopIp.str());
+      triggeringNexthops.push_back(
+          fmt::format("{} (vrf={})", nexthopIp.str(), nexthop.nextHopVrfId));
 
       /*
        * Iterate over RouteInfo in the association list to mark
@@ -1233,8 +1243,9 @@ void RibBase::processRibInNexthopUpdate(
        */
       XLOGF(
           INFO,
-          "Ignoring stale nexthop update for untracked nexthop {}",
-          nexthopIp.str());
+          "Ignoring stale nexthop update for untracked nexthop {} (vrf={})",
+          nexthopIp.str(),
+          nexthop.nextHopVrfId);
     }
   }
 
@@ -3489,8 +3500,9 @@ RibBase::getNexthopInfo(const std::shared_ptr<const BgpPath>& attrs) {
   if (it != nexthopInfoMap_.end()) {
     XLOGF(
         DBG2,
-        "Found existing NexthopInfo for nexthop {} (reachable: {}, igpCost: {})",
+        "Found existing NexthopInfo for nexthop {} (vrf={}) (reachable: {}, igpCost: {})",
         nexthop.str(),
+        fboss::kDefaultVrf,
         it->second.isReachable(),
         it->second.getIgpCost().has_value()
             ? std::to_string(it->second.getIgpCost().value())
@@ -3511,8 +3523,9 @@ RibBase::getNexthopInfo(const std::shared_ptr<const BgpPath>& attrs) {
 
   XLOGF(
       DBG2,
-      "Retrieved nexthop status from nexthopCache for {}: reachable={}, igpCost={}, isConnected={}",
+      "Retrieved nexthop status from nexthopCache for {} (vrf={}): reachable={}, igpCost={}, isConnected={}",
       nexthop.str(),
+      fboss::kDefaultVrf,
       isReachable,
       igpCost.has_value() ? std::to_string(igpCost.value()) : "unset",
       isConnected.has_value() ? std::to_string(isConnected.value()) : "unset");
@@ -3535,8 +3548,9 @@ RibBase::getNexthopInfo(const std::shared_ptr<const BgpPath>& attrs) {
 
   XLOGF(
       INFO,
-      "Created new NexthopInfo for nexthop {} (reachable: {}, igpCost: {}, isConnected: {})",
+      "Created new NexthopInfo for nexthop {} (vrf={}) (reachable: {}, igpCost: {}, isConnected: {})",
       nexthop.str(),
+      fboss::kDefaultVrf,
       isReachable,
       igpCost.has_value() ? std::to_string(igpCost.value()) : "unset",
       isConnected.has_value() ? std::to_string(isConnected.value()) : "unset");
@@ -3577,7 +3591,10 @@ bool RibBase::checkAndDeleteNexthopInfo(const folly::IPAddress& nexthop) {
   auto it = nexthopInfoMap_.find(nexthop);
   if (it == nexthopInfoMap_.end()) {
     XLOGF(
-        DBG2, "NexthopInfo for {} not found in nexthopInfoMap_", nexthop.str());
+        DBG2,
+        "NexthopInfo for {} (vrf={}) not found in nexthopInfoMap_",
+        nexthop.str(),
+        fboss::kDefaultVrf);
     return false;
   }
 
@@ -3587,8 +3604,9 @@ bool RibBase::checkAndDeleteNexthopInfo(const folly::IPAddress& nexthop) {
   if (!nexthopInfo.isRouteInfoListEmpty()) {
     XLOGF(
         DBG3,
-        "Not deleting NexthopInfo for {}: still has associated RouteInfo objects",
-        nexthop.str());
+        "Not deleting NexthopInfo for {} (vrf={}): still has associated RouteInfo objects",
+        nexthop.str(),
+        fboss::kDefaultVrf);
     return false;
   }
   /*
@@ -3617,7 +3635,10 @@ RibBase::NexthopInfoMap::iterator RibBase::deleteNexthopInfo(
    * the nexthop is unreachable.
    */
   XLOGF(
-      DBG2, "Deleting nexthop status for {} from nexthopCache", nexthop.str());
+      DBG2,
+      "Deleting nexthop status for {} (vrf={}) from nexthopCache",
+      nexthop.str(),
+      fboss::kDefaultVrf);
   nexthopCache_->unregisterAndRemoveNexthopStatus(
       NexthopKey{.ip = nexthop, .nextHopVrfId = fboss::kDefaultVrf});
 
@@ -3628,7 +3649,10 @@ RibBase::NexthopInfoMap::iterator RibBase::deleteNexthopInfo(
 
   // Delete from nexthopInfoMap_
   XLOGF(
-      DBG2, "Deleting NexthopInfo for {} from nexthopInfoMap_", nexthop.str());
+      DBG2,
+      "Deleting NexthopInfo for {} (vrf={}) from nexthopInfoMap_",
+      nexthop.str(),
+      fboss::kDefaultVrf);
   RibStats::decrNexthopInfoCount();
   return nexthopInfoMap_.erase(it);
 }

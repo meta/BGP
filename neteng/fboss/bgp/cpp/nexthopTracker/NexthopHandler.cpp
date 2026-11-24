@@ -19,6 +19,7 @@
 #include <folly/coro/Task.h>
 #include <folly/logging/xlog.h>
 
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/BgpProfiler.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/ThriftClientUtils.h"
@@ -79,7 +80,10 @@ void NexthopHandler::disconnectOpenrFibAgent() {
 }
 
 folly::coro::Task<void> NexthopHandler::handleNextHopStatusStreamRoutine() {
-  XLOG(INFO, "Starting nexthop status stream routine");
+  XLOGF(
+      INFO,
+      "Starting nexthop status stream routine (vrf={})",
+      fboss::kDefaultVrf);
 
   while (true) {
     // When cancelAndJoinAsync is called, guaranteed to exit
@@ -87,9 +91,10 @@ folly::coro::Task<void> NexthopHandler::handleNextHopStatusStreamRoutine() {
 
     try {
       if (!client_) {
-        XLOG(
+        XLOGF(
             INFO,
-            "Connecting to OpenR FIB agent before starting nexthop status stream");
+            "Connecting to OpenR FIB agent before starting nexthop status stream (vrf={})",
+            fboss::kDefaultVrf);
         connectOpenrFibAgent();
       }
 
@@ -98,7 +103,10 @@ folly::coro::Task<void> NexthopHandler::handleNextHopStatusStreamRoutine() {
       request.stream_all_loopbacks() = true;
 
       // Start the stream
-      XLOG(INFO, "Starting nexthop status stream from OpenR FIB agent");
+      XLOGF(
+          INFO,
+          "Starting nexthop status stream from OpenR FIB agent (vrf={})",
+          fboss::kDefaultVrf);
       auto stream = co_await client_->co_streamNextHopStatus(request);
 
       // Convert the stream to an AsyncGenerator
@@ -107,12 +115,20 @@ folly::coro::Task<void> NexthopHandler::handleNextHopStatusStreamRoutine() {
       // Process the stream responses
       co_await handleStream(std::move(asyncGen));
     } catch (const openr::thrift::PlatformError& ex) {
-      XLOGF(ERR, "OpenR FIB agent platform error: {}", *ex.message());
+      XLOGF(
+          ERR,
+          "OpenR FIB agent platform error (vrf={}): {}",
+          fboss::kDefaultVrf,
+          *ex.message());
       // Disconnect agent and reconnect on platform error
       disconnectOpenrFibAgent();
       // TODO: Add stats here to track platform errors
     } catch (const std::exception& ex) {
-      XLOGF(ERR, "Stream connection error: {}", ex.what());
+      XLOGF(
+          ERR,
+          "Stream connection error (vrf={}): {}",
+          fboss::kDefaultVrf,
+          ex.what());
       // Disconnect agent and reconnect on stream error
       disconnectOpenrFibAgent();
       // TODO: Add stats here to track stream errors
@@ -122,7 +138,10 @@ folly::coro::Task<void> NexthopHandler::handleNextHopStatusStreamRoutine() {
     co_await folly::coro::sleepReturnEarlyOnCancel(kOpenrFibAgentTimeout);
   }
 
-  XLOG(INFO, "Exiting nexthop status stream routine");
+  XLOGF(
+      INFO,
+      "Exiting nexthop status stream routine (vrf={})",
+      fboss::kDefaultVrf);
   co_return;
 }
 
@@ -134,7 +153,10 @@ folly::coro::Task<void> NexthopHandler::handleStream(
     co_await folly::coro::co_safe_point;
 
     if (!update.has_value()) {
-      XLOG(INFO, "Nexthop stream handling ended: received empty update");
+      XLOGF(
+          INFO,
+          "Nexthop stream handling ended: received empty update (vrf={})",
+          fboss::kDefaultVrf);
       break;
     }
 
@@ -143,8 +165,9 @@ folly::coro::Task<void> NexthopHandler::handleStream(
     // Process the updates
     XLOGF(
         INFO,
-        "Received nexthop status update with {} entries",
-        update.value().nexthopStatuses()->size());
+        "Received nexthop status update with {} entries (vrf={})",
+        update.value().nexthopStatuses()->size(),
+        fboss::kDefaultVrf);
     co_await co_processUpdates(update.value());
   }
 }

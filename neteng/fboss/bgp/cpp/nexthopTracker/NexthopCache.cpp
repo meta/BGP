@@ -65,9 +65,10 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
             nexthopStatus.isConnected() != true) {
           XLOGF(
               DBG2,
-              "Skipping update for {} from non-connected source"
+              "Skipping update for {} (vrf={}) from non-connected source"
               " — nexthop is directly connected",
-              nexthopIp.str());
+              nexthopIp.str(),
+              nexthop.nextHopVrfId);
           continue;
         }
 
@@ -84,8 +85,9 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
         if (!isNexthopStatusChanged) {
           XLOGF(
               DBG2,
-              "No change in nexthop status for {}, reachable: {}, igpCost: {}, registeredFromRib: {}",
+              "No change in nexthop status for {} (vrf={}), reachable: {}, igpCost: {}, registeredFromRib: {}",
               nexthopIp.str(),
+              nexthop.nextHopVrfId,
               currentStatus.isReachable(),
               currentStatus.getIgpCost().has_value()
                   ? std::to_string(currentStatus.getIgpCost().value())
@@ -97,8 +99,9 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
         // Log the change in status
         XLOGF(
             DBG2,
-            "Updating nexthop status for {} from reachable: {}, igpCost: {}, resolvedForSelection: {} to reachable: {}, igpCost: {}, resolvedForSelection: {}, registeredFromRib: {}",
+            "Updating nexthop status for {} (vrf={}) from reachable: {}, igpCost: {}, resolvedForSelection: {} to reachable: {}, igpCost: {}, resolvedForSelection: {}, registeredFromRib: {}",
             nexthopIp.str(),
+            nexthop.nextHopVrfId,
             currentStatus.isReachable(),
             currentStatus.getIgpCost().has_value()
                 ? std::to_string(currentStatus.getIgpCost().value())
@@ -127,8 +130,9 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
       } else {
         XLOGF(
             DBG2,
-            "Adding new nexthop status for {}, reachable: {}, igpCost: {}, isConnected: {} registeredFromRib: false",
+            "Adding new nexthop status for {} (vrf={}), reachable: {}, igpCost: {}, isConnected: {} registeredFromRib: false",
             nexthopIp.str(),
+            nexthop.nextHopVrfId,
             nexthopStatus.isReachable(),
             nexthopStatus.getIgpCost().has_value()
                 ? std::to_string(nexthopStatus.getIgpCost().value())
@@ -158,8 +162,9 @@ NexthopStatus NexthopCache::registerAndGetNexthopStatus(
   const auto& nexthopIp = nexthop.ip;
   XLOGF(
       DBG2,
-      "Getting nexthop status for {} and registering from RIB",
-      nexthopIp.str());
+      "Getting nexthop status for {} (vrf={}) and registering from RIB",
+      nexthopIp.str(),
+      nexthop.nextHopVrfId);
 
   /*
    * Whether to fire the registration hook after releasing the lock: true when
@@ -181,8 +186,9 @@ NexthopStatus NexthopCache::registerAndGetNexthopStatus(
 
           XLOGF(
               DBG2,
-              "Found nexthop status for {}, reachable: {}, igpCost: {}, registeredFromRib: true",
+              "Found nexthop status for {} (vrf={}), reachable: {}, igpCost: {}, registeredFromRib: true",
               nexthopIp.str(),
+              nexthop.nextHopVrfId,
               entryStatus.isReachable(),
               entryStatus.getIgpCost().has_value()
                   ? std::to_string(entryStatus.getIgpCost().value())
@@ -192,8 +198,9 @@ NexthopStatus NexthopCache::registerAndGetNexthopStatus(
 
         XLOGF(
             DBG2,
-            "Nexthop status not found for {}, creating new entry with default values and registeredFromRib: true",
-            nexthopIp.str());
+            "Nexthop status not found for {} (vrf={}), creating new entry with default values and registeredFromRib: true",
+            nexthopIp.str(),
+            nexthop.nextHopVrfId);
 
         // Create a default NexthopStatus (unreachable, no IGP cost)
         const auto defaultStatus =
@@ -272,8 +279,9 @@ std::optional<NexthopStatus> NexthopCache::clearConnectedStatus(
 
         XLOGF(
             DBG2,
-            "Clearing connected status for {} (no longer directly connected); was reachable: {}",
+            "Clearing connected status for {} (vrf={}) (no longer directly connected); was reachable: {}",
             nexthopIp.str(),
+            nexthop.nextHopVrfId,
             status.isReachable());
 
         bool wasReachable = status.isReachable();

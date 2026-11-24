@@ -169,7 +169,8 @@ void FsdbFibWatcher::addFsdbPathsForNexthop(
                            : basePath.fibV6()[hostPrefix].tokens();
     XLOGF(
         INFO,
-        "[FsdbFibWatcher] Added FSDB path: [{}]",
+        "[FsdbFibWatcher] Added FSDB path for {}: [{}]",
+        formatNexthop(nexthop),
         fmt::join(pathTokens, "/"));
   }
 }

@@ -155,11 +155,24 @@ class NexthopInfo : public NexthopInfoBase {
   void linkRouteInfo(RouteInfo& routeInfo) {
     if (nexthopAssociationList_.link(routeInfo)) {
       routeInfo.setNexthopInfo(this);
+    } else {
+      const auto& nexthop = status_.getNexthopKey();
+      XLOGF(
+          DBG2,
+          "Not linking RouteInfo to nexthop {} (vrf={}): RouteInfo already associated with NexthopInfo",
+          nexthop.ip.str(),
+          nexthop.nextHopVrfId);
     }
   }
 
   bool unlinkRouteInfo(RouteInfo& routeInfo) noexcept override {
     if (!nexthopAssociationList_.unlink(routeInfo)) {
+      const auto& nexthop = status_.getNexthopKey();
+      XLOGF(
+          DBG2,
+          "Not unlinking RouteInfo from nexthop {} (vrf={}): RouteInfo not associated with NexthopInfo",
+          nexthop.ip.str(),
+          nexthop.nextHopVrfId);
       return false;
     }
     routeInfo.setNexthopInfo(nullptr);

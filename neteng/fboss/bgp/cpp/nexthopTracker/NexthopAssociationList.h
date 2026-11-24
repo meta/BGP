@@ -19,7 +19,6 @@
 #include <cstddef>
 
 #include <folly/container/IntrusiveList.h>
-#include <folly/logging/xlog.h>
 #include "neteng/fboss/bgp/cpp/common/RouteInfo.h"
 
 namespace facebook::bgp {
@@ -43,9 +42,6 @@ class NexthopAssociationList {
    */
   bool link(RouteInfo& routeInfo) {
     if (routeInfo.nextHopListHook_.is_linked()) {
-      XLOG(
-          DBG2,
-          "Not linking RouteInfo to association list, RouteInfo already associated with NexthopInfo ");
       return false;
     }
     routeInfoList_.push_back(routeInfo);
@@ -61,9 +57,6 @@ class NexthopAssociationList {
    */
   bool unlink(RouteInfo& routeInfo) {
     if (!routeInfo.nextHopListHook_.is_linked()) {
-      XLOG(
-          DBG2,
-          "Not unlinking RouteInfo from association list, RouteInfo not associated with NexthopInfo ");
       return false;
     }
     routeInfoList_.erase(routeInfoList_.iterator_to(routeInfo));

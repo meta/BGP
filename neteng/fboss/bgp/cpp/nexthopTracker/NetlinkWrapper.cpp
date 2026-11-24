@@ -99,7 +99,8 @@ void appendPublishedStatuses(
 
     XLOGF(
         DBG3,
-        "DEBUG: ConnectedNexthopStatus: {}",
+        "DEBUG: ConnectedNexthopStatus (vrf={}): {}",
+        fboss::kDefaultVrf,
         apache::thrift::debugString(thriftStatuses.back()));
   };
   interface.forEachPublishedReachability(append, now);
@@ -967,9 +968,10 @@ bool NetlinkWrapper::evaluateNexthop(const folly::IPAddress& nexthopIp) {
   if (!ifIndex.has_value()) {
     XLOGF(
         DBG2,
-        "evaluateNexthop: {} is not directly connected on any tracked "
+        "evaluateNexthop: {} (vrf={}) is not directly connected on any tracked "
         "interface; leaving it to the recursive/FIB path",
-        nexthopIp.str());
+        nexthopIp.str(),
+        fboss::kDefaultVrf);
     return false;
   }
 
@@ -982,8 +984,9 @@ bool NetlinkWrapper::evaluateNexthop(const folly::IPAddress& nexthopIp) {
   bool reachable = ifName.has_value() && isInterfaceUp(*ifName);
   XLOGF(
       DBG2,
-      "evaluateNexthop: {} is directly connected via {}, reachable: {}",
+      "evaluateNexthop: {} (vrf={}) is directly connected via {}, reachable: {}",
       nexthopIp.str(),
+      fboss::kDefaultVrf,
       ifName.value_or("<unknown ifIndex>"),
       reachable);
   updateCacheAndNotifyRib({makeNexthopStatus(
@@ -1057,7 +1060,10 @@ void NetlinkWrapper::updateOpenrConnectedNextHopStatus(
       connectOpenrFibAgent();
     }
 
-    XLOG(DBG2, "Updating OpenR FIB agent with connected nexthop status");
+    XLOGF(
+        DBG2,
+        "Updating OpenR FIB agent with connected nexthop status (vrf={})",
+        fboss::kDefaultVrf);
 
     // Other fibers on this thread can continue running while we wait
     client_->semifuture_updateConnectedNextHopStatus(request).via(&evb_).get();

@@ -19,11 +19,16 @@
 #include <folly/IPAddress.h>
 #include <folly/Synchronized.h>
 #include <folly/container/F14Map.h>
+#include <folly/hash/Hash.h>
 #include <folly/logging/xlog.h>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <tuple>
 #include <vector>
+#include "fboss/agent/Constants.h"
+#include "neteng/fboss/bgp/cpp/common/Consts.h"
+#include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopKey.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopStatus.h"
 
 namespace facebook::bgp {
@@ -69,60 +74,40 @@ class NexthopCache {
    *
    * @param nexthopStatusList A vector of NexthopStatus objects containing
    *                          the updated status information
-   * @return Vector of NexthopStatus objects that changed and are registered
-   *         from RIB, to be pushed to ribInQ by the caller
+   * @return Changed registered statuses, each retaining its resolution key.
    **/
   std::vector<NexthopStatus> addOrUpdateNextHopStatus(
       const std::vector<NexthopStatus>& nexthopStatusList);
 
-  /**
-   * @brief Retrieves a nexthop's status while registering it with the RIB.
-   *
-   * This method is called by the RIB thread to:
-   * 1. Check if the specified nexthop IP exists in the cache
-   * 2. Register this nexthop as being referenced by the RIB
-   * 3. Return its current status information
-   *
-   * If the nexthop is not found in the cache, this method:
-   * - Creates a new entry with default values (unreachable status, no IGP cost)
-   * - Sets the registration flag to true
-   * - Returns this newly created default status
-   *
-   * @param nexthopIp The IP address of the nexthop to check and register
-   * @return NexthopStatus object containing the current or default status
+  /*
+   * Register the key and return its current status, creating an unreachable
+   * entry if needed. Registration is idempotent.
    */
-  NexthopStatus registerAndGetNexthopStatus(const folly::IPAddress& nexthopIp);
+  NexthopStatus registerAndGetNexthopStatus(const NexthopKey& nexthop);
 
-  /**
-   * @brief Remove nexthop status from the map if nexthopIp exists in the map
-   *        and is unreachable. If reachable, just unregister it from RIB.
-   *        Called by RIB thread when nexthopAssociation becomes empty.
-   * @param nexthopIp IP address of the nexthop to remove
-   * @return true if the nexthop was removed, false otherwise
+  /*
+   * Release the key's registration. Reachable entries remain cached;
+   * unreachable entries are erased. Returns true if an entry was erased.
    */
-  bool unregisterAndRemoveNexthopStatus(const folly::IPAddress& nexthopIp);
+  bool unregisterAndRemoveNexthopStatus(const NexthopKey& nexthop);
 
-  /**
-   * @brief Returns true if the nexthop is currently registered from the RIB.
-   */
-  bool isRegistered(const folly::IPAddress& nexthopIp) const;
+  bool isRegistered(const NexthopKey& nexthop) const;
 
-  /**
-   * @brief Returns the cached status of a nexthop without registering it, or
-   *        std::nullopt if the nexthop is not in the cache.
-   */
+  /* Return the key's cached status, or std::nullopt if absent. */
   std::optional<NexthopStatus> getNexthopStatus(
-      const folly::IPAddress& nexthopIp) const;
+      const NexthopKey& nexthop) const;
 
   /**
-   * @brief Returns the IPs of all RIB-registered nexthops that fall within the
-   *        given prefix (address families matched).
+   * @brief Returns registered keys within the subnet's address family and
+   *        resolution VRF.
    *
    * Used by NetlinkWrapper to find which registered nexthops are affected when
    * an interface prefix is added or removed, so they can be re-evaluated.
+   * Netlink callers select the default resolution VRF.
    */
-  std::vector<folly::IPAddress> getRegisteredNexthopsInSubnet(
-      const folly::CIDRNetwork& prefix) const;
+  std::vector<NexthopKey> getRegisteredNexthopsInSubnet(
+      const NexthopKey& subnet,
+      uint8_t prefixLen) const;
 
   /**
    * @brief Relinquishes directly-connected ownership of a nexthop.
@@ -137,16 +122,16 @@ class NexthopCache {
    * Called by NetlinkWrapper when an interface prefix is removed and a nexthop
    * is no longer directly connected on any interface.
    *
-   * @return the updated status if the entry was connected AND registered from
-   *         RIB (so the caller can notify the RIB), std::nullopt otherwise.
+   * @return The updated status if the entry was connected and registered,
+   *         std::nullopt otherwise.
    */
-  std::optional<NexthopStatus> clearConnectedStatus(
-      const folly::IPAddress& nexthopIp);
+  std::optional<NexthopStatus> clearConnectedStatus(const NexthopKey& nexthop);
 
   /**
    * @brief Registers a hook invoked when a nexthop is registered from the RIB
    *        and its source reports it as unreachable or without an IGP cost.
    *
+   * The hook carries the registered resolution key.
    * NetlinkWrapper uses this to drive the pull resolution path: when the RIB
    * registers interest in such a nexthop, the hook lets NetlinkWrapper check
    * interface link state and supply any missing status.
@@ -156,14 +141,15 @@ class NexthopCache {
    * resolution flag is on) before any thread registers nexthops, so no
    * synchronization is required for the pointer itself.
    */
-  void setOnNexthopRegistered(std::function<void(folly::IPAddress)> callback);
+  void setOnNexthopRegistered(std::function<void(NexthopKey)> callback);
 
  private:
   /**
-   * Nexthop address -> NexthopStatusWithRegistration map
+   * (Nexthop address, nextHopVrfId) -> NexthopStatusWithRegistration map
    *
    * This map stores the reachability, IGP cost, isConnected flag, and
-   * registration information for each nexthop.
+   * registration flag for each nexthop in its own resolution VRF. Identical
+   * addresses in different nexthop VRFs have independent resolution state.
    *
    * Write calls: FsdbFibWatcher and FsdbNeighborWatcher push updates via
    *              addOrUpdateNextHopStatus(). Source-priority ensures
@@ -175,9 +161,9 @@ class NexthopCache {
    *             and via getNexthopStatus() when it processes a
    *             RibInNexthopUpdate.
    **/
-  folly::Synchronized<
-      folly::F14NodeMap<folly::IPAddress, NexthopStatusWithRegistration>>
-      nexthopStatusMap_;
+  using NexthopStatusMap = folly::
+      F14NodeMap<NexthopKey, NexthopStatusWithRegistration, NexthopKey::Hash>;
+  folly::Synchronized<NexthopStatusMap> nexthopStatusMap_;
 
   /*
    * Epoch of the latest write to nexthopStatusMap_. Used only under the
@@ -200,7 +186,7 @@ class NexthopCache {
    * needs no synchronization. Empty unless the interface-state resolution
    * flag is on.
    */
-  std::function<void(folly::IPAddress)> onNexthopRegistered_;
+  std::function<void(NexthopKey)> onNexthopRegistered_;
 
   friend class NexthopCacheTestFixture;
 

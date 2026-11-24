@@ -1108,7 +1108,11 @@ void RibBase::processRibInNexthopUpdate(
 
   // Process each NexthopStatus in the update
   for (const auto& queuedStatus : nexthopUpdate.nexthopStatuses) {
-    const auto& nexthopIp = queuedStatus.getNexthop();
+    const auto& nexthop = queuedStatus.getNexthopKey();
+    if (nexthop.nextHopVrfId != fboss::kDefaultVrf) {
+      continue;
+    }
+    const auto& nexthopIp = nexthop.ip;
     XLOGF(DBG2, "Processing nexthop update for {}", nexthopIp.str());
 
     // Check if the nexthop exists in nexthopInfoMap_
@@ -1134,7 +1138,7 @@ void RibBase::processRibInNexthopUpdate(
        * The update names a nexthop whose status changed. The NexthopInfo takes
        * the current status from NexthopCache, not the status in the update.
        */
-      const auto cachedStatus = nexthopCache_->getNexthopStatus(nexthopIp);
+      const auto cachedStatus = nexthopCache_->getNexthopStatus(nexthop);
       if (!cachedStatus.has_value()) {
         XLOGF(
             ERR,
@@ -3499,7 +3503,8 @@ RibBase::getNexthopInfo(const std::shared_ptr<const BgpPath>& attrs) {
    * nexthopCache will always return a NexthopStatus, creating a new one with
    * default values if needed
    */
-  auto nextHopStatus = nexthopCache_->registerAndGetNexthopStatus(nexthop);
+  auto nextHopStatus = nexthopCache_->registerAndGetNexthopStatus(
+      NexthopKey{.ip = nexthop, .nextHopVrfId = fboss::kDefaultVrf});
   const bool isReachable = nextHopStatus.isReachable();
   const auto igpCost = nextHopStatus.getIgpCost();
   const std::optional<bool> isConnected = nextHopStatus.isConnected();
@@ -3613,7 +3618,8 @@ RibBase::NexthopInfoMap::iterator RibBase::deleteNexthopInfo(
    */
   XLOGF(
       DBG2, "Deleting nexthop status for {} from nexthopCache", nexthop.str());
-  nexthopCache_->unregisterAndRemoveNexthopStatus(nexthop);
+  nexthopCache_->unregisterAndRemoveNexthopStatus(
+      NexthopKey{.ip = nexthop, .nextHopVrfId = fboss::kDefaultVrf});
 
   // TODO_NH_VRF: Count unresolvable nexthops in the counters of their VRF.
   if (!it->second.isResolvedForSelection()) {

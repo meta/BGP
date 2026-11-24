@@ -16,9 +16,13 @@
 
 #pragma once
 
+#include <cstdint>
+#include <utility>
+
 #include <folly/IPAddress.h>
 
 #include "neteng/fboss/bgp/cpp/common/BgpPath.h"
+#include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/RouteInfo.h"
 #include "neteng/fboss/bgp/cpp/common/Structs.h"
 #include "neteng/fboss/bgp/cpp/common/Types.h"
@@ -130,7 +134,7 @@ struct ResumeBestPathAndFibProgramming {
  * or remote nexthops
  * @details This message is sent to Rib from the nexthopHandler thread
  * @param nexthopStatuses: Statuses that NexthopCache reported as changed. The
- * RIB reads the nexthop IP and the epoch, and takes the status from
+ * RIB reads each resolution key and epoch, and takes the current status from
  * NexthopCache.
  */
 struct RibInNexthopUpdate {

@@ -16,6 +16,7 @@
 
 #define NexthopCache_TEST_FRIENDS
 
+#include <functional>
 #include <type_traits>
 
 #include <folly/IPAddress.h>
@@ -46,6 +47,72 @@ static_assert(!std::is_constructible_v<
               NexthopStatus,
               const folly::IPAddress&,
               const openr::thrift::NextHopStatus&>);
+
+namespace {
+template <typename... Args>
+concept CanReadNexthopStatus =
+    requires(const NexthopCache& cache, Args... args) {
+      cache.getNexthopStatus(args...);
+    };
+template <typename... Args>
+concept CanRegisterNexthop = requires(NexthopCache& cache, Args... args) {
+  cache.registerAndGetNexthopStatus(args...);
+};
+template <typename... Args>
+concept CanUpdateNexthopStatuses = requires(NexthopCache& cache, Args... args) {
+  cache.addOrUpdateNextHopStatus(args...);
+};
+template <typename... Args>
+concept CanUnregisterNexthop = requires(NexthopCache& cache, Args... args) {
+  cache.unregisterAndRemoveNexthopStatus(args...);
+};
+template <typename... Args>
+concept CanCheckNexthopRegistration =
+    requires(const NexthopCache& cache, Args... args) {
+      cache.isRegistered(args...);
+    };
+template <typename... Args>
+concept CanClearConnectedStatus = requires(NexthopCache& cache, Args... args) {
+  cache.clearConnectedStatus(args...);
+};
+template <typename... Args>
+concept CanReadRegisteredSubnet =
+    requires(const NexthopCache& cache, Args... args) {
+      cache.getRegisteredNexthopsInSubnet(args...);
+    };
+template <typename Callback>
+concept CanSetRegistrationHook =
+    requires(NexthopCache& cache, Callback callback) {
+      cache.setOnNexthopRegistered(callback);
+    };
+static_assert(CanUpdateNexthopStatuses<std::vector<NexthopStatus>>);
+static_assert(!CanUpdateNexthopStatuses<std::vector<NexthopStatus>, uint16_t>);
+static_assert(
+    std::is_constructible_v<RibInNexthopUpdate, std::vector<NexthopStatus>>);
+static_assert(!std::is_constructible_v<
+              RibInNexthopUpdate,
+              std::vector<NexthopStatus>,
+              uint16_t>);
+static_assert(CanReadNexthopStatus<NexthopKey>);
+static_assert(!CanReadNexthopStatus<folly::IPAddress>);
+static_assert(!CanReadNexthopStatus<folly::IPAddress, uint16_t>);
+static_assert(CanRegisterNexthop<NexthopKey>);
+static_assert(!CanRegisterNexthop<folly::IPAddress>);
+static_assert(!CanRegisterNexthop<NexthopKey, uint16_t>);
+static_assert(!CanRegisterNexthop<folly::IPAddress, uint16_t>);
+static_assert(!CanRegisterNexthop<NexthopKey, uint16_t, uint16_t>);
+static_assert(CanUnregisterNexthop<NexthopKey>);
+static_assert(!CanUnregisterNexthop<folly::IPAddress>);
+static_assert(CanCheckNexthopRegistration<NexthopKey>);
+static_assert(!CanCheckNexthopRegistration<folly::IPAddress>);
+static_assert(CanClearConnectedStatus<NexthopKey>);
+static_assert(!CanClearConnectedStatus<folly::IPAddress>);
+static_assert(CanReadRegisteredSubnet<NexthopKey, uint8_t>);
+static_assert(!CanReadRegisteredSubnet<folly::CIDRNetwork>);
+static_assert(!CanReadRegisteredSubnet<folly::CIDRNetwork, uint16_t>);
+static_assert(CanSetRegistrationHook<std::function<void(NexthopKey)>>);
+static_assert(!CanSetRegistrationHook<std::function<void(folly::IPAddress)>>);
+} // namespace
 
 TEST(NexthopKeyTest, HashMapKeepsAddressesAndVrfsIndependent) {
   const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
@@ -587,19 +654,21 @@ TEST_F(NexthopCacheTestFixture, GetRegisteredNexthopsInSubnet) {
       {NexthopStatus({.ip = unregisteredInSubnet}, true, 1, true)});
 
   auto result = cache_->getRegisteredNexthopsInSubnet(
-      folly::IPAddress::createNetwork("10.10.0.0/16"));
+      NexthopKey{.ip = folly::IPAddress("10.10.0.0")}, 16);
 
   /*
    * Only registered nexthops within the v4 /16 are returned; out-of-subnet, v6
    * (family mismatch), and unregistered nexthops are excluded.
    */
-  EXPECT_THAT(result, UnorderedElementsAre(inA, inB));
+  EXPECT_THAT(
+      result,
+      UnorderedElementsAre(NexthopKey{.ip = inA}, NexthopKey{.ip = inB}));
 }
 
 TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
   // Unknown nexthop -> nullopt.
-  EXPECT_FALSE(
-      cache_->clearConnectedStatus(folly::IPAddress("10.0.0.99")).has_value());
+  EXPECT_FALSE(cache_->clearConnectedStatus({folly::IPAddress("10.0.0.99")})
+                   .has_value());
 
   // Non-connected (FIB, isConnected=nullopt) entry is left untouched.
   folly::IPAddress fibIp("10.0.0.1");
@@ -646,15 +715,15 @@ TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
 }
 
 TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
-  std::vector<folly::IPAddress> fired;
+  std::vector<NexthopKey> fired;
   cache_->setOnNexthopRegistered(
-      [&](folly::IPAddress ip) { fired.push_back(ip); });
+      [&](const NexthopKey& key) { fired.push_back(key); });
 
   // Registering an unknown nexthop (default unreachable) fires the hook.
   folly::IPAddress unknownIp("10.0.0.1");
   cache_->registerAndGetNexthopStatus({unknownIp});
   ASSERT_EQ(fired.size(), 1);
-  EXPECT_EQ(fired[0], unknownIp);
+  EXPECT_EQ(fired[0], (NexthopKey{.ip = unknownIp}));
 
   /*
    * Registering an already-reachable nexthop does NOT fire the hook (BGP has
@@ -672,7 +741,7 @@ TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
       {NexthopStatus({.ip = ebbNoCostIp}, true, std::nullopt)});
   cache_->registerAndGetNexthopStatus({ebbNoCostIp});
   ASSERT_EQ(fired.size(), 2);
-  EXPECT_EQ(fired[1], ebbNoCostIp);
+  EXPECT_EQ(fired[1], (NexthopKey{.ip = ebbNoCostIp}));
 
   // FBOSS allows selection without a cost, but still requests the metric.
   folly::IPAddress fbossNoCostIp("10.0.0.4");
@@ -684,7 +753,7 @@ TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
       /*excludeNexthopWithoutCost=*/false)});
   cache_->registerAndGetNexthopStatus({fbossNoCostIp});
   ASSERT_EQ(fired.size(), 3);
-  EXPECT_EQ(fired[2], fbossNoCostIp);
+  EXPECT_EQ(fired[2], (NexthopKey{.ip = fbossNoCostIp}));
 
   // Registering an existing-but-unreachable nexthop fires the hook.
   folly::IPAddress unreachableIp("10.0.0.5");
@@ -692,7 +761,7 @@ TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
       {NexthopStatus({.ip = unreachableIp}, false)});
   cache_->registerAndGetNexthopStatus({unreachableIp});
   ASSERT_EQ(fired.size(), 4);
-  EXPECT_EQ(fired[3], unreachableIp);
+  EXPECT_EQ(fired[3], (NexthopKey{.ip = unreachableIp}));
 }
 
 namespace {
@@ -800,6 +869,39 @@ TEST_F(NexthopCacheTestFixture, RegisterAndGetReturnsStoredEpoch) {
   EXPECT_EQ(
       existingStatus.getEpoch(),
       cache_->getNexthopStatus({existing}).value().getEpoch());
+}
+
+TEST_F(NexthopCacheTestFixture, ResolutionKeysHaveIndependentStatusAndEpoch) {
+  const NexthopKey underlay{.ip = folly::IPAddress("2001:db8::1")};
+  const NexthopKey other{.ip = underlay.ip, .nextHopVrfId = 7};
+  cache_->registerAndGetNexthopStatus(underlay);
+  cache_->registerAndGetNexthopStatus(other);
+  const auto updates = cache_->addOrUpdateNextHopStatus(
+      {NexthopStatus(underlay, /*isReachable=*/true, 10),
+       NexthopStatus(other, /*isReachable=*/true, 70)});
+  ASSERT_EQ(2, updates.size());
+  EXPECT_EQ(underlay, updates[0].getNexthopKey());
+  EXPECT_EQ(other, updates[1].getNexthopKey());
+  EXPECT_GT(updates[1].getEpoch(), updates[0].getEpoch());
+  const auto underlayEpoch = cache_->getNexthopStatus(underlay)->getEpoch();
+  EXPECT_EQ(10, cache_->getNexthopStatus(underlay)->getIgpCost());
+  EXPECT_EQ(70, cache_->getNexthopStatus(other)->getIgpCost());
+  EXPECT_TRUE(cache_
+                  ->addOrUpdateNextHopStatus(
+                      {NexthopStatus(other, /*isReachable=*/true, 70)})
+                  .empty());
+
+  const auto withdrawal = cache_->addOrUpdateNextHopStatus(
+      {NexthopStatus(other, /*isReachable=*/false)});
+  ASSERT_EQ(1, withdrawal.size());
+  EXPECT_EQ(other, withdrawal.front().getNexthopKey());
+  EXPECT_GT(withdrawal.front().getEpoch(), updates.back().getEpoch());
+  EXPECT_FALSE(cache_->getNexthopStatus(other)->isReachable());
+  EXPECT_TRUE(cache_->getNexthopStatus(underlay)->isReachable());
+  EXPECT_EQ(underlayEpoch, cache_->getNexthopStatus(underlay)->getEpoch());
+  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus(other));
+  EXPECT_FALSE(cache_->getNexthopStatus(other).has_value());
+  EXPECT_TRUE(cache_->isRegistered(underlay));
 }
 
 } // namespace facebook::bgp

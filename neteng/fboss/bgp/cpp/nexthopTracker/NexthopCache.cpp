@@ -15,7 +15,6 @@
  */
 
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopCache.h"
-#include "fboss/agent/Constants.h"
 
 #include <vector>
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
@@ -37,16 +36,14 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
    * Update the nexthopStatusMap_ with the provided list of NexthopStatus
    * objects and track which entries were changed or newly added
    */
-  nexthopStatusMap_.withWLock([&](folly::F14NodeMap<
-                                  folly::IPAddress,
-                                  NexthopStatusWithRegistration>& statusMap) {
+  nexthopStatusMap_.withWLock([&](NexthopStatusMap& statusMap) {
     // Iterate through the provided list and update or add entries
     for (const auto& nexthopStatus : nexthopStatusList) {
-      const auto& nexthopIp = nexthopStatus.getNexthop();
-      auto it = statusMap.find(nexthopIp);
+      const auto& nexthop = nexthopStatus.getNexthopKey();
+      const auto& nexthopIp = nexthop.ip;
+      auto it = statusMap.find(nexthop);
 
       if (it != statusMap.end()) {
-        // Get the current status and registration flag
         auto& [currentStatus, isRegisteredFromRib] = it->second;
 
         /**
@@ -114,7 +111,6 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
             nexthopStatus.isResolvedForSelection(),
             isRegisteredFromRib);
 
-        // Update the status while preserving the registration flag
         currentStatus = withNextEpoch(nexthopStatus);
 
         if (isReachabilityChanged) {
@@ -125,12 +121,10 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
           }
         }
 
-        // If it's registered from RIB, add to push list
         if (isRegisteredFromRib) {
-          statusesToPush.emplace_back(currentStatus);
+          statusesToPush.push_back(currentStatus);
         }
       } else {
-        // Add new entry with registration flag set to false
         XLOGF(
             DBG2,
             "Adding new nexthop status for {}, reachable: {}, igpCost: {}, isConnected: {} registeredFromRib: false",
@@ -143,9 +137,8 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
                 ? std::to_string(nexthopStatus.isConnected().value())
                 : "unset");
 
-        // Insert the new entry with registration flag set to false
         statusMap.emplace(
-            nexthopIp, std::make_tuple(withNextEpoch(nexthopStatus), false));
+            nexthop, std::make_tuple(withNextEpoch(nexthopStatus), false));
         RibStats::incrNexthopStatusMapCount();
 
         /*
@@ -159,8 +152,10 @@ std::vector<NexthopStatus> NexthopCache::addOrUpdateNextHopStatus(
   return statusesToPush;
 }
 
+/* Registration is idempotent per (address, resolution VRF). */
 NexthopStatus NexthopCache::registerAndGetNexthopStatus(
-    const folly::IPAddress& nexthopIp) {
+    const NexthopKey& nexthop) {
+  const auto& nexthopIp = nexthop.ip;
   XLOGF(
       DBG2,
       "Getting nexthop status for {} and registering from RIB",
@@ -175,12 +170,10 @@ NexthopStatus NexthopCache::registerAndGetNexthopStatus(
   bool needsResolution = false;
 
   auto status = nexthopStatusMap_.withWLock(
-      [&](folly::F14NodeMap<folly::IPAddress, NexthopStatusWithRegistration>&
-              statusMap) -> NexthopStatus {
-        auto it = statusMap.find(nexthopIp);
+      [&](NexthopStatusMap& statusMap) -> NexthopStatus {
+        auto it = statusMap.find(nexthop);
         // Return the entry if it exists
         if (it != statusMap.end()) {
-          // Mark this nexthop as registered from RIB
           auto& [entryStatus, isRegisteredFromRib] = it->second;
           isRegisteredFromRib = true;
           needsResolution = !entryStatus.isReachable() ||
@@ -197,22 +190,16 @@ NexthopStatus NexthopCache::registerAndGetNexthopStatus(
           return entryStatus;
         }
 
-        /*
-         * Create a new entry with default values (unreachable, no IGP cost)
-         * and set the registration flag to true
-         */
         XLOGF(
             DBG2,
             "Nexthop status not found for {}, creating new entry with default values and registeredFromRib: true",
             nexthopIp.str());
 
         // Create a default NexthopStatus (unreachable, no IGP cost)
-        const auto defaultStatus = withNextEpoch(NexthopStatus(
-            NexthopKey{.ip = nexthopIp, .nextHopVrfId = fboss::kDefaultVrf},
-            /*isReachable=*/false));
+        const auto defaultStatus =
+            withNextEpoch(NexthopStatus(nexthop, /*isReachable=*/false));
 
-        // Insert the new entry with registration flag set to true
-        statusMap.emplace(nexthopIp, std::make_tuple(defaultStatus, true));
+        statusMap.emplace(nexthop, std::make_tuple(defaultStatus, true));
         RibStats::incrNexthopStatusMapCount();
         needsResolution = true;
 
@@ -225,29 +212,25 @@ NexthopStatus NexthopCache::registerAndGetNexthopStatus(
    * when the neighbor-event resolution flag is on.
    */
   if (needsResolution && onNexthopRegistered_) {
-    onNexthopRegistered_(nexthopIp);
+    onNexthopRegistered_(nexthop);
   }
 
   return status;
 }
 
-bool NexthopCache::isRegistered(const folly::IPAddress& nexthopIp) const {
+bool NexthopCache::isRegistered(const NexthopKey& nexthop) const {
   return nexthopStatusMap_.withRLock(
-      [&](const folly::F14NodeMap<
-          folly::IPAddress,
-          NexthopStatusWithRegistration>& statusMap) -> bool {
-        auto it = statusMap.find(nexthopIp);
+      [&](const NexthopStatusMap& statusMap) -> bool {
+        auto it = statusMap.find(nexthop);
         return it != statusMap.end() && std::get<1>(it->second);
       });
 }
 
 std::optional<NexthopStatus> NexthopCache::getNexthopStatus(
-    const folly::IPAddress& nexthopIp) const {
+    const NexthopKey& nexthop) const {
   return nexthopStatusMap_.withRLock(
-      [&](const folly::
-              F14NodeMap<folly::IPAddress, NexthopStatusWithRegistration>&
-                  statusMap) -> std::optional<NexthopStatus> {
-        auto it = statusMap.find(nexthopIp);
+      [&](const NexthopStatusMap& statusMap) -> std::optional<NexthopStatus> {
+        auto it = statusMap.find(nexthop);
         if (it == statusMap.end()) {
           return std::nullopt;
         }
@@ -255,18 +238,17 @@ std::optional<NexthopStatus> NexthopCache::getNexthopStatus(
       });
 }
 
-std::vector<folly::IPAddress> NexthopCache::getRegisteredNexthopsInSubnet(
-    const folly::CIDRNetwork& prefix) const {
-  const auto& [subnet, prefixLen] = prefix;
+std::vector<NexthopKey> NexthopCache::getRegisteredNexthopsInSubnet(
+    const NexthopKey& subnet,
+    uint8_t prefixLen) const {
   return nexthopStatusMap_.withRLock(
-      [&](const folly::
-              F14NodeMap<folly::IPAddress, NexthopStatusWithRegistration>&
-                  statusMap) -> std::vector<folly::IPAddress> {
-        std::vector<folly::IPAddress> result;
-        for (const auto& [ip, statusWithReg] : statusMap) {
-          if (std::get<1>(statusWithReg) && ip.isV4() == subnet.isV4() &&
-              ip.inSubnet(subnet, prefixLen)) {
-            result.push_back(ip);
+      [&](const NexthopStatusMap& statusMap) -> std::vector<NexthopKey> {
+        std::vector<NexthopKey> result;
+        for (const auto& [key, statusWithReg] : statusMap) {
+          if (key.nextHopVrfId == subnet.nextHopVrfId &&
+              std::get<1>(statusWithReg) && key.ip.isV4() == subnet.ip.isV4() &&
+              key.ip.inSubnet(subnet.ip, prefixLen)) {
+            result.push_back(key);
           }
         }
         return result;
@@ -274,11 +256,11 @@ std::vector<folly::IPAddress> NexthopCache::getRegisteredNexthopsInSubnet(
 }
 
 std::optional<NexthopStatus> NexthopCache::clearConnectedStatus(
-    const folly::IPAddress& nexthopIp) {
+    const NexthopKey& nexthop) {
+  const auto& nexthopIp = nexthop.ip;
   return nexthopStatusMap_.withWLock(
-      [&](folly::F14NodeMap<folly::IPAddress, NexthopStatusWithRegistration>&
-              statusMap) -> std::optional<NexthopStatus> {
-        auto it = statusMap.find(nexthopIp);
+      [&](NexthopStatusMap& statusMap) -> std::optional<NexthopStatus> {
+        auto it = statusMap.find(nexthop);
         if (it == statusMap.end()) {
           return std::nullopt;
         }
@@ -300,10 +282,7 @@ std::optional<NexthopStatus> NexthopCache::clearConnectedStatus(
          * (e.g. FsdbFibWatcher) can take over authority again.
          */
         status = withNextEpoch(NexthopStatus(
-            NexthopKey{.ip = nexthopIp, .nextHopVrfId = fboss::kDefaultVrf},
-            /*isReachable=*/false,
-            std::nullopt,
-            std::nullopt));
+            nexthop, /*isReachable=*/false, std::nullopt, std::nullopt));
         if (wasReachable) {
           RibStats::incrNhtCacheNexthopUnreachable();
         }
@@ -321,47 +300,26 @@ NexthopStatus NexthopCache::withNextEpoch(NexthopStatus status) {
 }
 
 void NexthopCache::setOnNexthopRegistered(
-    std::function<void(folly::IPAddress)> callback) {
+    std::function<void(NexthopKey)> callback) {
   onNexthopRegistered_ = std::move(callback);
 }
 
-bool NexthopCache::unregisterAndRemoveNexthopStatus(
-    const folly::IPAddress& nexthopIp) {
-  XLOGF(
-      DBG1,
-      "Attempting to unregister/remove nexthop status for {}",
-      nexthopIp.str());
-
-  return nexthopStatusMap_.withWLock(
-      [&](folly::F14NodeMap<folly::IPAddress, NexthopStatusWithRegistration>&
-              statusMap) -> bool {
-        auto it = statusMap.find(nexthopIp);
-        // Process the entry if it exists
-        if (it != statusMap.end()) {
-          auto& [status, isRegisteredFromRib] = it->second;
-
-          if (!status.isReachable()) {
-            // If nexthop is unreachable, remove it completely
-            XLOGF(
-                DBG2,
-                "Unregistering and removing unreachable nexthop status for {}",
-                nexthopIp.str());
-            statusMap.erase(it);
-            RibStats::decrNexthopStatusMapCount();
-            return true;
-          } else {
-            // If nexthop is reachable, just unregister it from RIB
-            XLOGF(
-                DBG2,
-                "Unregistering but NOT removing reachable nexthop status for {}",
-                nexthopIp.str());
-            isRegisteredFromRib = false;
-          }
-        } else {
-          XLOGF(DBG2, "Nexthop status not found for {}", nexthopIp.str());
-        }
-        return false;
-      });
+/* Reachable results remain cached after the RIB releases its interest. */
+bool NexthopCache::unregisterAndRemoveNexthopStatus(const NexthopKey& nexthop) {
+  return nexthopStatusMap_.withWLock([&](auto& statusMap) {
+    auto it = statusMap.find(nexthop);
+    if (it == statusMap.end()) {
+      return false;
+    }
+    auto& [status, isRegisteredFromRib] = it->second;
+    isRegisteredFromRib = false;
+    if (status.isReachable()) {
+      return false;
+    }
+    statusMap.erase(it);
+    RibStats::decrNexthopStatusMapCount();
+    return true;
+  });
 }
 
 } // namespace facebook::bgp

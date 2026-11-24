@@ -160,9 +160,11 @@ NetlinkWrapper::NetlinkWrapper(
      * it because our EventBase outlives the RIB (see MainBB shutdown order),
      * and a post-stop addTaskRemote is a harmless no-op.
      */
-    nexthopCache_->setOnNexthopRegistered([this](folly::IPAddress nexthopIp) {
-      fm_.addTaskRemote(
-          [this, nexthopIp]() mutable { evaluateNexthop(nexthopIp); });
+    nexthopCache_->setOnNexthopRegistered([this](NexthopKey nexthop) {
+      if (nexthop.nextHopVrfId != fboss::kDefaultVrf) {
+        return;
+      }
+      fm_.addTaskRemote([this, ip = nexthop.ip]() { evaluateNexthop(ip); });
     });
   }
 }
@@ -382,9 +384,11 @@ bool NetlinkWrapper::syncInterfaces() {
     }
     for (const auto& [ifIndex, interface] : interfaces) {
       for (const auto& prefix : interface.getPrefixes()) {
-        for (const auto& nexthopIp :
-             nexthopCache_->getRegisteredNexthopsInSubnet(prefix)) {
-          evaluateNexthop(nexthopIp);
+        for (const auto& nexthop : nexthopCache_->getRegisteredNexthopsInSubnet(
+                 NexthopKey{
+                     .ip = prefix.first, .nextHopVrfId = fboss::kDefaultVrf},
+                 prefix.second)) {
+          evaluateNexthop(nexthop.ip);
         }
       }
     }
@@ -541,9 +545,11 @@ void NetlinkWrapper::processLinkEvent(openr::fbnl::Link&& link) {
      */
     if (interfaceEntry.setUp(isUp)) {
       for (const auto& prefix : interfaceEntry.getPrefixes()) {
-        for (const auto& nexthopIp :
-             nexthopCache_->getRegisteredNexthopsInSubnet(prefix)) {
-          evaluateNexthop(nexthopIp);
+        for (const auto& nexthop : nexthopCache_->getRegisteredNexthopsInSubnet(
+                 NexthopKey{
+                     .ip = prefix.first, .nextHopVrfId = fboss::kDefaultVrf},
+                 prefix.second)) {
+          evaluateNexthop(nexthop.ip);
         }
       }
     }
@@ -745,22 +751,24 @@ void NetlinkWrapper::processIfAddressEvent(openr::fbnl::IfAddress&& addr) {
    * Coverage changed: re-evaluate the registered nexthops that fall within this
    * prefix, since their directly-connected classification may have changed.
    */
-  for (const auto& nexthopIp :
-       nexthopCache_->getRegisteredNexthopsInSubnet(prefix.value())) {
+  for (const auto& nexthop : nexthopCache_->getRegisteredNexthopsInSubnet(
+           NexthopKey{
+               .ip = prefix.value().first, .nextHopVrfId = fboss::kDefaultVrf},
+           prefix.value().second)) {
     if (isValid) {
       /*
        * Prefix added: the nexthop may now be directly connected.
        * evaluateNexthop pushes its current reachability if so, or leaves it to
        * the FIB path.
        */
-      evaluateNexthop(nexthopIp);
-    } else if (!evaluateNexthop(nexthopIp)) {
+      evaluateNexthop(nexthop.ip);
+    } else if (!evaluateNexthop(nexthop.ip)) {
       /*
        * Prefix removed and the nexthop is no longer directly connected on any
        * interface (no sibling prefix covers it). Relinquish connected ownership
        * so the recursive/FIB path can take over, and notify the RIB.
        */
-      auto cleared = nexthopCache_->clearConnectedStatus(nexthopIp);
+      auto cleared = nexthopCache_->clearConnectedStatus(nexthop);
       if (cleared.has_value()) {
         ribInQ_.fiberPush(RibInNexthopUpdate({*cleared}));
       }

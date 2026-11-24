@@ -144,7 +144,7 @@ class RibPathCountersE2ETest : public E2ETestFixture {
   void setNexthopReachable(const folly::IPAddress& nexthop, bool reachable) {
     std::vector<NexthopStatus> statuses;
     statuses.emplace_back(
-        nexthop,
+        NexthopKey{.ip = nexthop},
         reachable,
         reachable ? std::make_optional<uint32_t>(100) : std::nullopt);
     injectNexthopStatuses(statuses);

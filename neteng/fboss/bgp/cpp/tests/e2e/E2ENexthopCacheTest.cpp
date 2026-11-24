@@ -77,7 +77,9 @@ TEST_F(E2ENexthopCacheTest, NexthopStatusUpdateAffectsRouteSelection) {
   // Inject nexthop status as reachable
   std::vector<NexthopStatus> nexthopStatuses;
   nexthopStatuses.emplace_back(
-      folly::IPAddress("11.0.0.1"), true /* reachable */, 100 /* igpCost */);
+      NexthopKey{.ip = folly::IPAddress("11.0.0.1")},
+      true /* reachable */,
+      100 /* igpCost */);
   injectNexthopStatuses(nexthopStatuses);
 
   auto prefix = folly::IPAddress::createNetwork("10.0.0.0/8");
@@ -102,8 +104,10 @@ TEST_F(E2ENexthopCacheTest, BatchNexthopStatusUpdate) {
 
   // Batch inject nexthop statuses
   std::vector<NexthopStatus> nexthopStatuses;
-  nexthopStatuses.emplace_back(folly::IPAddress("11.0.0.1"), true, 100);
-  nexthopStatuses.emplace_back(folly::IPAddress("11.0.0.2"), true, 200);
+  nexthopStatuses.emplace_back(
+      NexthopKey{.ip = folly::IPAddress("11.0.0.1")}, true, 100);
+  nexthopStatuses.emplace_back(
+      NexthopKey{.ip = folly::IPAddress("11.0.0.2")}, true, 200);
   injectNexthopStatuses(nexthopStatuses);
 
   // Verify ODS counter after nexthop status map insertions (2 entries tracked)
@@ -144,7 +148,9 @@ TEST_F(E2ENexthopCacheTest, UnreachableNexthopFilteredOut) {
    */
   std::vector<NexthopStatus> nexthopStatuses;
   nexthopStatuses.emplace_back(
-      folly::IPAddress("11.0.0.1"), false /* unreachable */, std::nullopt);
+      NexthopKey{.ip = folly::IPAddress("11.0.0.1")},
+      false /* unreachable */,
+      std::nullopt);
   injectNexthopStatuses(nexthopStatuses);
 
   /* Announce route with unreachable nexthop */
@@ -183,7 +189,9 @@ TEST_F(E2ENexthopCacheTest, NexthopBecomesReachableRouteAdvertised) {
   /* Start with unreachable nexthop */
   std::vector<NexthopStatus> nexthopStatuses;
   nexthopStatuses.emplace_back(
-      folly::IPAddress("11.0.0.1"), false /* unreachable */, std::nullopt);
+      NexthopKey{.ip = folly::IPAddress("11.0.0.1")},
+      false /* unreachable */,
+      std::nullopt);
   injectNexthopStatuses(nexthopStatuses);
 
   /* Announce route */
@@ -197,7 +205,9 @@ TEST_F(E2ENexthopCacheTest, NexthopBecomesReachableRouteAdvertised) {
   /* Now mark nexthop as reachable */
   nexthopStatuses.clear();
   nexthopStatuses.emplace_back(
-      folly::IPAddress("11.0.0.1"), true /* reachable */, 100 /* igpCost */);
+      NexthopKey{.ip = folly::IPAddress("11.0.0.1")},
+      true /* reachable */,
+      100 /* igpCost */);
   injectNexthopStatuses(nexthopStatuses);
 
   /* Route should now appear in shadowRIB and be advertised */

@@ -9909,7 +9909,7 @@ TEST_F(RibNexthopTrackingFixture, RibInAnnouncementWithNexthopTracking) {
   RibStats::initCounters();
 
   // Create a NexthopStatus with IGP cost
-  NexthopStatus status(kPeerAddr1, true, 100);
+  NexthopStatus status({.ip = kPeerAddr1}, true, 100);
 
   // Add the status to the cache
   std::vector<NexthopStatus> nexthopStatusList;
@@ -9956,7 +9956,8 @@ TEST_F(RibNexthopTrackingFixture, RibInAnnouncementWithNexthopTracking) {
 TEST_F(RibNexthopTrackingFixture, PathUpdatesMaintainNexthopAssociations) {
   RibStats::initCounters();
   updateCacheAndNotifyRib(
-      {NexthopStatus(kPeerAddr1, false), NexthopStatus(kPeerAddr2, false)});
+      {NexthopStatus({.ip = kPeerAddr1}, false),
+       NexthopStatus({.ip = kPeerAddr2}, false)});
   auto tcData = fb303::ThreadCachedServiceData::get();
 
   const auto prefixBatch = PrefixPathIds{{kV4Prefix1, kDefaultPathID}};
@@ -10196,9 +10197,9 @@ TEST_F(RibNexthopTrackingFixture, RibInNexthopUpdate) {
   // Update the batch time to 2ms for test purposes
   rib_->setFibBatchTime(milliseconds(2));
   // Create NexthopStatus objects with nexthop IPs
-  NexthopStatus unreachableStatus(kPeerAddr1, false);
+  NexthopStatus unreachableStatus({.ip = kPeerAddr1}, false);
   // Create a NexthopStatus with reachable nexthop
-  NexthopStatus reachableStatus(kPeerAddr2, true, 100);
+  NexthopStatus reachableStatus({.ip = kPeerAddr2}, true, 100);
 
   // Add the statuses to the cache
   std::vector<NexthopStatus> nexthopStatusList;
@@ -10247,7 +10248,7 @@ TEST_F(RibNexthopTrackingFixture, RibInNexthopUpdate) {
   nexthopStatusList.clear();
 
   // Create a NexthopStatus with lower IGP cost
-  NexthopStatus lowerCostReachableStatus(kPeerAddr1, true, 50);
+  NexthopStatus lowerCostReachableStatus({.ip = kPeerAddr1}, true, 50);
   nexthopStatusList.push_back(lowerCostReachableStatus);
 
   /*
@@ -10270,13 +10271,13 @@ TEST_F(RibNexthopTrackingFixture, ReachabilityAndResolutionAreIndependent) {
   rib_->setFibBatchTime(milliseconds(2));
 
   const NexthopStatus dcStatus(
-      kPeerAddr1,
+      {.ip = kPeerAddr1},
       /*isReachable=*/true,
       /*igpCost=*/std::nullopt,
       /*isConnected=*/std::nullopt,
       /*excludeNexthopWithoutCost=*/false);
   const NexthopStatus bbStatus(
-      kPeerAddr2,
+      {.ip = kPeerAddr2},
       /*isReachable=*/true,
       /*igpCost=*/std::nullopt,
       /*isConnected=*/std::nullopt,
@@ -10356,7 +10357,7 @@ TEST_F(RibNexthopTrackingFixture, ReachabilityAndResolutionAreIndependent) {
 
   fibFuture = fib_->getFibProgramFuture();
   updateCacheAndNotifyRib({NexthopStatus(
-      kPeerAddr1,
+      {.ip = kPeerAddr1},
       /*isReachable=*/false,
       /*igpCost=*/std::nullopt,
       /*isConnected=*/std::nullopt,
@@ -10392,7 +10393,7 @@ TEST_F(RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect) {
   RibStats::initCounters();
   setNexthopTrackingFeatureFlag(true);
   rib_->setFibBatchTime(milliseconds(2));
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, false)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, false)});
 
   auto attrs =
       std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(4, 4, 4, 4));
@@ -10413,7 +10414,7 @@ TEST_F(RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect) {
   EXPECT_CALL(*rib_, prepareFibProgramming_()).Times(0);
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     auto updates = rib_->nexthopCache_->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, true, std::nullopt)});
+        {NexthopStatus({.ip = kPeerAddr1}, true, std::nullopt)});
     ASSERT_EQ(updates.size(), 1);
     rib_->processRibInNexthopUpdate(RibInNexthopUpdate(std::move(updates)));
     EXPECT_FALSE(rib_->defaultVrf_.fibBatchTimer()->isScheduled());
@@ -10441,7 +10442,7 @@ TEST_F(RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect) {
 
   EXPECT_CALL(*rib_, prepareFibProgramming_()).Times(1);
   fibFuture = fib_->getFibProgramFuture();
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, true, 50)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, true, 50)});
   fibFuture.wait();
   testing::Mock::VerifyAndClearExpectations(rib_.get());
 
@@ -10457,7 +10458,7 @@ TEST_F(RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect) {
 
   EXPECT_CALL(*rib_, prepareFibProgramming_()).Times(1);
   auto ribFuture = rib_->getRibPrepareFibProgrammingFuture();
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, true, 100)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, true, 100)});
   ribFuture.wait();
   testing::Mock::VerifyAndClearExpectations(rib_.get());
 
@@ -10470,7 +10471,8 @@ TEST_F(RibNexthopTrackingFixture, SourceOnlyReachabilityChangeDoesNotReselect) {
 
   EXPECT_CALL(*rib_, prepareFibProgramming_()).Times(1);
   fibFuture = fib_->getFibProgramFuture();
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, true, std::nullopt)});
+  updateCacheAndNotifyRib(
+      {NexthopStatus({.ip = kPeerAddr1}, true, std::nullopt)});
   fibFuture.wait();
   testing::Mock::VerifyAndClearExpectations(rib_.get());
 
@@ -10504,7 +10506,7 @@ TEST_F(
   RibStats::initCounters();
   setNexthopTrackingFeatureFlag(true);
   rib_->setFibBatchTime(milliseconds(2));
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, false)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, false)});
 
   auto attrs =
       std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(4, 4, 4, 4));
@@ -10522,7 +10524,7 @@ TEST_F(
   const auto reevaluationsBefore =
       timeseriesCount(RibStats::kNhtRibResolvabilityChangePrefixReevaluation);
   fibFuture = fib_->getFibProgramFuture();
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, true, 50)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, true, 50)});
   fibFuture.wait();
 
   EXPECT_NE(nullptr, rib_->getBestPath(kV4Prefix1));
@@ -10536,12 +10538,12 @@ TEST_F(
     StaleQueuedNexthopUpdateDoesNotRecreateUntrackedState) {
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     auto* nexthopCache = rib_->nexthopCache_.get();
-    nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/100)});
-    nexthopCache->registerAndGetNexthopStatus(kPeerAddr1);
+    nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/100)});
+    nexthopCache->registerAndGetNexthopStatus({kPeerAddr1});
 
     auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
+        {NexthopStatus({.ip = kPeerAddr1}, /*isReachable=*/false)});
     ASSERT_EQ(1, queuedStatuses.size());
     EXPECT_TRUE(nexthopCache->unregisterAndRemoveNexthopStatus(kPeerAddr1));
 
@@ -10552,7 +10554,9 @@ TEST_F(
 
     EXPECT_TRUE(nexthopCache
                     ->addOrUpdateNextHopStatus({NexthopStatus(
-                        kPeerAddr1, /*isReachable=*/true, /*igpCost=*/100)})
+                        {.ip = kPeerAddr1},
+                        /*isReachable=*/true,
+                        /*igpCost=*/100)})
                     .empty());
   });
 
@@ -10600,7 +10604,7 @@ TEST_F(
     QueuedUnreachableUpdateDoesNotOverwriteReregisteredStatus) {
   auto* nexthopCache = rib_->nexthopCache_.get();
   const NexthopStatus reachable(
-      kPeerAddr1, /*isReachable=*/true, /*igpCost=*/100);
+      {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/100);
   const PrefixPathId prefixPathId{kV4Prefix1, kDefaultPathID};
   const auto attrs = pathVia(kPeerAddr1);
 
@@ -10608,7 +10612,7 @@ TEST_F(
     nexthopCache->addOrUpdateNextHopStatus({reachable});
     rib_->processSingleRibInUpdateForTest(iBgpPeer_, attrs, prefixPathId);
     auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
+        {NexthopStatus({.ip = kPeerAddr1}, /*isReachable=*/false)});
     ASSERT_EQ(1, queuedStatuses.size());
 
     rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, prefixPathId);
@@ -10633,15 +10637,15 @@ TEST_F(
     RibNexthopTrackingFixture,
     QueuedReachableUpdateDoesNotOverwriteReregisteredStatus) {
   auto* nexthopCache = rib_->nexthopCache_.get();
-  const NexthopStatus unreachable(kPeerAddr1, /*isReachable=*/false);
+  const NexthopStatus unreachable({.ip = kPeerAddr1}, /*isReachable=*/false);
   const PrefixPathId prefixPathId{kV4Prefix1, kDefaultPathID};
   const auto attrs = pathVia(kPeerAddr1);
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus({unreachable});
     rib_->processSingleRibInUpdateForTest(iBgpPeer_, attrs, prefixPathId);
-    auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/100)});
+    auto queuedStatuses = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/100)});
     ASSERT_EQ(1, queuedStatuses.size());
 
     rib_->processSingleRibInUpdateForTest(iBgpPeer_, nullptr, prefixPathId);
@@ -10669,14 +10673,14 @@ TEST_F(
   const auto attrs = pathVia(kPeerAddr1);
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
+    nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdateForTest(iBgpPeer_, attrs, prefixPathId);
 
     auto firstStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
-    auto secondStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
+        {NexthopStatus({.ip = kPeerAddr1}, /*isReachable=*/false)});
+    auto secondStatuses = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/20)});
     ASSERT_EQ(1, firstStatuses.size());
     ASSERT_EQ(1, secondStatuses.size());
 
@@ -10701,18 +10705,18 @@ TEST_F(RibNexthopTrackingFixture, StaleNexthopUpdateIsSkippedAndCounted) {
   const PrefixPathId prefixPathId{kV4Prefix1, kDefaultPathID};
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
+    nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdateForTest(
         iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     auto staleStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/false)});
-    auto newerStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
+        {NexthopStatus({.ip = kPeerAddr1}, /*isReachable=*/false)});
+    auto newerStatuses = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/20)});
     rib_->processRibInNexthopUpdate(
         RibInNexthopUpdate(std::move(newerStatuses)));
-    auto latestStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/30)});
+    auto latestStatuses = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/30)});
     const auto skippedBefore = staleNexthopUpdateSkippedCount();
 
     rib_->processRibInNexthopUpdate(
@@ -10740,16 +10744,22 @@ TEST_F(RibNexthopTrackingFixture, NexthopUpdatesForTwoNexthopsApplyOutOfOrder) {
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10),
-         NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
+        {NexthopStatus(
+             {.ip = kPeerAddr1},
+             /*isReachable=*/true,
+             /*igpCost=*/10),
+         NexthopStatus(
+             {.ip = kPeerAddr2},
+             /*isReachable=*/true,
+             /*igpCost=*/10)});
     rib_->processSingleRibInUpdateForTest(
         iBgpPeer_, pathVia(kPeerAddr1), {kV4Prefix1, kDefaultPathID});
     rib_->processSingleRibInUpdateForTest(
         iBgpPeer_, pathVia(kPeerAddr2), {kV4Prefix2, kDefaultPathID});
-    auto statusesB = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/20)});
-    auto statusesA = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
+    auto statusesB = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr2}, /*isReachable=*/true, /*igpCost=*/20)});
+    auto statusesA = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/20)});
 
     rib_->processRibInNexthopUpdate(RibInNexthopUpdate(std::move(statusesA)));
     rib_->processRibInNexthopUpdate(RibInNexthopUpdate(std::move(statusesB)));
@@ -10769,15 +10779,15 @@ TEST_F(RibNexthopTrackingFixture, UnstampedNexthopUpdateAlwaysRereads) {
   const PrefixPathId prefixPathId{kV4Prefix1, kDefaultPathID};
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
+    nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdateForTest(
         iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
-    nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
+    nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/20)});
 
-    rib_->processRibInNexthopUpdate(
-        RibInNexthopUpdate({NexthopStatus(kPeerAddr1, /*isReachable=*/false)}));
+    rib_->processRibInNexthopUpdate(RibInNexthopUpdate(
+        {NexthopStatus({.ip = kPeerAddr1}, /*isReachable=*/false)}));
 
     EXPECT_EQ(
         std::optional<uint32_t>(20),
@@ -10795,15 +10805,15 @@ TEST_F(RibNexthopTrackingFixture, NexthopUpdateWithEqualEpochRereads) {
   const PrefixPathId prefixPathId{kV4Prefix1, kDefaultPathID};
 
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
-    nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
+    nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/10)});
     rib_->processSingleRibInUpdateForTest(
         iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
-    auto statuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
+    auto statuses = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/20)});
     rib_->processRibInNexthopUpdate(RibInNexthopUpdate(statuses));
-    nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/30)});
+    nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/30)});
 
     rib_->processRibInNexthopUpdate(RibInNexthopUpdate(std::move(statuses)));
 
@@ -10830,14 +10840,14 @@ TEST_F(
     rib_->processRibInInitialPathComputation(
         fboss::kDefaultVrf, std::chrono::seconds(60));
     ASSERT_FALSE(rib_->defaultVrf_.ribEoRReceived());
-    auto staleStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/10)});
-    auto newerStatuses = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/20)});
+    auto staleStatuses = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/10)});
+    auto newerStatuses = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/20)});
     rib_->processRibInNexthopUpdate(
         RibInNexthopUpdate(std::move(newerStatuses)));
-    auto statusesB = nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
+    auto statusesB = nexthopCache->addOrUpdateNextHopStatus({NexthopStatus(
+        {.ip = kPeerAddr2}, /*isReachable=*/true, /*igpCost=*/10)});
     ASSERT_EQ(1, staleStatuses.size());
     ASSERT_EQ(1, statusesB.size());
 
@@ -10888,13 +10898,16 @@ TEST_F(
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(
-             kPeerAddr1,
+             {.ip = kPeerAddr1},
              /*isReachable=*/true,
              /*igpCost=*/1,
              /*isConnected=*/true,
              /*excludeNexthopWithoutCost=*/true,
              /*ifName=*/"eth1/1/1"),
-         NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
+         NexthopStatus(
+             {.ip = kPeerAddr2},
+             /*isReachable=*/true,
+             /*igpCost=*/10)});
     rib_->processSingleRibInUpdateForTest(
         iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     rib_->processRibInInitialPathComputation(
@@ -10950,13 +10963,16 @@ TEST_F(
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
         {NexthopStatus(
-             kPeerAddr1,
+             {.ip = kPeerAddr1},
              /*isReachable=*/true,
              /*igpCost=*/1,
              /*isConnected=*/true,
              /*excludeNexthopWithoutCost=*/true,
              /*ifName=*/"eth1/1/1"),
-         NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
+         NexthopStatus(
+             {.ip = kPeerAddr2},
+             /*isReachable=*/true,
+             /*igpCost=*/10)});
     // The eBGP path via N1 is the best path. The iBGP path via N2 keeps the
     // RibEntry after the withdrawal.
     rib_->processSingleRibInUpdateForTest(
@@ -10995,8 +11011,11 @@ TEST_F(
   auto fibFuture = fib_->getFibProgramFuture();
   rib_->evb_.runInEventBaseThreadAndWait([&]() {
     nexthopCache->addOrUpdateNextHopStatus(
-        {NexthopStatus(kPeerAddr1, /*isReachable=*/true, /*igpCost=*/1),
-         NexthopStatus(kPeerAddr2, /*isReachable=*/true, /*igpCost=*/10)});
+        {NexthopStatus({.ip = kPeerAddr1}, /*isReachable=*/true, /*igpCost=*/1),
+         NexthopStatus(
+             {.ip = kPeerAddr2},
+             /*isReachable=*/true,
+             /*igpCost=*/10)});
     rib_->processSingleRibInUpdateForTest(
         iBgpPeer_, pathVia(kPeerAddr1), prefixPathId);
     rib_->processRibInInitialPathComputation(
@@ -11055,8 +11074,8 @@ TEST_F(RibNexthopTrackingFixture, InactivePathCountTracksNexthopResolution) {
   setNexthopTrackingFeatureFlag(true);
   rib_->setFibBatchTime(milliseconds(2));
 
-  NexthopStatus unreachableStatus(kPeerAddr1, false);
-  NexthopStatus reachableStatus(kPeerAddr2, true, 100);
+  NexthopStatus unreachableStatus({.ip = kPeerAddr1}, false);
+  NexthopStatus reachableStatus({.ip = kPeerAddr2}, true, 100);
   updateCacheAndNotifyRib({unreachableStatus, reachableStatus});
 
   const auto attrs = *buildBgpPathFields(4, 4, 4, 4);
@@ -11090,7 +11109,7 @@ TEST_F(RibNexthopTrackingFixture, InactivePathCountTracksNexthopResolution) {
 
   // Resolving that nexthop returns its path to the candidate set.
   auto fibFuture2 = fib_->getFibProgramFuture();
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, true, 50)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, true, 50)});
   fibFuture2.wait();
 
   EXPECT_EQ(0, inactivePathCount());
@@ -11108,7 +11127,8 @@ TEST_F(RibNexthopTrackingFixture, InactivePathCountTracksPartialWithdrawals) {
   rib_->setFibBatchTime(milliseconds(2));
 
   updateCacheAndNotifyRib(
-      {NexthopStatus(kPeerAddr1, false), NexthopStatus(kPeerAddr2, true, 100)});
+      {NexthopStatus({.ip = kPeerAddr1}, false),
+       NexthopStatus({.ip = kPeerAddr2}, true, 100)});
 
   const auto attrs = *buildBgpPathFields(4, 4, 4, 4);
   auto unresolvedAttrs = std::make_shared<facebook::bgp::BgpPath>(attrs);
@@ -11168,7 +11188,8 @@ TEST_F(RibNexthopTrackingFixture, InactiveFlagSurfacedOnThriftPaths) {
   rib_->setFibBatchTime(milliseconds(2));
 
   updateCacheAndNotifyRib(
-      {NexthopStatus(kPeerAddr1, false), NexthopStatus(kPeerAddr2, true, 100)});
+      {NexthopStatus({.ip = kPeerAddr1}, false),
+       NexthopStatus({.ip = kPeerAddr2}, true, 100)});
 
   const auto attrs = *buildBgpPathFields(4, 4, 4, 4);
   auto unresolvedAttrs = std::make_shared<facebook::bgp::BgpPath>(attrs);
@@ -11248,7 +11269,7 @@ TEST_F(
   setNexthopTrackingFeatureFlag(true);
   rib_->setFibBatchTime(milliseconds(2));
 
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, false)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, false)});
 
   constexpr int kNumReadvertisements = 10;
   for (int i = 0; i < kNumReadvertisements; i++) {
@@ -11286,7 +11307,7 @@ TEST_F(RibNexthopTrackingFixture, InactivePathCountReleasedOnWithdrawal) {
   setNexthopTrackingFeatureFlag(true);
   rib_->setFibBatchTime(milliseconds(2));
 
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, false)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, false)});
 
   auto unresolvedAttrs =
       std::make_shared<facebook::bgp::BgpPath>(*buildBgpPathFields(4, 4, 4, 4));
@@ -11319,9 +11340,9 @@ TEST_F(RibNexthopTrackingFixture, RouteFlappingWithUniqueNexthop) {
   RibStats::initCounters();
 
   // Create NexthopStatus objects with nexthop IPs
-  NexthopStatus unreachableStatus(kPeerAddr1, false);
+  NexthopStatus unreachableStatus({.ip = kPeerAddr1}, false);
   // Create a NexthopStatus with reachable nexthop
-  NexthopStatus reachableStatus(kPeerAddr2, true, 100);
+  NexthopStatus reachableStatus({.ip = kPeerAddr2}, true, 100);
 
   // Add the statuses to the cache
   std::vector<NexthopStatus> nexthopStatusList;
@@ -11395,8 +11416,8 @@ TEST_F(RibNexthopTrackingFixture, GetNexthopInfoForNexthop) {
   RibStats::initCounters();
 
   // Create NexthopStatus objects with nexthop IPs
-  NexthopStatus reachableStatus(kPeerAddr1, true, 100);
-  NexthopStatus unreachableStatus(kPeerAddr2, false);
+  NexthopStatus reachableStatus({.ip = kPeerAddr1}, true, 100);
+  NexthopStatus unreachableStatus({.ip = kPeerAddr2}, false);
 
   // Add the statuses to the cache
   std::vector<NexthopStatus> nexthopStatusList;
@@ -11465,8 +11486,8 @@ TEST_F(RibNexthopTrackingFixture, GetNexthopInfoForNexthop) {
 TEST_F(RibNexthopTrackingFixture, GetNexthopInfos) {
   RibStats::initCounters();
 
-  NexthopStatus reachableStatus(kPeerAddr1, true, 100);
-  NexthopStatus unreachableStatus(kPeerAddr2, false);
+  NexthopStatus reachableStatus({.ip = kPeerAddr1}, true, 100);
+  NexthopStatus unreachableStatus({.ip = kPeerAddr2}, false);
 
   std::vector<NexthopStatus> nexthopStatusList;
   nexthopStatusList.push_back(reachableStatus);
@@ -11651,7 +11672,7 @@ TEST_F(
 
   // Resolving the nexthop runs the deferred computation.
   auto fibFuture = fib_->getFibProgramFuture();
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, true, 100)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, true, 100)});
   fibFuture.wait();
   WITH_RETRIES_N_TIMED(100, std::chrono::milliseconds(10), {
     ASSERT_EVENTUALLY_TRUE(isRibEoRReceived());
@@ -11719,7 +11740,7 @@ TEST_F(
    * nexthop is not tracked, so it does not hold the computation.
    */
   auto fibFuture = fib_->getFibProgramFuture();
-  updateCacheAndNotifyRib({NexthopStatus(kPeerAddr1, true, 100)});
+  updateCacheAndNotifyRib({NexthopStatus({.ip = kPeerAddr1}, true, 100)});
   fibFuture.wait();
   WITH_RETRIES_N_TIMED(100, std::chrono::milliseconds(10), {
     ASSERT_EVENTUALLY_TRUE(isRibEoRReceived());

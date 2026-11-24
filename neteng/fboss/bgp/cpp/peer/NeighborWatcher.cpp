@@ -313,7 +313,7 @@ void FsdbNeighborWatcher::reportPortIdStateMismatch(
 
 void FsdbNeighborWatcher::collectResolvedIpsFromTable(
     const std::map<std::string, fboss::state::NeighborEntryFields>& nbrTable,
-    folly::F14FastSet<folly::IPAddress>& resolvedIps) {
+    folly::F14FastSet<NexthopKey, NexthopKey::Hash>& resolvedNexthops) {
   for (const auto& [ipStr, nbrFields] : nbrTable) {
     reportPortIdStateMismatch(nbrFields);
     if (!isNeighborResolved(nbrFields)) {
@@ -321,7 +321,9 @@ void FsdbNeighborWatcher::collectResolvedIpsFromTable(
     }
     auto maybeIp = folly::IPAddress::tryFromString(ipStr);
     if (!maybeIp.hasError() && !maybeIp.value().isLinkLocal()) {
-      resolvedIps.insert(maybeIp.value());
+      resolvedNexthops.insert(
+          NexthopKey{
+              .ip = maybeIp.value(), .nextHopVrfId = fboss::kDefaultVrf});
     }
   }
 }
@@ -333,14 +335,14 @@ void FsdbNeighborWatcher::forwardResolvedNeighborIps(
   if (!resolvedNeighborCb_) {
     return;
   }
-  folly::F14FastSet<folly::IPAddress> resolvedIps;
+  folly::F14FastSet<NexthopKey, NexthopKey::Hash> resolvedNexthops;
   for (const auto& [switchIdList, innerMap] : interfaceMap) {
     for (const auto& [intfId, intfFields] : innerMap) {
-      collectResolvedIpsFromTable(*intfFields.arpTable(), resolvedIps);
-      collectResolvedIpsFromTable(*intfFields.ndpTable(), resolvedIps);
+      collectResolvedIpsFromTable(*intfFields.arpTable(), resolvedNexthops);
+      collectResolvedIpsFromTable(*intfFields.ndpTable(), resolvedNexthops);
     }
   }
-  resolvedNeighborCb_(std::move(resolvedIps));
+  resolvedNeighborCb_(std::move(resolvedNexthops));
 }
 
 void FsdbNeighborWatcher::stop() noexcept {
@@ -660,17 +662,18 @@ void NeighborWatcher::learnConnectedNeighbors(
     std::shared_ptr<NexthopCache> nexthopCache,
     nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage>& ribInQ) {
   fsdbNbrWatcher_->setResolvedNeighborCallback(
-      [nexthopCache,
-       &ribInQ](const folly::F14FastSet<folly::IPAddress>& resolvedIps) {
+      [nexthopCache, &ribInQ](
+          const folly::F14FastSet<NexthopKey, NexthopKey::Hash>&
+              resolvedNexthops) {
         std::vector<NexthopStatus> updates;
-        updates.reserve(resolvedIps.size());
-        for (const auto& ip : resolvedIps) {
+        updates.reserve(resolvedNexthops.size());
+        for (const auto& nexthop : resolvedNexthops) {
           XLOGF(
               INFO,
               "[NeighborWatcher] Resolved directly connected nexthop: {}, "
               "registering with igpCost=1, isConnected=true",
-              ip.str());
-          updates.emplace_back(ip, true, 1, true);
+              nexthop.ip.str());
+          updates.emplace_back(nexthop, true, 1, true);
         }
         if (!updates.empty()) {
           auto statuses = nexthopCache->addOrUpdateNextHopStatus(updates);

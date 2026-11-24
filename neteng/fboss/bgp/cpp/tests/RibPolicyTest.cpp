@@ -2037,8 +2037,8 @@ TEST_F(RibPolicyFixture, SelectLowestIgpCostAmongMatchingPaths) {
   RibPolicy policy{createTRibPolicyWithPathSelector(
       {kV4Prefix1}, createTPathSlectorWithOneMatcher(matcher))};
 
-  NexthopInfo first(NexthopStatus(kV4Nexthop1, true, 30));
-  NexthopInfo second(NexthopStatus(kV4Nexthop2, true, 10));
+  NexthopInfo first(NexthopStatus({.ip = kV4Nexthop1}, true, 30));
+  NexthopInfo second(NexthopStatus({.ip = kV4Nexthop2}, true, 10));
   first.linkRouteInfo(*pathsToOverride_[0]);
   second.linkRouteInfo(*pathsToOverride_[1]);
 
@@ -2048,10 +2048,10 @@ TEST_F(RibPolicyFixture, SelectLowestIgpCostAmongMatchingPaths) {
   };
   EXPECT_THAT(select(), ElementsAre(pathsToOverride_[1]));
 
-  first.updateStatus(NexthopStatus(kV4Nexthop1, true, 10));
+  first.updateStatus(NexthopStatus({.ip = kV4Nexthop1}, true, 10));
   EXPECT_EQ(select(), pathsToOverride_);
 
-  first.updateStatus(NexthopStatus(kV4Nexthop1, true, 5));
+  first.updateStatus(NexthopStatus({.ip = kV4Nexthop1}, true, 5));
   EXPECT_THAT(select(), ElementsAre(pathsToOverride_[0]));
 
   first.unlinkRouteInfo(*pathsToOverride_[0]);
@@ -2082,8 +2082,8 @@ TEST_F(
   const auto& otherPath = communityPath == pathsToOverride_[0]
       ? pathsToOverride_[1]
       : pathsToOverride_[0];
-  NexthopInfo expensive(NexthopStatus(kV4Nexthop1, true, 30));
-  NexthopInfo inexpensive(NexthopStatus(kV4Nexthop2, true, 10));
+  NexthopInfo expensive(NexthopStatus({.ip = kV4Nexthop1}, true, 30));
+  NexthopInfo inexpensive(NexthopStatus({.ip = kV4Nexthop2}, true, 10));
   expensive.linkRouteInfo(*communityPath);
   inexpensive.linkRouteInfo(*otherPath);
 

@@ -510,7 +510,8 @@ TEST_F(FsdbFibWatcherTest, SourcePriorityConnectedBlocksNonConnected) {
 
   // Simulate NeighborWatcher marking nexthop as directly connected
   std::vector<NexthopStatus> connectedUpdate;
-  connectedUpdate.emplace_back(ip, true, 1, true /* isConnected */);
+  connectedUpdate.emplace_back(
+      NexthopKey{.ip = ip}, true, 1, true /* isConnected */);
   nexthopCache_->addOrUpdateNextHopStatus(connectedUpdate);
 
   // Register the nexthop in RIB so we can read it back
@@ -521,7 +522,8 @@ TEST_F(FsdbFibWatcherTest, SourcePriorityConnectedBlocksNonConnected) {
 
   // Simulate FsdbFibWatcher sending unreachable with isConnected=nullopt
   std::vector<NexthopStatus> fibUpdate;
-  fibUpdate.emplace_back(ip, false, std::nullopt, std::nullopt);
+  fibUpdate.emplace_back(
+      NexthopKey{.ip = ip}, false, std::nullopt, std::nullopt);
   nexthopCache_->addOrUpdateNextHopStatus(fibUpdate);
 
   // Should still be reachable — non-connected source was skipped
@@ -540,7 +542,7 @@ TEST_F(FsdbFibWatcherTest, SourcePriorityConnectedCanOverrideConnected) {
 
   // First connected update: reachable with igpCost=1
   std::vector<NexthopStatus> update1;
-  update1.emplace_back(ip, true, 1, true);
+  update1.emplace_back(NexthopKey{.ip = ip}, true, 1, true);
   nexthopCache_->addOrUpdateNextHopStatus(update1);
 
   auto status = nexthopCache_->registerAndGetNexthopStatus(ip);
@@ -549,7 +551,7 @@ TEST_F(FsdbFibWatcherTest, SourcePriorityConnectedCanOverrideConnected) {
 
   // Second connected update: unreachable (neighbor went away)
   std::vector<NexthopStatus> update2;
-  update2.emplace_back(ip, false, std::nullopt, true);
+  update2.emplace_back(NexthopKey{.ip = ip}, false, std::nullopt, true);
   nexthopCache_->addOrUpdateNextHopStatus(update2);
 
   status = nexthopCache_->registerAndGetNexthopStatus(ip);
@@ -565,7 +567,7 @@ TEST_F(FsdbFibWatcherTest, NonConnectedSourceCanUpdateNonConnected) {
 
   // FIB says reachable
   std::vector<NexthopStatus> update1;
-  update1.emplace_back(ip, true, 5, std::nullopt);
+  update1.emplace_back(NexthopKey{.ip = ip}, true, 5, std::nullopt);
   nexthopCache_->addOrUpdateNextHopStatus(update1);
 
   auto status = nexthopCache_->registerAndGetNexthopStatus(ip);
@@ -573,7 +575,7 @@ TEST_F(FsdbFibWatcherTest, NonConnectedSourceCanUpdateNonConnected) {
 
   // FIB says unreachable
   std::vector<NexthopStatus> update2;
-  update2.emplace_back(ip, false, std::nullopt, std::nullopt);
+  update2.emplace_back(NexthopKey{.ip = ip}, false, std::nullopt, std::nullopt);
   nexthopCache_->addOrUpdateNextHopStatus(update2);
 
   status = nexthopCache_->registerAndGetNexthopStatus(ip);

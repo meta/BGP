@@ -29,10 +29,10 @@ namespace facebook::bgp {
 namespace {
 
 NexthopStatus makeNexthopStatus(
-    const folly::IPAddress& nexthop,
+    const NexthopKey& nexthop,
     bool isReachable,
     std::optional<uint32_t> igpCost) {
-  return NexthopStatus(nexthop, isReachable, igpCost, /*isConnected*/ false);
+  return NexthopStatus(nexthop, isReachable, igpCost, /*isConnected=*/false);
 }
 } // namespace
 
@@ -55,7 +55,7 @@ inline std::vector<NexthopStatus> convertFibAgentStatusToNexthopStatus(
 
     // Create NexthopStatus with the nexthop IP and thrift status
     vec.emplace_back(makeNexthopStatus(
-        nexthopIp,
+        NexthopKey{.ip = nexthopIp, .nextHopVrfId = fboss::kDefaultVrf},
         *thriftStatus.isReachable(),
         thriftStatus.igpCost().to_optional()));
   }

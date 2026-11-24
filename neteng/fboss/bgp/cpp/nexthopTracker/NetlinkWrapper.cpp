@@ -20,6 +20,7 @@
 #include <folly/futures/Future.h>
 #include <folly/logging/xlog.h>
 #include <re2/set.h>
+#include "fboss/agent/Constants.h"
 
 #include <openr/common/NetworkUtil.h>
 #include <openr/if/gen-cpp2/Platform_types_custom_protocol.h>
@@ -50,7 +51,7 @@ namespace facebook::bgp {
 namespace {
 
 NexthopStatus makeNexthopStatus(
-    const folly::IPAddress& nexthop,
+    const NexthopKey& nexthop,
     bool isReachable,
     std::optional<uint32_t> igpCost,
     std::optional<std::string> ifName = std::nullopt) {
@@ -89,8 +90,10 @@ void appendPublishedStatuses(
         std::chrono::steady_clock::now()) {
   const auto ifName = interface.getIfName();
   const auto append = [&](const folly::IPAddress& ip, bool reachable) {
-    vec.emplace_back(
-        makeNexthopStatus(ip, reachable, kDirectlyConnectedNexthopWeight));
+    vec.emplace_back(makeNexthopStatus(
+        NexthopKey{.ip = ip, .nextHopVrfId = fboss::kDefaultVrf},
+        reachable,
+        kDirectlyConnectedNexthopWeight));
 
     thriftStatuses.push_back(makeConnectedNextHopStatus(ip, ifName, reachable));
 
@@ -902,7 +905,9 @@ NetlinkWrapper::releaseEndedHolds() {
       it->second.forEachPublishedReachability(
           [&](const folly::IPAddress& ip, bool reachable) {
             vec.emplace_back(makeNexthopStatus(
-                ip, reachable, kDirectlyConnectedNexthopWeight));
+                NexthopKey{.ip = ip, .nextHopVrfId = fboss::kDefaultVrf},
+                reachable,
+                kDirectlyConnectedNexthopWeight));
             thriftStatuses.push_back(
                 makeConnectedNextHopStatus(ip, ifName, reachable));
           },
@@ -974,7 +979,10 @@ bool NetlinkWrapper::evaluateNexthop(const folly::IPAddress& nexthopIp) {
       ifName.value_or("<unknown ifIndex>"),
       reachable);
   updateCacheAndNotifyRib({makeNexthopStatus(
-      nexthopIp, reachable, kDirectlyConnectedNexthopWeight, ifName)});
+      NexthopKey{.ip = nexthopIp, .nextHopVrfId = fboss::kDefaultVrf},
+      reachable,
+      kDirectlyConnectedNexthopWeight,
+      ifName)});
   return true;
 }
 

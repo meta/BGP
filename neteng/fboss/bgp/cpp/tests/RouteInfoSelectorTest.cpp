@@ -210,7 +210,7 @@ class RouteInfoSelectorTest : public ::testing::Test {
     for (int i = 0; i < 3; i++) {
       nextHopInfos.emplace_back(
           std::make_shared<NexthopInfo>(NexthopStatus(
-              kDefaultNexthops[i], // nexthop
+              {.ip = kDefaultNexthops[i]}, // nexthop
               true, // isReachable
               igpCosts[i]))); // igpCost
 

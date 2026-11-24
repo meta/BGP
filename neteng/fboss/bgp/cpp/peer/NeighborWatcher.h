@@ -29,6 +29,7 @@
 #include "neteng/fboss/bgp/cpp/common/RibMessage.h"
 #include "neteng/fboss/bgp/cpp/common/Structs.h"
 #include "neteng/fboss/bgp/cpp/lib/coro/BackPressuredQueue.h"
+#include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopKey.h"
 #include "neteng/fboss/bgp/cpp/watchdog/MonitoredQueue.h"
 
 DECLARE_int32(fsdb_config_timeout_s);
@@ -153,7 +154,7 @@ class FsdbNeighborWatcher
    * (processInterfaceMapChanges → neighborEventQ_).
    */
   using ResolvedNeighborCallback =
-      std::function<void(folly::F14FastSet<folly::IPAddress>)>;
+      std::function<void(folly::F14FastSet<NexthopKey, NexthopKey::Hash>)>;
 
   /*
    * Set a callback to receive resolved neighbor updates. Must be called
@@ -202,11 +203,11 @@ class FsdbNeighborWatcher
   /**
    * Extract resolved (portId != 0, state == Reachable, non-link-local)
    * IPs from a single neighbor table (arpTable or ndpTable) and insert
-   * them into resolvedIps.
+   * them into resolvedNexthops.
    **/
   static void collectResolvedIpsFromTable(
       const std::map<std::string, fboss::state::NeighborEntryFields>& nbrTable,
-      folly::F14FastSet<folly::IPAddress>& resolvedIps);
+      folly::F14FastSet<NexthopKey, NexthopKey::Hash>& resolvedNexthops);
 
   /*
    * Bumps BgpStats::kNeighborPortIdStateMismatch and emits a rate-limited

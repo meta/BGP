@@ -1261,8 +1261,8 @@ TEST(RibEntryTest, SelectBestPathWithNextHopTrackingTest) {
                                    bool isReachable,
                                    uint32_t pathId = kDefaultPathID) {
     // Create NexthopInfo
-    auto nexthopInfo = std::make_shared<NexthopInfo>(
-        NexthopStatus(attrs->getNexthop(), isReachable, 100 /* igpCost */));
+    auto nexthopInfo = std::make_shared<NexthopInfo>(NexthopStatus(
+        {.ip = attrs->getNexthop()}, isReachable, 100 /* igpCost */));
 
     // Add the path to RibEntry
     EXPECT_TRUE(
@@ -1649,7 +1649,7 @@ TEST(RibEntryTest, HasIgpCostTest) {
 
   // Set up a reachable nexthop for the non-local route
   NexthopInfo reachableNexthopInfo(NexthopStatus(
-      kV4Nexthop1,
+      {.ip = kV4Nexthop1},
       true, // isReachable
       100)); // igpCost
   ebgpRouteInfo->setNexthopInfo(&reachableNexthopInfo);
@@ -1658,14 +1658,14 @@ TEST(RibEntryTest, HasIgpCostTest) {
 
   // Source reachability alone does not provide an IGP cost.
   NexthopInfo reachableWithoutCost(
-      NexthopStatus(kV4Nexthop1, true, std::nullopt));
+      NexthopStatus({.ip = kV4Nexthop1}, true, std::nullopt));
   ebgpRouteInfo->setNexthopInfo(&reachableWithoutCost);
   EXPECT_TRUE(ebgpRouteInfo->isNexthopReachable());
   EXPECT_FALSE(ebgpRouteInfo->hasIgpCost());
 
   // Set up an unreachable nexthop (no IGP cost)
   NexthopInfo unreachableNexthopInfo(NexthopStatus(
-      kV4Nexthop1,
+      {.ip = kV4Nexthop1},
       false, // isReachable
       std::nullopt)); // igpCost
   ebgpRouteInfo->setNexthopInfo(&unreachableNexthopInfo);

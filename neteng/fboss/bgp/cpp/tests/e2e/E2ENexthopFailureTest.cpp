@@ -63,13 +63,15 @@ class E2ENexthopFailureTest : public E2ETestFixture {
 
   void markNexthopReachable(const std::string& nexthop, uint32_t igpCost) {
     std::vector<NexthopStatus> statuses;
-    statuses.emplace_back(folly::IPAddress(nexthop), true, igpCost);
+    statuses.emplace_back(
+        NexthopKey{.ip = folly::IPAddress(nexthop)}, true, igpCost);
     injectNexthopStatuses(statuses);
   }
 
   void markNexthopUnreachable(const std::string& nexthop) {
     std::vector<NexthopStatus> statuses;
-    statuses.emplace_back(folly::IPAddress(nexthop), false, std::nullopt);
+    statuses.emplace_back(
+        NexthopKey{.ip = folly::IPAddress(nexthop)}, false, std::nullopt);
     injectNexthopStatuses(statuses);
   }
 };

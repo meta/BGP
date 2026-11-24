@@ -70,9 +70,10 @@ TEST_F(E2ENexthopTrackingTest, RibInWithdrawalWithNexthopTrackingE2E) {
   bringUpPeer(kPeerAddr5);
 
   std::vector<NexthopStatus> nexthopStatusList;
-  nexthopStatusList.emplace_back(kPeerAddr3, false /* unreachable */);
   nexthopStatusList.emplace_back(
-      kPeerAddr4, true /* reachable */, 100 /* igpCost */);
+      NexthopKey{.ip = kPeerAddr3}, false /* unreachable */);
+  nexthopStatusList.emplace_back(
+      NexthopKey{.ip = kPeerAddr4}, true /* reachable */, 100 /* igpCost */);
 
   // Inject nexthop statuses into RIB
   injectNexthopStatuses(nexthopStatusList);

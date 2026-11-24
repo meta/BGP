@@ -17,9 +17,12 @@
 #pragma once
 
 #include <folly/IPAddress.h>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <tuple>
+
+#include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopKey.h"
 #include "openr/if/gen-cpp2/Network_types.h"
 #include "openr/if/gen-cpp2/Platform_types.h"
 
@@ -27,13 +30,13 @@ namespace facebook::bgp {
 
 /**
  * @class NexthopStatus
- * @brief Class to store and manage the nexthop IP address and its IGP cost.
+ * @brief Class to store a nexthop resolution key and its reachability metadata.
  */
 class NexthopStatus {
  public:
   /**
    * @brief Constructor for NexthopStatus
-   * @param nexthop The IP address of the nexthop
+   * @param nexthop The address and resolution VRF of the nexthop
    * @param isReachable Whether the nexthop is reachable
    * @param igpCost Optional IGP cost to reach the nexthop. If IgpCost is unset,
    * the value is considered as INT_MAX by BGP++
@@ -50,7 +53,7 @@ class NexthopStatus {
    * See getIfName().
    */
   explicit NexthopStatus(
-      const folly::IPAddress& nexthop,
+      const NexthopKey& nexthop,
       bool isReachable,
       std::optional<uint32_t> igpCost = std::nullopt,
       std::optional<bool> isConnected = std::nullopt,
@@ -65,7 +68,7 @@ class NexthopStatus {
 
   /**
    * @brief Constructor for NexthopStatus from openr::thrift::NextHopStatus
-   * @param nexthop The IP address of the nexthop
+   * @param nexthop The address and resolution VRF of the nexthop
    * @param thriftStatus The thrift NextHopStatus to convert from
    * @param isConnected whether the nexthop is directly connected or not. If
    * isConnected is unset, then it is considered as unknown.
@@ -76,7 +79,7 @@ class NexthopStatus {
    * isResolvedForSelection().
    */
   explicit NexthopStatus(
-      const folly::IPAddress& nexthop,
+      const NexthopKey& nexthop,
       const openr::thrift::NextHopStatus& thriftStatus,
       std::optional<bool> isConnected = std::nullopt,
       bool excludeNexthopWithoutCost = true)
@@ -89,12 +92,16 @@ class NexthopStatus {
     igpCost_ = isReachable ? igpCost : std::nullopt;
   }
 
+  const NexthopKey& getNexthopKey() const {
+    return nexthop_;
+  }
+
   /**
    * @brief Get the nexthop IP address
    * @return The nexthop IP address
    */
   const folly::IPAddress& getNexthop() const {
-    return nexthop_;
+    return nexthop_.ip;
   }
 
   /**
@@ -163,8 +170,7 @@ class NexthopStatus {
  private:
   friend class NexthopCache;
 
-  // v4 or v6 nexthop prefix
-  folly::IPAddress nexthop_;
+  NexthopKey nexthop_;
 
   /*
    * Whether the nexthop source reports the nexthop as reachable.
@@ -210,11 +216,7 @@ class NexthopStatus {
   uint64_t epoch_{0};
 };
 
-/**
- * @brief A tuple containing a NexthopStatus and a flag indicating if it's
- * registered from RIB This allows tracking both the nexthop status and its
- * registration state separately
- */
+/* Registration is independent for each nexthop resolution key. */
 using NexthopStatusWithRegistration = std::tuple<NexthopStatus, bool>;
 
 } // namespace facebook::bgp

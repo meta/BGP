@@ -621,7 +621,7 @@ CO_TEST_F(
   nexthopCache_->registerAndGetNexthopStatus(nexthopIp);
 
   std::vector<NexthopStatus> updates = {
-      NexthopStatus(nexthopIp, /*isReachable=*/true, /*igpCost=*/10u)};
+      NexthopStatus({.ip = nexthopIp}, /*isReachable=*/true, /*igpCost=*/10u)};
 
   EXPECT_EQ(ribInQ_.size(), 0);
 

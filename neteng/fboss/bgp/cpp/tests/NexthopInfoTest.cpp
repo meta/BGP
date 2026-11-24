@@ -29,7 +29,8 @@ class NexthopInfoTest : public ::testing::Test {
   void SetUp() override {
     // Create a NexthopStatus with a known IGP cost
     folly::IPAddress nexthopIp("2620:0:1cff:dead:bef1:ffff:ffff:1");
-    nexthopStatus_ = std::make_unique<NexthopStatus>(nexthopIp, true, 100);
+    nexthopStatus_ =
+        std::make_unique<NexthopStatus>(NexthopKey{.ip = nexthopIp}, true, 100);
 
     // Create a NexthopInfo with the nexthop status
     nexthopInfo_ = std::make_unique<NexthopInfo>(*nexthopStatus_);
@@ -158,7 +159,7 @@ TEST_F(NexthopInfoTest, MoveConstructionPreservesAssociation) {
   NexthopInfo movedNexthopInfo(std::move(*nexthopInfo_));
   nexthopInfo_.reset();
   movedNexthopInfo.updateStatus(
-      NexthopStatus(nexthopStatus_->getNexthop(), true, 200));
+      NexthopStatus({.ip = nexthopStatus_->getNexthop()}, true, 200));
 
   EXPECT_TRUE(routeInfo->isOnNextHopList());
   EXPECT_EQ(routeInfo->getIgpCostValue(), 200);
@@ -178,13 +179,13 @@ TEST_F(NexthopInfoTest, IsResolvedForSelection) {
 
   // Reachable with an IGP cost: resolved regardless of policy.
   const NexthopStatus reachableWithCost(
-      nh, /*isReachable=*/true, /*igpCost=*/10);
+      {.ip = nh}, /*isReachable=*/true, /*igpCost=*/10);
   EXPECT_TRUE(reachableWithCost.isReachable());
   EXPECT_TRUE(reachableWithCost.isResolvedForSelection());
 
   // EBB reports the source reachability but requires a cost for selection.
   const NexthopStatus ebbNoCost(
-      nh,
+      {.ip = nh},
       /*isReachable=*/true,
       /*igpCost=*/std::nullopt,
       /*isConnected=*/std::nullopt,
@@ -195,7 +196,7 @@ TEST_F(NexthopInfoTest, IsResolvedForSelection) {
 
   // FBOSS reports the same reachability and allows selection without a cost.
   const NexthopStatus fbossNoCost(
-      nh,
+      {.ip = nh},
       /*isReachable=*/true,
       /*igpCost=*/std::nullopt,
       /*isConnected=*/std::nullopt,
@@ -206,7 +207,7 @@ TEST_F(NexthopInfoTest, IsResolvedForSelection) {
 
   // Unreachable: excluded under either policy.
   const NexthopStatus unreachable(
-      nh,
+      {.ip = nh},
       /*isReachable=*/false,
       /*igpCost=*/std::nullopt,
       /*isConnected=*/std::nullopt,
@@ -237,7 +238,7 @@ TEST_F(NexthopInfoTest, RouteInfoReachabilityAndResolutionFromNexthop) {
 
   // A reachable FBOSS nexthop does not require a cost for selection.
   const NexthopStatus fbossNoCost(
-      nh,
+      {.ip = nh},
       /*isReachable=*/true,
       /*igpCost=*/std::nullopt,
       /*isConnected=*/std::nullopt,
@@ -251,7 +252,7 @@ TEST_F(NexthopInfoTest, RouteInfoReachabilityAndResolutionFromNexthop) {
 
   // Reachable-no-cost EBB nexthop: excluded from selection.
   const NexthopStatus ebbNoCost(
-      nh,
+      {.ip = nh},
       /*isReachable=*/true,
       /*igpCost=*/std::nullopt,
       /*isConnected=*/std::nullopt,
@@ -264,7 +265,7 @@ TEST_F(NexthopInfoTest, RouteInfoReachabilityAndResolutionFromNexthop) {
   ebbInfo.unlinkRouteInfo(*routeInfo);
 
   const NexthopStatus unreachable(
-      nh, /*isReachable=*/false, /*igpCost=*/std::nullopt);
+      {.ip = nh}, /*isReachable=*/false, /*igpCost=*/std::nullopt);
   NexthopInfo unreachableInfo(unreachable);
   unreachableInfo.linkRouteInfo(*routeInfo);
   EXPECT_FALSE(routeInfo->isNexthopReachable());

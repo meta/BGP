@@ -496,7 +496,7 @@ void emitReachabilityUpdate(
       FsdbStatsDC::incrFsdbNhtNexthopReachable();
     }
     batchUpdates.emplace_back(
-        peerAddr,
+        NexthopKey{.ip = peerAddr, .nextHopVrfId = fboss::kDefaultVrf},
         /*isReachable=*/true,
         igpCost,
         /*isConnected=*/std::nullopt,
@@ -515,7 +515,7 @@ void emitReachabilityUpdate(
       FsdbStatsDC::incrFsdbNhtNexthopUnreachable();
     }
     batchUpdates.emplace_back(
-        peerAddr,
+        NexthopKey{.ip = peerAddr, .nextHopVrfId = fboss::kDefaultVrf},
         /*isReachable=*/false,
         /*igpCost=*/std::nullopt,
         /*isConnected=*/std::nullopt,

@@ -201,8 +201,8 @@ TEST_F(E2ERouteInfoSelectorIgpCostTest, LowestIgpCostWins) {
   bringUpAllPeers();
 
   injectNexthopStatuses({
-      NexthopStatus(folly::IPAddress("11.0.0.1"), true, 10),
-      NexthopStatus(folly::IPAddress("11.0.0.2"), true, 1),
+      NexthopStatus({.ip = folly::IPAddress("11.0.0.1")}, true, 10),
+      NexthopStatus({.ip = folly::IPAddress("11.0.0.2")}, true, 1),
   });
 
   addRoute("v4", "10.0.0.0", 8, kPeerAddr3, "11.0.0.1", "65001");
@@ -220,9 +220,9 @@ TEST_F(E2ERouteInfoSelectorIgpCostTest, RealCostBeatsMaxCost) {
   bringUpAllPeers();
 
   injectNexthopStatuses({
-      NexthopStatus(folly::IPAddress("11.0.0.1"), true, 10),
+      NexthopStatus({.ip = folly::IPAddress("11.0.0.1")}, true, 10),
       NexthopStatus(
-          folly::IPAddress("11.0.0.2"),
+          {.ip = folly::IPAddress("11.0.0.2")},
           true,
           std::numeric_limits<uint32_t>::max()),
   });
@@ -242,8 +242,8 @@ TEST_F(E2ERouteInfoSelectorIgpCostTest, UnreachableNexthopNotSelected) {
   bringUpAllPeers();
 
   injectNexthopStatuses({
-      NexthopStatus(folly::IPAddress("11.0.0.1"), false, 1),
-      NexthopStatus(folly::IPAddress("11.0.0.2"), true, 100),
+      NexthopStatus({.ip = folly::IPAddress("11.0.0.1")}, false, 1),
+      NexthopStatus({.ip = folly::IPAddress("11.0.0.2")}, true, 100),
   });
 
   addRoute("v4", "10.0.0.0", 8, kPeerAddr3, "11.0.0.1", "65001");

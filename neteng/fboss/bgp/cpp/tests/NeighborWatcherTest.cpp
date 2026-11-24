@@ -1335,11 +1335,11 @@ TYPED_TEST(
   portSetReachable.state() = fboss::state::NeighborState::Reachable;
   nbrTable["10.0.0.3"] = portSetReachable;
 
-  folly::F14FastSet<folly::IPAddress> resolvedIps;
+  folly::F14FastSet<NexthopKey, NexthopKey::Hash> resolvedIps;
   FsdbNeighborWatcher::collectResolvedIpsFromTable(nbrTable, resolvedIps);
 
-  const folly::F14FastSet<folly::IPAddress> expected{
-      folly::IPAddress("10.0.0.3")};
+  const folly::F14FastSet<NexthopKey, NexthopKey::Hash> expected{
+      NexthopKey{.ip = folly::IPAddress("10.0.0.3")}};
   EXPECT_EQ(expected, resolvedIps);
 
   /*

@@ -15,6 +15,7 @@
  */
 
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopCache.h"
+#include "fboss/agent/Constants.h"
 
 #include <vector>
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
@@ -206,8 +207,9 @@ NexthopStatus NexthopCache::registerAndGetNexthopStatus(
             nexthopIp.str());
 
         // Create a default NexthopStatus (unreachable, no IGP cost)
-        const auto defaultStatus =
-            withNextEpoch(NexthopStatus(nexthopIp, false));
+        const auto defaultStatus = withNextEpoch(NexthopStatus(
+            NexthopKey{.ip = nexthopIp, .nextHopVrfId = fboss::kDefaultVrf},
+            /*isReachable=*/false));
 
         // Insert the new entry with registration flag set to true
         statusMap.emplace(nexthopIp, std::make_tuple(defaultStatus, true));
@@ -298,7 +300,10 @@ std::optional<NexthopStatus> NexthopCache::clearConnectedStatus(
          * (e.g. FsdbFibWatcher) can take over authority again.
          */
         status = withNextEpoch(NexthopStatus(
-            nexthopIp, /*isReachable*/ false, std::nullopt, std::nullopt));
+            NexthopKey{.ip = nexthopIp, .nextHopVrfId = fboss::kDefaultVrf},
+            /*isReachable=*/false,
+            std::nullopt,
+            std::nullopt));
         if (wasReachable) {
           RibStats::incrNhtCacheNexthopUnreachable();
         }

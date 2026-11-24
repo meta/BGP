@@ -262,7 +262,7 @@ TEST_F(NexthopHandlerTestFixture, TestStreamNextHopStatus) {
   // Verify that the nexthop cache was updated with the status from the stream
   WITH_RETRIES_N(5, {
     for (const auto& nexthop : nexthops) {
-      auto status = nexthopCache_->registerAndGetNexthopStatus(nexthop);
+      auto status = nexthopCache_->registerAndGetNexthopStatus({nexthop});
 
       EXPECT_EVENTUALLY_EQ(status.isReachable(), isReachable);
 
@@ -340,7 +340,7 @@ TEST_F(NexthopHandlerTestFixture, TestStreamNextHopStatusUpdate) {
   // Wait for the nexthop cache to be updated with the initial status
   WITH_RETRIES_N(5, {
     for (size_t i = 0; i < nexthops.size(); i++) {
-      auto status = nexthopCache_->registerAndGetNexthopStatus(nexthops[i]);
+      auto status = nexthopCache_->registerAndGetNexthopStatus({nexthops[i]});
 
       EXPECT_EVENTUALLY_EQ(status.isReachable(), initialReachability[i]);
 
@@ -362,7 +362,7 @@ TEST_F(NexthopHandlerTestFixture, TestStreamNextHopStatusUpdate) {
   // Wait for the nexthop cache to be updated with the final status
   WITH_RETRIES_N(5, {
     for (size_t i = 0; i < nexthops.size(); i++) {
-      auto status = nexthopCache_->registerAndGetNexthopStatus(nexthops[i]);
+      auto status = nexthopCache_->registerAndGetNexthopStatus({nexthops[i]});
 
       EXPECT_EVENTUALLY_EQ(status.isReachable(), updatedReachability[i]);
 
@@ -425,7 +425,7 @@ TEST_F(NexthopHandlerTestFixture, TestDuplicateResponses) {
   // Verify that the nexthop cache only contains one entry for the nexthop
   WITH_RETRIES_N(5, {
     // Check that the nexthop status is in the cache
-    auto status = nexthopCache_->registerAndGetNexthopStatus(nexthop);
+    auto status = nexthopCache_->registerAndGetNexthopStatus({nexthop});
     EXPECT_EVENTUALLY_EQ(status.isReachable(), isReachable);
 
     if (!status.getIgpCost().has_value()) {
@@ -446,7 +446,7 @@ TEST_F(NexthopHandlerTestFixture, TestDuplicateResponses) {
 
   WITH_RETRIES_N(5, {
     // Verify that the entry was updated, not duplicated
-    auto updatedStatus = nexthopCache_->registerAndGetNexthopStatus(nexthop);
+    auto updatedStatus = nexthopCache_->registerAndGetNexthopStatus({nexthop});
     EXPECT_EVENTUALLY_EQ(updatedStatus.isReachable(), isReachable);
 
     if (!updatedStatus.getIgpCost().has_value()) {
@@ -462,7 +462,7 @@ TEST_F(NexthopHandlerTestFixture, TestDuplicateResponses) {
   folly::IPAddress nonExistentNexhop("2620:0:1cff:dead:bef1:ffff:ffff:9999");
   WITH_RETRIES_N(5, {
     auto nonExistentStatus =
-        nexthopCache_->registerAndGetNexthopStatus(nonExistentNexhop);
+        nexthopCache_->registerAndGetNexthopStatus({nonExistentNexhop});
     /*
      * Since registerAndGetNexthopStatus now creates a new entry with default
      * values, we expect it to be unreachable with no IGP cost
@@ -561,7 +561,7 @@ TEST_F(NexthopHandlerTestFixture, TestStreamErrorOrEmptyResponseRecovery) {
    */
   WITH_RETRIES_N(10, {
     for (const auto& nexthop : nexthops) {
-      auto status = nexthopCache_->registerAndGetNexthopStatus(nexthop);
+      auto status = nexthopCache_->registerAndGetNexthopStatus({nexthop});
       EXPECT_EVENTUALLY_EQ(status.isReachable(), isReachable);
     }
   });
@@ -587,7 +587,7 @@ TEST_F(NexthopHandlerTestFixture, TestStreamErrorOrEmptyResponseRecovery) {
   // Verify that the cache gets updated with the new data after reconnection
   WITH_RETRIES_N(10, {
     for (const auto& nexthop : nexthops) {
-      auto status = nexthopCache_->registerAndGetNexthopStatus(nexthop);
+      auto status = nexthopCache_->registerAndGetNexthopStatus({nexthop});
 
       EXPECT_EVENTUALLY_EQ(status.isReachable(), isReachable);
 
@@ -618,7 +618,7 @@ CO_TEST_F(
   folly::IPAddress nexthopIp("2620:0:1cff:dead:bef1:ffff:ffff:1");
 
   /* Register nexthop from RIB side so cache treats changes as pushable */
-  nexthopCache_->registerAndGetNexthopStatus(nexthopIp);
+  nexthopCache_->registerAndGetNexthopStatus({nexthopIp});
 
   std::vector<NexthopStatus> updates = {
       NexthopStatus({.ip = nexthopIp}, /*isReachable=*/true, /*igpCost=*/10u)};

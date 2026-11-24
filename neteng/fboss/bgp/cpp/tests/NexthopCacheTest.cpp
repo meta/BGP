@@ -27,6 +27,7 @@
 #include "neteng/fboss/bgp/cpp/common/RibMessage.h"
 #include "neteng/fboss/bgp/cpp/lib/coro/BackPressuredQueue.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopCache.h"
+
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopKey.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/NexthopStatus.h"
 #include "neteng/fboss/bgp/cpp/nexthopTracker/Utils.h"
@@ -116,7 +117,7 @@ TEST_F(NexthopCacheTestFixture, DefaultParameterValues) {
    * Verify the nexthop was added with default values (igpCost = std::nullopt)
    * Since the nexthop is unreachable, igpCost should be std::nullopt
    */
-  auto status = cache_->registerAndGetNexthopStatus(nexthopIp);
+  auto status = cache_->registerAndGetNexthopStatus({nexthopIp});
   EXPECT_FALSE(status.isReachable());
   EXPECT_FALSE(status.getIgpCost().has_value());
   // Verify isConnected is false for FIB agent nexthops
@@ -128,7 +129,7 @@ TEST_F(NexthopCacheTestFixture, DefaultParameterValues) {
    */
   folly::IPAddress nonExistentNexhop("2620:0:1cff:dead:bef1:ffff:ffff:2");
   auto nonExistentStatus =
-      cache_->registerAndGetNexthopStatus(nonExistentNexhop);
+      cache_->registerAndGetNexthopStatus({nonExistentNexhop});
   EXPECT_FALSE(nonExistentStatus.isReachable());
   EXPECT_FALSE(nonExistentStatus.getIgpCost().has_value());
   // Verify default isConnected is UNKNOWN for new nexthops
@@ -165,7 +166,7 @@ TEST_F(NexthopCacheTestFixture, AddOrUpdateNexthopStatus) {
       convertFibAgentStatusToNexthopStatus(fibAgentStatusMap));
 
   // Step 3: Register and get the nexthop status
-  auto status = cache_->registerAndGetNexthopStatus(nexthopIp);
+  auto status = cache_->registerAndGetNexthopStatus({nexthopIp});
 
   // Verify the status values
   EXPECT_TRUE(status.isReachable());
@@ -220,7 +221,7 @@ TEST_F(NexthopCacheTestFixture, AddOrUpdateNexthopStatus) {
    * from RIB) Since it doesn't exist in the cache yet, it will create a new
    * entry
    */
-  auto newStatus = cache_->registerAndGetNexthopStatus(newNexthopIp);
+  auto newStatus = cache_->registerAndGetNexthopStatus({newNexthopIp});
   EXPECT_FALSE(newStatus.isReachable());
 
   // Step 10: Create thrift NextHopStatus for reachable nexthop with IGP cost
@@ -264,7 +265,7 @@ TEST_F(NexthopCacheTestFixture, AddOrUpdateNexthopStatus) {
 
 TEST_F(NexthopCacheTestFixture, ReachableWithoutCostUpdatesCacheAndRib) {
   const folly::IPAddress nexthopIp("2620:0:1cff:dead:bef1:ffff:ffff:101");
-  cache_->registerAndGetNexthopStatus(nexthopIp);
+  cache_->registerAndGetNexthopStatus({nexthopIp});
 
   const NexthopStatus ebbStatus(
       {.ip = nexthopIp},
@@ -294,12 +295,12 @@ TEST_F(NexthopCacheTestFixture, RetainsReachableStatusWithoutCost) {
   const folly::IPAddress nexthopIp("2620:0:1cff:dead:bef1:ffff:ffff:102");
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = nexthopIp}, true, std::nullopt)});
-  cache_->registerAndGetNexthopStatus(nexthopIp);
+  cache_->registerAndGetNexthopStatus({nexthopIp});
 
-  EXPECT_FALSE(cache_->unregisterAndRemoveNexthopStatus(nexthopIp));
-  EXPECT_FALSE(cache_->isRegistered(nexthopIp));
+  EXPECT_FALSE(cache_->unregisterAndRemoveNexthopStatus({nexthopIp}));
+  EXPECT_FALSE(cache_->isRegistered({nexthopIp}));
 
-  const auto status = cache_->registerAndGetNexthopStatus(nexthopIp);
+  const auto status = cache_->registerAndGetNexthopStatus({nexthopIp});
   EXPECT_TRUE(status.isReachable());
   EXPECT_FALSE(status.getIgpCost().has_value());
 }
@@ -338,12 +339,12 @@ TEST_F(NexthopCacheTestFixture, AddOrUpdateMultipleNexthopsWithMap) {
   cache_->addOrUpdateNextHopStatus(nexthopStatusList3);
 
   // Verify the current state of the nexthops
-  auto status1 = cache_->registerAndGetNexthopStatus(nexthopIp1);
+  auto status1 = cache_->registerAndGetNexthopStatus({nexthopIp1});
   EXPECT_TRUE(status1.isReachable());
   EXPECT_EQ(status1.getIgpCost().value(), 10);
   EXPECT_THAT(status1.isConnected(), Eq(false));
 
-  auto status2 = cache_->registerAndGetNexthopStatus(nexthopIp2);
+  auto status2 = cache_->registerAndGetNexthopStatus({nexthopIp2});
   EXPECT_FALSE(status2.isReachable());
   EXPECT_FALSE(status2.getIgpCost().has_value());
   EXPECT_THAT(status2.isConnected(), Eq(false));
@@ -365,12 +366,12 @@ TEST_F(NexthopCacheTestFixture, AddOrUpdateMultipleNexthopsWithMap) {
   cache_->addOrUpdateNextHopStatus(updateStatusList2);
 
   // Verify the updated state of the nexthops
-  auto status1Update = cache_->registerAndGetNexthopStatus(nexthopIp1);
+  auto status1Update = cache_->registerAndGetNexthopStatus({nexthopIp1});
   EXPECT_FALSE(status1Update.isReachable());
   EXPECT_FALSE(status1Update.getIgpCost().has_value());
   EXPECT_THAT(status1Update.isConnected(), Eq(false));
 
-  auto status2Update = cache_->registerAndGetNexthopStatus(nexthopIp2);
+  auto status2Update = cache_->registerAndGetNexthopStatus({nexthopIp2});
   EXPECT_TRUE(status2Update.isReachable());
   EXPECT_EQ(status2Update.getIgpCost().value(), 25);
   EXPECT_THAT(status2Update.isConnected(), Eq(false));
@@ -410,9 +411,9 @@ TEST_F(NexthopCacheTestFixture, UnregisterAndRemoveNexthopStatus) {
 
   // Register the nexthops
   auto reachableNexhopStatus =
-      cache_->registerAndGetNexthopStatus(reachableNexhop);
+      cache_->registerAndGetNexthopStatus({reachableNexhop});
   auto unreachableNexhopStatus =
-      cache_->registerAndGetNexthopStatus(unreachableNexhop);
+      cache_->registerAndGetNexthopStatus({unreachableNexhop});
 
   // Verify the nexthops were added correctly
   EXPECT_TRUE(reachableNexhopStatus.isReachable());
@@ -422,29 +423,30 @@ TEST_F(NexthopCacheTestFixture, UnregisterAndRemoveNexthopStatus) {
    * Test 1: Try to remove a reachable nexthop - should not remove it but
    * unregister it
    */
-  EXPECT_FALSE(cache_->unregisterAndRemoveNexthopStatus(reachableNexhop));
+  EXPECT_FALSE(cache_->unregisterAndRemoveNexthopStatus({reachableNexhop}));
 
   // Verify the reachable nexthop is still in the cache
-  auto reachableStatus1 = cache_->registerAndGetNexthopStatus(reachableNexhop);
+  auto reachableStatus1 =
+      cache_->registerAndGetNexthopStatus({reachableNexhop});
   EXPECT_TRUE(reachableStatus1.isReachable());
   EXPECT_EQ(reachableStatus1.getIgpCost().value(), 10);
   EXPECT_THAT(reachableStatus1.isConnected(), Eq(false));
 
   // Test 2: Remove an unreachable nexthop - should succeed
-  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus(unreachableNexhop));
+  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus({unreachableNexhop}));
 
   /*
    * Verify the unreachable nexthop was removed from the cache by creating a new
    * entry with default values
    */
   auto newUnreachableStatus =
-      cache_->registerAndGetNexthopStatus(unreachableNexhop);
+      cache_->registerAndGetNexthopStatus({unreachableNexhop});
   EXPECT_FALSE(newUnreachableStatus.isReachable());
   EXPECT_FALSE(newUnreachableStatus.getIgpCost().has_value());
   EXPECT_THAT(newUnreachableStatus.isConnected(), Eq(std::nullopt));
 
   // Test 3: Try to remove a non-existent nexthop - should fail
-  EXPECT_FALSE(cache_->unregisterAndRemoveNexthopStatus(nonExistentNexhop));
+  EXPECT_FALSE(cache_->unregisterAndRemoveNexthopStatus({nonExistentNexhop}));
 
   // Test 4: Update a reachable nexthop to unreachable, then remove it
   std::map<std::string, openr::thrift::NextHopStatus> updateMap;
@@ -457,17 +459,17 @@ TEST_F(NexthopCacheTestFixture, UnregisterAndRemoveNexthopStatus) {
       convertFibAgentStatusToNexthopStatus(updateMap));
 
   // Verify the nexthop was updated to unreachable
-  auto updatedStatus1 = cache_->registerAndGetNexthopStatus(reachableNexhop);
+  auto updatedStatus1 = cache_->registerAndGetNexthopStatus({reachableNexhop});
   EXPECT_FALSE(updatedStatus1.isReachable());
 
   // Now remove the nexthop - should succeed since it's unreachable
-  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus(reachableNexhop));
+  EXPECT_TRUE(cache_->unregisterAndRemoveNexthopStatus({reachableNexhop}));
 
   /*
    * Verify the nexthop was removed from the cache and a new entry is created
    * with default values
    */
-  auto newStatus = cache_->registerAndGetNexthopStatus(reachableNexhop);
+  auto newStatus = cache_->registerAndGetNexthopStatus({reachableNexhop});
   EXPECT_FALSE(newStatus.isReachable());
   EXPECT_FALSE(newStatus.getIgpCost().has_value());
   EXPECT_THAT(newStatus.isConnected(), Eq(std::nullopt));
@@ -487,7 +489,7 @@ TEST_F(NexthopCacheTestFixture, NhtCacheReachabilityCounters) {
   // Add unreachable nexthop, then register from RIB
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = nexthopIp}, /*isReachable=*/false)});
-  cache_->registerAndGetNexthopStatus(nexthopIp);
+  cache_->registerAndGetNexthopStatus({nexthopIp});
 
   // Source transition: unreachable -> reachable without a cost.
   cache_->addOrUpdateNextHopStatus(
@@ -557,16 +559,16 @@ TEST_F(NexthopCacheTestFixture, NhtCacheReachabilityCounters) {
 TEST_F(NexthopCacheTestFixture, IsRegistered) {
   folly::IPAddress ip("10.0.0.1");
   // Unknown nexthop is not registered.
-  EXPECT_FALSE(cache_->isRegistered(ip));
+  EXPECT_FALSE(cache_->isRegistered({ip}));
 
   // Present (pushed by a watcher) but not yet referenced by the RIB.
   cache_->addOrUpdateNextHopStatus({NexthopStatus(
       {.ip = ip}, /*isReachable*/ true, 1, /*isConnected*/ true)});
-  EXPECT_FALSE(cache_->isRegistered(ip));
+  EXPECT_FALSE(cache_->isRegistered({ip}));
 
   // Registered by the RIB.
-  cache_->registerAndGetNexthopStatus(ip);
-  EXPECT_TRUE(cache_->isRegistered(ip));
+  cache_->registerAndGetNexthopStatus({ip});
+  EXPECT_TRUE(cache_->isRegistered({ip}));
 }
 
 TEST_F(NexthopCacheTestFixture, GetRegisteredNexthopsInSubnet) {
@@ -576,10 +578,10 @@ TEST_F(NexthopCacheTestFixture, GetRegisteredNexthopsInSubnet) {
   folly::IPAddress v6("2401:db00:10::5");
   folly::IPAddress unregisteredInSubnet("10.10.0.99");
 
-  cache_->registerAndGetNexthopStatus(inA);
-  cache_->registerAndGetNexthopStatus(inB);
-  cache_->registerAndGetNexthopStatus(outOfSubnet);
-  cache_->registerAndGetNexthopStatus(v6);
+  cache_->registerAndGetNexthopStatus({inA});
+  cache_->registerAndGetNexthopStatus({inB});
+  cache_->registerAndGetNexthopStatus({outOfSubnet});
+  cache_->registerAndGetNexthopStatus({v6});
   // Present in the subnet but never registered from RIB.
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = unregisteredInSubnet}, true, 1, true)});
@@ -603,8 +605,8 @@ TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
   folly::IPAddress fibIp("10.0.0.1");
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = fibIp}, true, 5, std::nullopt)});
-  EXPECT_FALSE(cache_->clearConnectedStatus(fibIp).has_value());
-  EXPECT_TRUE(cache_->registerAndGetNexthopStatus(fibIp).isReachable());
+  EXPECT_FALSE(cache_->clearConnectedStatus({fibIp}).has_value());
+  EXPECT_TRUE(cache_->registerAndGetNexthopStatus({fibIp}).isReachable());
 
   /*
    * Connected + registered -> reset to unreachable with isConnected unset, and
@@ -613,8 +615,8 @@ TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
   folly::IPAddress connIp("10.0.0.2");
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = connIp}, true, 1, true)});
-  cache_->registerAndGetNexthopStatus(connIp);
-  auto cleared = cache_->clearConnectedStatus(connIp);
+  cache_->registerAndGetNexthopStatus({connIp});
+  auto cleared = cache_->clearConnectedStatus({connIp});
   ASSERT_TRUE(cleared.has_value());
   EXPECT_FALSE(cleared->isReachable());
   EXPECT_THAT(cleared->isConnected(), Eq(std::nullopt));
@@ -625,7 +627,7 @@ TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
    */
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = connIp}, true, 7, std::nullopt)});
-  auto after = cache_->registerAndGetNexthopStatus(connIp);
+  auto after = cache_->registerAndGetNexthopStatus({connIp});
   EXPECT_TRUE(after.isReachable());
   EXPECT_EQ(after.getIgpCost().value(), 7);
 
@@ -636,11 +638,11 @@ TEST_F(NexthopCacheTestFixture, ClearConnectedStatus) {
   folly::IPAddress connUnreg("10.0.0.3");
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = connUnreg}, true, 1, true)});
-  EXPECT_FALSE(cache_->clearConnectedStatus(connUnreg).has_value());
+  EXPECT_FALSE(cache_->clearConnectedStatus({connUnreg}).has_value());
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = connUnreg}, true, 9, std::nullopt)});
   EXPECT_EQ(
-      cache_->registerAndGetNexthopStatus(connUnreg).getIgpCost().value(), 9);
+      cache_->registerAndGetNexthopStatus({connUnreg}).getIgpCost().value(), 9);
 }
 
 TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
@@ -650,7 +652,7 @@ TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
 
   // Registering an unknown nexthop (default unreachable) fires the hook.
   folly::IPAddress unknownIp("10.0.0.1");
-  cache_->registerAndGetNexthopStatus(unknownIp);
+  cache_->registerAndGetNexthopStatus({unknownIp});
   ASSERT_EQ(fired.size(), 1);
   EXPECT_EQ(fired[0], unknownIp);
 
@@ -661,14 +663,14 @@ TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
   folly::IPAddress reachableIp("10.0.0.2");
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = reachableIp}, true, 1, true)});
-  cache_->registerAndGetNexthopStatus(reachableIp);
+  cache_->registerAndGetNexthopStatus({reachableIp});
   EXPECT_EQ(fired.size(), 1);
 
   // EBB still needs a cost, so registration requests resolution.
   folly::IPAddress ebbNoCostIp("10.0.0.3");
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = ebbNoCostIp}, true, std::nullopt)});
-  cache_->registerAndGetNexthopStatus(ebbNoCostIp);
+  cache_->registerAndGetNexthopStatus({ebbNoCostIp});
   ASSERT_EQ(fired.size(), 2);
   EXPECT_EQ(fired[1], ebbNoCostIp);
 
@@ -680,7 +682,7 @@ TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
       std::nullopt,
       std::nullopt,
       /*excludeNexthopWithoutCost=*/false)});
-  cache_->registerAndGetNexthopStatus(fbossNoCostIp);
+  cache_->registerAndGetNexthopStatus({fbossNoCostIp});
   ASSERT_EQ(fired.size(), 3);
   EXPECT_EQ(fired[2], fbossNoCostIp);
 
@@ -688,7 +690,7 @@ TEST_F(NexthopCacheTestFixture, OnNexthopRegisteredHook) {
   folly::IPAddress unreachableIp("10.0.0.5");
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = unreachableIp}, false)});
-  cache_->registerAndGetNexthopStatus(unreachableIp);
+  cache_->registerAndGetNexthopStatus({unreachableIp});
   ASSERT_EQ(fired.size(), 4);
   EXPECT_EQ(fired[3], unreachableIp);
 }
@@ -706,9 +708,9 @@ TEST_F(NexthopCacheTestFixture, EpochIncreasesOnEveryWrite) {
   const folly::IPAddress b("10.0.0.2");
 
   cache_->addOrUpdateNextHopStatus({NexthopStatus({.ip = a}, true, 10)});
-  const auto epochA = cache_->registerAndGetNexthopStatus(a).getEpoch();
+  const auto epochA = cache_->registerAndGetNexthopStatus({a}).getEpoch();
   cache_->addOrUpdateNextHopStatus({NexthopStatus({.ip = b}, true, 10)});
-  const auto epochB = cache_->getNexthopStatus(b).value().getEpoch();
+  const auto epochB = cache_->getNexthopStatus({b}).value().getEpoch();
   const auto pushed =
       cache_->addOrUpdateNextHopStatus({NexthopStatus({.ip = a}, true, 20)});
 
@@ -718,7 +720,7 @@ TEST_F(NexthopCacheTestFixture, EpochIncreasesOnEveryWrite) {
   EXPECT_GT(pushed.front().getEpoch(), epochB);
   EXPECT_EQ(
       pushed.front().getEpoch(),
-      cache_->getNexthopStatus(a).value().getEpoch());
+      cache_->getNexthopStatus({a}).value().getEpoch());
 }
 
 /*
@@ -729,7 +731,8 @@ TEST_F(NexthopCacheTestFixture, EpochUnchangedWithoutWrite) {
   const folly::IPAddress connected("10.0.0.3");
   cache_->addOrUpdateNextHopStatus(
       {NexthopStatus({.ip = connected}, true, 1, true)});
-  const auto epoch = cache_->registerAndGetNexthopStatus(connected).getEpoch();
+  const auto epoch =
+      cache_->registerAndGetNexthopStatus({connected}).getEpoch();
 
   EXPECT_TRUE(cache_
                   ->addOrUpdateNextHopStatus(
@@ -739,10 +742,10 @@ TEST_F(NexthopCacheTestFixture, EpochUnchangedWithoutWrite) {
       cache_
           ->addOrUpdateNextHopStatus({NexthopStatus({.ip = connected}, false)})
           .empty());
-  cache_->registerAndGetNexthopStatus(connected);
+  cache_->registerAndGetNexthopStatus({connected});
 
   EXPECT_NE(kNoEpoch, epoch);
-  EXPECT_EQ(epoch, cache_->getNexthopStatus(connected).value().getEpoch());
+  EXPECT_EQ(epoch, cache_->getNexthopStatus({connected}).value().getEpoch());
 }
 
 /*
@@ -751,10 +754,10 @@ TEST_F(NexthopCacheTestFixture, EpochUnchangedWithoutWrite) {
  */
 TEST_F(NexthopCacheTestFixture, RecreatedEntryGetsLargerEpoch) {
   const folly::IPAddress ip("10.0.0.4");
-  const auto oldEpoch = cache_->registerAndGetNexthopStatus(ip).getEpoch();
-  ASSERT_TRUE(cache_->unregisterAndRemoveNexthopStatus(ip));
+  const auto oldEpoch = cache_->registerAndGetNexthopStatus({ip}).getEpoch();
+  ASSERT_TRUE(cache_->unregisterAndRemoveNexthopStatus({ip}));
 
-  const auto newEpoch = cache_->registerAndGetNexthopStatus(ip).getEpoch();
+  const auto newEpoch = cache_->registerAndGetNexthopStatus({ip}).getEpoch();
 
   EXPECT_NE(kNoEpoch, oldEpoch);
   EXPECT_GT(newEpoch, oldEpoch);
@@ -767,14 +770,14 @@ TEST_F(NexthopCacheTestFixture, RecreatedEntryGetsLargerEpoch) {
 TEST_F(NexthopCacheTestFixture, ClearConnectedStatusAdvancesEpoch) {
   const folly::IPAddress ip("10.0.0.5");
   cache_->addOrUpdateNextHopStatus({NexthopStatus({.ip = ip}, true, 1, true)});
-  const auto oldEpoch = cache_->registerAndGetNexthopStatus(ip).getEpoch();
+  const auto oldEpoch = cache_->registerAndGetNexthopStatus({ip}).getEpoch();
 
-  const auto cleared = cache_->clearConnectedStatus(ip);
+  const auto cleared = cache_->clearConnectedStatus({ip});
 
   ASSERT_TRUE(cleared.has_value());
   EXPECT_GT(cleared->getEpoch(), oldEpoch);
   EXPECT_EQ(
-      cleared->getEpoch(), cache_->getNexthopStatus(ip).value().getEpoch());
+      cleared->getEpoch(), cache_->getNexthopStatus({ip}).value().getEpoch());
 }
 
 /*
@@ -786,17 +789,17 @@ TEST_F(NexthopCacheTestFixture, RegisterAndGetReturnsStoredEpoch) {
   const folly::IPAddress existing("10.0.0.7");
   cache_->addOrUpdateNextHopStatus({NexthopStatus({.ip = existing}, true, 10)});
 
-  const auto createdStatus = cache_->registerAndGetNexthopStatus(created);
-  const auto existingStatus = cache_->registerAndGetNexthopStatus(existing);
+  const auto createdStatus = cache_->registerAndGetNexthopStatus({created});
+  const auto existingStatus = cache_->registerAndGetNexthopStatus({existing});
 
   EXPECT_NE(kNoEpoch, createdStatus.getEpoch());
   EXPECT_EQ(
       createdStatus.getEpoch(),
-      cache_->getNexthopStatus(created).value().getEpoch());
+      cache_->getNexthopStatus({created}).value().getEpoch());
   EXPECT_NE(kNoEpoch, existingStatus.getEpoch());
   EXPECT_EQ(
       existingStatus.getEpoch(),
-      cache_->getNexthopStatus(existing).value().getEpoch());
+      cache_->getNexthopStatus({existing}).value().getEpoch());
 }
 
 } // namespace facebook::bgp

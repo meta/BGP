@@ -399,7 +399,7 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileKeepsStillReachableNexthopWithoutChurn) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
   EXPECT_TRUE(
-      nexthopCache_->registerAndGetNexthopStatus(kPeerV4).isReachable());
+      nexthopCache_->registerAndGetNexthopStatus({kPeerV4}).isReachable());
 
   /*
    * Reconnect: arming the reconcile must not touch reachability (the old
@@ -408,7 +408,7 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileKeepsStillReachableNexthopWithoutChurn) {
    */
   co_await watcher->co_markNeedsReconcile();
   EXPECT_TRUE(
-      nexthopCache_->registerAndGetNexthopStatus(kPeerV4).isReachable());
+      nexthopCache_->registerAndGetNexthopStatus({kPeerV4}).isReachable());
 
   // The reconcile snapshot confirms the nexthop is still reachable.
   co_await watcher->co_processFibUpdate(
@@ -420,7 +420,7 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileKeepsStillReachableNexthopWithoutChurn) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
   EXPECT_TRUE(
-      nexthopCache_->registerAndGetNexthopStatus(kPeerV4).isReachable());
+      nexthopCache_->registerAndGetNexthopStatus({kPeerV4}).isReachable());
 }
 
 CO_TEST_F(FsdbFibWatcherTest, ReconcileWithdrawsNexthopGoneWhileDisconnected) {
@@ -455,9 +455,9 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileWithdrawsNexthopGoneWhileDisconnected) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
   EXPECT_TRUE(
-      nexthopCache_->registerAndGetNexthopStatus(kPeerV4).isReachable());
+      nexthopCache_->registerAndGetNexthopStatus({kPeerV4}).isReachable());
   EXPECT_TRUE(
-      nexthopCache_->registerAndGetNexthopStatus(kPeerV6).isReachable());
+      nexthopCache_->registerAndGetNexthopStatus({kPeerV6}).isReachable());
 
   /*
    * Reconnect; the fresh snapshot has only the V4 route (V6 route removed while
@@ -474,9 +474,9 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileWithdrawsNexthopGoneWhileDisconnected) {
           /*streamRevision=*/std::nullopt});
 
   EXPECT_TRUE(
-      nexthopCache_->registerAndGetNexthopStatus(kPeerV4).isReachable());
+      nexthopCache_->registerAndGetNexthopStatus({kPeerV4}).isReachable());
   EXPECT_FALSE(
-      nexthopCache_->registerAndGetNexthopStatus(kPeerV6).isReachable());
+      nexthopCache_->registerAndGetNexthopStatus({kPeerV6}).isReachable());
 }
 
 TEST_F(FsdbFibWatcherTest, StopIsIdempotent) {
@@ -515,7 +515,7 @@ TEST_F(FsdbFibWatcherTest, SourcePriorityConnectedBlocksNonConnected) {
   nexthopCache_->addOrUpdateNextHopStatus(connectedUpdate);
 
   // Register the nexthop in RIB so we can read it back
-  auto status = nexthopCache_->registerAndGetNexthopStatus(ip);
+  auto status = nexthopCache_->registerAndGetNexthopStatus({ip});
   EXPECT_TRUE(status.isReachable());
   EXPECT_EQ(status.getIgpCost(), 1);
   EXPECT_EQ(status.isConnected(), true);
@@ -527,7 +527,7 @@ TEST_F(FsdbFibWatcherTest, SourcePriorityConnectedBlocksNonConnected) {
   nexthopCache_->addOrUpdateNextHopStatus(fibUpdate);
 
   // Should still be reachable — non-connected source was skipped
-  status = nexthopCache_->registerAndGetNexthopStatus(ip);
+  status = nexthopCache_->registerAndGetNexthopStatus({ip});
   EXPECT_TRUE(status.isReachable());
   EXPECT_EQ(status.getIgpCost(), 1);
   EXPECT_EQ(status.isConnected(), true);
@@ -545,7 +545,7 @@ TEST_F(FsdbFibWatcherTest, SourcePriorityConnectedCanOverrideConnected) {
   update1.emplace_back(NexthopKey{.ip = ip}, true, 1, true);
   nexthopCache_->addOrUpdateNextHopStatus(update1);
 
-  auto status = nexthopCache_->registerAndGetNexthopStatus(ip);
+  auto status = nexthopCache_->registerAndGetNexthopStatus({ip});
   EXPECT_TRUE(status.isReachable());
   EXPECT_EQ(status.getIgpCost(), 1);
 
@@ -554,7 +554,7 @@ TEST_F(FsdbFibWatcherTest, SourcePriorityConnectedCanOverrideConnected) {
   update2.emplace_back(NexthopKey{.ip = ip}, false, std::nullopt, true);
   nexthopCache_->addOrUpdateNextHopStatus(update2);
 
-  status = nexthopCache_->registerAndGetNexthopStatus(ip);
+  status = nexthopCache_->registerAndGetNexthopStatus({ip});
   EXPECT_FALSE(status.isReachable());
 }
 
@@ -570,7 +570,7 @@ TEST_F(FsdbFibWatcherTest, NonConnectedSourceCanUpdateNonConnected) {
   update1.emplace_back(NexthopKey{.ip = ip}, true, 5, std::nullopt);
   nexthopCache_->addOrUpdateNextHopStatus(update1);
 
-  auto status = nexthopCache_->registerAndGetNexthopStatus(ip);
+  auto status = nexthopCache_->registerAndGetNexthopStatus({ip});
   EXPECT_TRUE(status.isReachable());
 
   // FIB says unreachable
@@ -578,7 +578,7 @@ TEST_F(FsdbFibWatcherTest, NonConnectedSourceCanUpdateNonConnected) {
   update2.emplace_back(NexthopKey{.ip = ip}, false, std::nullopt, std::nullopt);
   nexthopCache_->addOrUpdateNextHopStatus(update2);
 
-  status = nexthopCache_->registerAndGetNexthopStatus(ip);
+  status = nexthopCache_->registerAndGetNexthopStatus({ip});
   EXPECT_FALSE(status.isReachable());
 }
 
@@ -611,7 +611,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateSingleNexthopWithCost) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status.isReachable());
   EXPECT_EQ(42u, status.getIgpCost());
 }
@@ -640,7 +640,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateMultipleNexthopsMinCost) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status.isReachable());
   EXPECT_EQ(50u, status.getIgpCost());
 }
@@ -669,7 +669,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateNexthopWithoutCost) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status.isReachable());
   EXPECT_EQ(std::nullopt, status.getIgpCost());
   EXPECT_TRUE(status.isResolvedForSelection());
@@ -699,7 +699,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateMixedCostNexthopsV6) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status = nexthopCache_->registerAndGetNexthopStatus(kPeerV6);
+  auto status = nexthopCache_->registerAndGetNexthopStatus({kPeerV6});
   EXPECT_TRUE(status.isReachable());
   EXPECT_EQ(30u, status.getIgpCost());
 }
@@ -728,7 +728,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateBecameUnreachable) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status1 = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status1 = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status1.isReachable());
   EXPECT_EQ(42u, status1.getIgpCost());
 
@@ -742,7 +742,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateBecameUnreachable) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status2 = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status2 = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_FALSE(status2.isReachable());
   EXPECT_EQ(std::nullopt, status2.getIgpCost());
 }
@@ -771,7 +771,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostChangeWhileReachable) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status1 = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status1 = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status1.isReachable());
   EXPECT_EQ(42u, status1.getIgpCost());
 
@@ -785,7 +785,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostChangeWhileReachable) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status2 = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status2 = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status2.isReachable());
   EXPECT_EQ(100u, status2.getIgpCost());
 }
@@ -813,7 +813,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostRemovedWhileReachable) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status1 = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status1 = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status1.isReachable());
   EXPECT_EQ(42u, status1.getIgpCost());
 
@@ -828,7 +828,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostRemovedWhileReachable) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status2 = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status2 = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status2.isReachable());
   EXPECT_EQ(std::nullopt, status2.getIgpCost());
   EXPECT_TRUE(status2.isResolvedForSelection());
@@ -858,7 +858,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateUnreachableCostIsNullopt) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status1 = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status1 = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_TRUE(status1.isReachable());
   EXPECT_EQ(99u, status1.getIgpCost());
 
@@ -872,7 +872,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateUnreachableCostIsNullopt) {
           std::nullopt,
           /*streamRevision=*/std::nullopt});
 
-  auto status2 = nexthopCache_->registerAndGetNexthopStatus(kPeerV4);
+  auto status2 = nexthopCache_->registerAndGetNexthopStatus({kPeerV4});
   EXPECT_FALSE(status2.isReachable());
   EXPECT_EQ(std::nullopt, status2.getIgpCost());
 }

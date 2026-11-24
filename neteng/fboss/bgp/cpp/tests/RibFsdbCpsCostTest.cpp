@@ -128,14 +128,14 @@ class RibFsdbCpsCostTest : public RibFixture {
   }
 
   void expectOpenrCosts(uint32_t firstCost, uint32_t secondCost) {
-    ASSERT_TRUE(cache_->isRegistered(kV4Nexthop1));
-    ASSERT_TRUE(cache_->isRegistered(kV4Nexthop2));
+    ASSERT_TRUE(cache_->isRegistered({kV4Nexthop1}));
+    ASSERT_TRUE(cache_->isRegistered({kV4Nexthop2}));
     EXPECT_EQ(
         firstCost,
-        cache_->registerAndGetNexthopStatus(kV4Nexthop1).getIgpCost());
+        cache_->registerAndGetNexthopStatus({kV4Nexthop1}).getIgpCost());
     EXPECT_EQ(
         secondCost,
-        cache_->registerAndGetNexthopStatus(kV4Nexthop2).getIgpCost());
+        cache_->registerAndGetNexthopStatus({kV4Nexthop2}).getIgpCost());
   }
 
   folly::EventBase evb_;

@@ -771,12 +771,12 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   std::shared_ptr<SessionManager> sessionMgr_;
 
   // Per-VRF contexts, keyed by VrfId. Holds the default and quarantine VRFs.
-  folly::F14NodeMap<VrfId, std::unique_ptr<PeerManagerVrf>> vrfContexts_;
+  folly::F14NodeMap<VrfId, std::unique_ptr<PeerManagerVrf>> peerManagerVrfs_;
 
-  // The default VRF's context in @vrfContexts_.
+  // The default VRF's context in @peerManagerVrfs_.
   PeerManagerVrf& defaultVrf_;
 
-  // The quarantine VRF's context in @vrfContexts_.
+  // The quarantine VRF's context in @peerManagerVrfs_.
   PeerManagerVrf& quarantineVrf_;
 
   /*

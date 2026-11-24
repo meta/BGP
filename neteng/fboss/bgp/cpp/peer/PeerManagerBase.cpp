@@ -329,7 +329,7 @@ PeerManagerBase::~PeerManagerBase() {
   // terminate evb to deterministically shutdown PeerManagerBase evb
   evb_.terminateLoopSoon();
 
-  for (auto& [_, vrf] : vrfContexts_) {
+  for (auto& [_, vrf] : peerManagerVrfs_) {
     vrf->getChangeListTracker().reset();
   }
   XLOG(INFO, "[Exit] Successfully destructed PeerManagerBase object");
@@ -3754,7 +3754,7 @@ std::shared_ptr<AdjRib> PeerManagerBase::createAdjRib(
 }
 
 PeerManagerVrf& PeerManagerBase::createVrf(VrfId vrfId) {
-  auto& vrf = vrfContexts_[vrfId];
+  auto& vrf = peerManagerVrfs_[vrfId];
   if (!vrf) {
     vrf = std::make_unique<PeerManagerVrf>(vrfId, *this, asyncScope_);
   }
@@ -3762,8 +3762,8 @@ PeerManagerVrf& PeerManagerBase::createVrf(VrfId vrfId) {
 }
 
 PeerManagerVrf* FOLLY_NULLABLE PeerManagerBase::findVrf(VrfId vrfId) noexcept {
-  auto match = vrfContexts_.find(vrfId);
-  if (match == vrfContexts_.cend()) {
+  auto match = peerManagerVrfs_.find(vrfId);
+  if (match == peerManagerVrfs_.cend()) {
     return nullptr;
   }
   return match->second.get();

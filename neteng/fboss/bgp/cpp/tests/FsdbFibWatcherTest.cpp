@@ -67,16 +67,16 @@ using namespace ::testing;
 
 namespace {
 template <typename... Args>
-concept CanAddPeerAddress = requires(FsdbFibWatcher& watcher, Args... args) {
-  watcher.addPeerAddress(args...);
+concept CanAddNexthop = requires(FsdbFibWatcher& watcher, Args... args) {
+  watcher.addNexthop(args...);
 };
 template <typename... Args>
-concept CanRemovePeerAddress = requires(FsdbFibWatcher& watcher, Args... args) {
-  watcher.removePeerAddress(args...);
+concept CanRemoveNexthop = requires(FsdbFibWatcher& watcher, Args... args) {
+  watcher.removeNexthop(args...);
 };
 template <typename... Args>
-concept CanRegisterPeers = requires(FsdbFibWatcher& watcher, Args... args) {
-  watcher.registerPeers(args...);
+concept CanRegisterNexthops = requires(FsdbFibWatcher& watcher, Args... args) {
+  watcher.registerNexthops(args...);
 };
 template <typename... Args>
 concept CanFilterNexthops =
@@ -93,15 +93,15 @@ concept CanRequestNexthops = requires(NeighborWatcher& watcher, Args... args) {
 };
 using NexthopAddresses = std::vector<folly::IPAddress>;
 using NexthopKeys = std::vector<NexthopKey>;
-static_assert(CanAddPeerAddress<NexthopKey>);
-static_assert(!CanAddPeerAddress<folly::IPAddress>);
-static_assert(!CanAddPeerAddress<folly::IPAddress, uint16_t>);
-static_assert(CanRemovePeerAddress<NexthopKey>);
-static_assert(!CanRemovePeerAddress<folly::IPAddress>);
-static_assert(!CanRemovePeerAddress<folly::IPAddress, uint16_t>);
-static_assert(CanRegisterPeers<NexthopKeys>);
-static_assert(!CanRegisterPeers<NexthopAddresses>);
-static_assert(!CanRegisterPeers<NexthopAddresses, uint16_t>);
+static_assert(CanAddNexthop<NexthopKey>);
+static_assert(!CanAddNexthop<folly::IPAddress>);
+static_assert(!CanAddNexthop<folly::IPAddress, uint16_t>);
+static_assert(CanRemoveNexthop<NexthopKey>);
+static_assert(!CanRemoveNexthop<folly::IPAddress>);
+static_assert(!CanRemoveNexthop<folly::IPAddress, uint16_t>);
+static_assert(CanRegisterNexthops<NexthopKeys>);
+static_assert(!CanRegisterNexthops<NexthopAddresses>);
+static_assert(!CanRegisterNexthops<NexthopAddresses, uint16_t>);
 static_assert(CanFilterNexthops<NexthopKeys>);
 static_assert(!CanFilterNexthops<NexthopAddresses>);
 static_assert(!CanFilterNexthops<NexthopAddresses, uint16_t>);
@@ -115,7 +115,7 @@ static_assert(!CanRequestNexthops<NexthopAddresses, uint16_t>);
 
 /**
  * Test constants: representative peer addresses used across tests.
- * V4 peers produce /32 host prefixes, V6 peers produce /128.
+ * V4 nexthops produce /32 host prefixes, V6 nexthops produce /128.
  **/
 const auto kPeerV4 = folly::IPAddress("10.0.0.1");
 const auto kPeerV6 = folly::IPAddress("fdad:500::d:0");
@@ -193,7 +193,7 @@ std::vector<std::string> makeFibPath(
  * (a) force failures to exercise addNexthopPaths's no-crash / rollback / retry
  * behavior and (b) observe whether a nexthop was routed to the live add-path
  * API (liveAdd=true, for RIB-IN-learned nexthops) or the pre-subscribe addPath
- * API (liveAdd=false, for statically configured peers) — all without a live
+ * API (liveAdd=false, for statically configured nexthops) — all without a live
  * FSDB sub manager. addFsdbPathsForNexthop is virtual for this purpose.
  */
 class ThrowingFsdbFibWatcher : public FsdbFibWatcher {
@@ -213,7 +213,7 @@ class ThrowingFsdbFibWatcher : public FsdbFibWatcher {
     /*
      * The success path otherwise touches nothing on the real sub manager so the
      * test stays hermetic; the base addNexthopPaths()/addPaths() records the
-     * nexthop in subscribedPeers_ on return.
+     * nexthop in subscribedNexthops_ on return.
      */
   }
 };
@@ -317,9 +317,9 @@ TEST_F(FsdbFibWatcherTest, PartialRegistrationKeepsSuccessfulVrfResults) {
           .empty());
 }
 
-TEST_F(FsdbFibWatcherTest, AddPeerAddress) {
+TEST_F(FsdbFibWatcherTest, AddNexthop) {
   /**
-   * Verify that addPeerAddress() registers peers in subscribedPeers_.
+   * Verify that addNexthop() registers nexthops in subscribedNexthops_.
    * Duplicate adds should be idempotent.
    **/
   auto subMgr = std::make_shared<fboss::fsdb::FsdbCowStateSubManager>(
@@ -328,20 +328,21 @@ TEST_F(FsdbFibWatcherTest, AddPeerAddress) {
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
 
-  watcher->addPeerAddress(NexthopKey{.ip = kPeerV4});
-  watcher->addPeerAddress(NexthopKey{.ip = kPeerV6});
+  watcher->addNexthop(NexthopKey{.ip = kPeerV4});
+  watcher->addNexthop(NexthopKey{.ip = kPeerV6});
   // Duplicate add — should be idempotent
-  watcher->addPeerAddress(NexthopKey{.ip = kPeerV4});
+  watcher->addNexthop(NexthopKey{.ip = kPeerV4});
 
   /*
-   * No crash, no exception. Peer set should contain both addresses.
-   * (subscribedPeers_ is private, so we verify indirectly via registerPeers)
+   * No crash, no exception. Nexthop set should contain both addresses.
+   * (subscribedNexthops_ is private, so we verify indirectly via
+   * registerNexthops)
    */
 }
 
-TEST_F(FsdbFibWatcherTest, RemovePeerAddress) {
+TEST_F(FsdbFibWatcherTest, RemoveNexthop) {
   /**
-   * Verify that removePeerAddress() removes a previously added peer.
+   * Verify that removeNexthop() removes a previously added nexthop.
    * Removing a non-existent peer should be a no-op.
    **/
   auto subMgr = std::make_shared<fboss::fsdb::FsdbCowStateSubManager>(
@@ -350,17 +351,17 @@ TEST_F(FsdbFibWatcherTest, RemovePeerAddress) {
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
 
-  watcher->addPeerAddress(NexthopKey{.ip = kPeerV4});
-  watcher->addPeerAddress(NexthopKey{.ip = kPeerV6});
-  watcher->removePeerAddress(NexthopKey{.ip = kPeerV4});
+  watcher->addNexthop(NexthopKey{.ip = kPeerV4});
+  watcher->addNexthop(NexthopKey{.ip = kPeerV6});
+  watcher->removeNexthop(NexthopKey{.ip = kPeerV4});
   // Remove non-existent — should be a no-op
-  watcher->removePeerAddress(NexthopKey{.ip = folly::IPAddress("192.168.1.1")});
+  watcher->removeNexthop(NexthopKey{.ip = folly::IPAddress("192.168.1.1")});
 }
 
-TEST_F(FsdbFibWatcherTest, AddPeerAfterPathsRegisteredIsRejected) {
+TEST_F(FsdbFibWatcherTest, AddNexthopAfterPathsRegisteredIsRejected) {
   /**
-   * After registerPeers() has been called (which schedules addPaths()),
-   * subsequent addPeerAddress()/removePeerAddress() calls should be
+   * After registerNexthops() has been called (which schedules addPaths()),
+   * subsequent addNexthop()/removeNexthop() calls should be
    * rejected with a warning (pathsAdded_ guard). We verify no crash.
    **/
   auto subMgr = std::make_shared<fboss::fsdb::FsdbCowStateSubManager>(
@@ -369,20 +370,20 @@ TEST_F(FsdbFibWatcherTest, AddPeerAfterPathsRegisteredIsRejected) {
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
 
-  std::vector<NexthopKey> peers = {NexthopKey{.ip = kPeerV4}};
-  watcher->registerPeers(peers);
+  std::vector<NexthopKey> nexthops = {NexthopKey{.ip = kPeerV4}};
+  watcher->registerNexthops(nexthops);
 
   // Drain evb to execute addPaths()
   evb_.loopOnce();
 
   // These should log warnings but not crash
-  watcher->addPeerAddress(NexthopKey{.ip = kPeerV6});
-  watcher->removePeerAddress(NexthopKey{.ip = kPeerV4});
+  watcher->addNexthop(NexthopKey{.ip = kPeerV6});
+  watcher->removeNexthop(NexthopKey{.ip = kPeerV4});
 }
 
-TEST_F(FsdbFibWatcherTest, RegisterPeersV4AndV6) {
+TEST_F(FsdbFibWatcherTest, RegisterNexthopsV4AndV6) {
   /**
-   * Verify registerPeers() accepts both V4 and V6 addresses and
+   * Verify registerNexthops() accepts both V4 and V6 addresses and
    * schedules addPaths() on the event base without errors.
    * addPaths() will fail to connect to the agent (no agent running)
    * but should fall back to switchId "id=0" gracefully.
@@ -393,11 +394,11 @@ TEST_F(FsdbFibWatcherTest, RegisterPeersV4AndV6) {
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
 
-  std::vector<NexthopKey> peers = {
+  std::vector<NexthopKey> nexthops = {
       NexthopKey{.ip = kPeerV4},
       NexthopKey{.ip = kPeerV6},
       NexthopKey{.ip = kPeerV6_2}};
-  watcher->registerPeers(peers);
+  watcher->registerNexthops(nexthops);
 
   // Drain evb to execute addPaths() — agent call will fail, falls back to id=0
   evb_.loopOnce();
@@ -490,15 +491,15 @@ TEST_F(FsdbFibWatcherTest, AddNexthopPathsForwardsLiveAddFlag) {
   EXPECT_EQ(expected, watcher->calls);
 }
 
-TEST_F(FsdbFibWatcherTest, RegisterPeersUsesNonLiveAddPath) {
+TEST_F(FsdbFibWatcherTest, RegisterNexthopsUsesNonLiveAddPath) {
   /**
-   * Statically configured peers are registered before the initial subscribe
+   * Statically configured nexthops are registered before the initial subscribe
    * via the plain addPath API (liveAdd=false), NOT the live add-path API.
    **/
   auto watcher = std::make_shared<ThrowingFsdbFibWatcher>(
       nexthopCache_, ribInQ_, &evb_, makeTestSubMgr());
 
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce(); // run the scheduled addPaths()
 
   const std::vector<std::pair<NexthopKey, bool>> expected{
@@ -538,7 +539,7 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileKeepsStillReachableNexthopWithoutChurn) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce();
 
   // Nexthop becomes reachable via FIB.
@@ -586,7 +587,7 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileWithdrawsNexthopGoneWhileDisconnected) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers(
+  watcher->registerNexthops(
       {NexthopKey{.ip = kPeerV4}, NexthopKey{.ip = kPeerV6}});
   evb_.loopOnce();
 
@@ -651,7 +652,7 @@ CO_TEST_F(FsdbFibWatcherTest, CancellationBeforeUpdateLeavesCacheUnchanged) {
   const NexthopKey nexthop{.ip = kPeerV4};
   auto watcher = std::make_shared<FsdbFibWatcher>(
       nexthopCache_, ribInQ_, &evb_, makeTestSubMgr());
-  watcher->registerPeers({nexthop});
+  watcher->registerNexthops({nexthop});
   evb_.loopOnce();
   nexthopCache_->registerAndGetNexthopStatus(nexthop);
   folly::CancellationSource cancellation;
@@ -676,7 +677,7 @@ CO_TEST_F(FsdbFibWatcherTest, CancellationAfterCacheUpdateStillDeliversToRib) {
   nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage> queue{1};
   auto watcher = std::make_shared<FsdbFibWatcher>(
       nexthopCache_, queue, &evb_, makeTestSubMgr());
-  watcher->registerPeers({nexthop});
+  watcher->registerNexthops({nexthop});
   evb_.loopOnce();
   nexthopCache_->registerAndGetNexthopStatus(nexthop);
   co_await watcher->co_processFibUpdate(
@@ -734,7 +735,7 @@ CO_TEST_F(FsdbFibWatcherTest, PrefixUpdateChangesOnlyItsResolutionVrf) {
   const std::string prefix = "10.0.0.1/32";
   auto watcher = std::make_shared<FsdbFibWatcher>(
       nexthopCache_, ribInQ_, &evb_, makeTestSubMgr());
-  watcher->registerPeers({underlay, other});
+  watcher->registerNexthops({underlay, other});
   evb_.loopOnce();
   nexthopCache_->registerAndGetNexthopStatus(underlay);
   nexthopCache_->registerAndGetNexthopStatus(other);
@@ -882,7 +883,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateSingleNexthopWithCost) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce();
 
   auto cowData = makeCowDataWithRoute("10.0.0.1/32", /*isV4=*/true, {42});
@@ -910,7 +911,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateMultipleNexthopsMinCost) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce();
 
   auto cowData =
@@ -939,7 +940,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateNexthopWithoutCost) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce();
 
   auto cowData =
@@ -969,7 +970,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateMixedCostNexthopsV6) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV6}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV6}});
   evb_.loopOnce();
 
   auto cowData = makeCowDataWithRoute(
@@ -999,7 +1000,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateBecameUnreachable) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce();
 
   auto cowData1 = makeCowDataWithRoute("10.0.0.1/32", /*isV4=*/true, {42});
@@ -1042,7 +1043,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostChangeWhileReachable) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce();
 
   auto cowData1 = makeCowDataWithRoute("10.0.0.1/32", /*isV4=*/true, {42});
@@ -1084,7 +1085,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostRemovedWhileReachable) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce();
 
   auto cowData1 = makeCowDataWithRoute("10.0.0.1/32", /*isV4=*/true, {42});
@@ -1129,7 +1130,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateUnreachableCostIsNullopt) {
       fboss::utils::ConnectionOptions("::1", 0));
   auto watcher =
       std::make_shared<FsdbFibWatcher>(nexthopCache_, ribInQ_, &evb_, subMgr);
-  watcher->registerPeers({NexthopKey{.ip = kPeerV4}});
+  watcher->registerNexthops({NexthopKey{.ip = kPeerV4}});
   evb_.loopOnce();
 
   auto cowData1 = makeCowDataWithRoute("10.0.0.1/32", /*isV4=*/true, {99});
@@ -1349,7 +1350,7 @@ TEST_F(NeighborWatcherFibTest, FibWatcherCreatedWhenNhtEnabled) {
    * When startFibWatcher() is called (nexthop tracking enabled),
    * fsdbFibWatcher_ should be created and hold a reference to the
    * shared sub manager.
-   * We must run the evb thread so that registerPeers()'s scheduled
+   * We must run the evb thread so that registerNexthops()'s scheduled
    * addPaths() callback executes before teardown.
    **/
   auto nbrWatcher = std::make_shared<NeighborWatcher>(
@@ -1360,9 +1361,9 @@ TEST_F(NeighborWatcherFibTest, FibWatcherCreatedWhenNhtEnabled) {
 
   auto nbrWatcherThread = nbrWatcher->runInThread();
 
-  std::vector<NexthopKey> peers = {
+  std::vector<NexthopKey> nexthops = {
       NexthopKey{.ip = kPeerV4}, NexthopKey{.ip = kPeerV6}};
-  nbrWatcher->startFibWatcher(nexthopCache_, ribInQ_, peers);
+  nbrWatcher->startFibWatcher(nexthopCache_, ribInQ_, nexthops);
 
   EXPECT_TRUE(nbrWatcher->fsdbFibWatcher_);
 
@@ -1618,7 +1619,7 @@ TEST_F(NeighborWatcherFibTest, StopAfterSubscribeIsClean) {
 CO_TEST_F(FsdbFibWatcherTest, FibResultsNotifyRegisteredKeys) {
   auto watcher = std::make_shared<FsdbFibWatcher>(
       nexthopCache_, ribInQ_, &evb_, makeTestSubMgr());
-  watcher->registerPeers(
+  watcher->registerNexthops(
       {NexthopKey{.ip = kPeerV6}, NexthopKey{.ip = kPeerV6_2}});
   evb_.loopOnce();
   nexthopCache_->registerAndGetNexthopStatus({kPeerV6});
@@ -1713,7 +1714,7 @@ CO_TEST_F(FsdbFibWatcherTest, ResultsAndReconcileStayInNextHopVrf) {
   const NexthopKey other{.ip = kPeerV6, .nextHopVrfId = nextHopVrfId};
   auto watcher = std::make_shared<FsdbFibWatcher>(
       nexthopCache_, ribInQ_, &evb_, makeTestSubMgr());
-  watcher->registerPeers({underlay, other});
+  watcher->registerNexthops({underlay, other});
   evb_.loopOnce();
   nexthopCache_->registerAndGetNexthopStatus(underlay);
   nexthopCache_->registerAndGetNexthopStatus(other);

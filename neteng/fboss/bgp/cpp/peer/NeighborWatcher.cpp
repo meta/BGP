@@ -687,7 +687,7 @@ void NeighborWatcher::learnConnectedNeighbors(
 void NeighborWatcher::startFibWatcher(
     std::shared_ptr<NexthopCache> nexthopCache,
     nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage>& ribInQ,
-    const std::vector<NexthopKey>& peerAddresses) {
+    const std::vector<NexthopKey>& nexthops) {
   if (!sharedFsdbSubMgr_) {
     XLOG(ERR, "startFibWatcher called but shared sub manager is not available");
     return;
@@ -707,7 +707,7 @@ void NeighborWatcher::startFibWatcher(
   fsdbFibWatcher_ = std::make_shared<FsdbFibWatcher>(
       nexthopCache, ribInQ, &evb_, sharedFsdbSubMgr_, igpCostClientId);
 
-  fsdbFibWatcher_->registerPeers(peerAddresses);
+  fsdbFibWatcher_->registerNexthops(nexthops);
 }
 
 void NeighborWatcher::subscribeLocked() {
@@ -785,7 +785,7 @@ void NeighborWatcher::requestNexthopSubscribe(
      * Adding paths requires the subscription to have been established. In
      * production subscribe() runs at startup before any RIB-IN nexthops are
      * learned, so this guard is defensive: if we are not yet subscribed, skip.
-     * The nexthops stay untracked (not added to subscribedPeers_) and are
+     * The nexthops stay untracked (not added to subscribedNexthops_) and are
      * surfaced again by filterNewNexthops on the next RIB-IN request.
      */
     if (!fsdbSubscribed_) {

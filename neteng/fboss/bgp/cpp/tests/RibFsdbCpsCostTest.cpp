@@ -98,7 +98,7 @@ class RibFsdbCpsCostTest : public RibFixture {
     watcher_ = std::make_shared<FsdbFibWatcher>(
         cache_, ribInQ_, &evb_, subMgr_, fboss::ClientID::OPENR);
     watcher_->switchIds_ = {"id=0"};
-    watcher_->registerPeers(
+    watcher_->registerNexthops(
         {NexthopKey{.ip = kV4Nexthop1}, NexthopKey{.ip = kV4Nexthop2}});
     evb_.loopOnce();
   }

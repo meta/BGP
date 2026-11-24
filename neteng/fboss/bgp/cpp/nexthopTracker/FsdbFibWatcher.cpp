@@ -49,37 +49,31 @@ FsdbFibWatcher::FsdbFibWatcher(
       evb_(evb),
       igpCostClientId_(igpCostClientId) {}
 
-void FsdbFibWatcher::addPeerAddress(const NexthopKey& peerAddr) {
+void FsdbFibWatcher::addNexthop(const NexthopKey& nexthop) {
   if (pathsAdded_) {
     XLOGF(
         WARNING,
-        "[FsdbFibWatcher] Cannot add peer {} after paths have been registered"
+        "[FsdbFibWatcher] Cannot add nexthop {} after paths have been registered"
         " — runtime subscription changes are not yet supported",
-        formatNexthop(peerAddr));
+        formatNexthop(nexthop));
     return;
   }
-  if (subscribedPeers_.insert(peerAddr).second) {
-    XLOGF(
-        INFO,
-        "[FsdbFibWatcher] Added peer address: {}",
-        formatNexthop(peerAddr));
+  if (subscribedNexthops_.insert(nexthop).second) {
+    XLOGF(INFO, "[FsdbFibWatcher] Added nexthop: {}", formatNexthop(nexthop));
   }
 }
 
-void FsdbFibWatcher::removePeerAddress(const NexthopKey& peerAddr) {
+void FsdbFibWatcher::removeNexthop(const NexthopKey& nexthop) {
   if (pathsAdded_) {
     XLOGF(
         WARNING,
-        "[FsdbFibWatcher] Cannot remove peer {} after paths have been"
+        "[FsdbFibWatcher] Cannot remove nexthop {} after paths have been"
         " registered — runtime subscription changes are not yet supported",
-        formatNexthop(peerAddr));
+        formatNexthop(nexthop));
     return;
   }
-  if (subscribedPeers_.erase(peerAddr)) {
-    XLOGF(
-        INFO,
-        "[FsdbFibWatcher] Removed peer address: {}",
-        formatNexthop(peerAddr));
+  if (subscribedNexthops_.erase(nexthop)) {
+    XLOGF(INFO, "[FsdbFibWatcher] Removed nexthop: {}", formatNexthop(nexthop));
   }
 }
 
@@ -183,7 +177,7 @@ void FsdbFibWatcher::addFsdbPathsForNexthop(
 void FsdbFibWatcher::addPaths() noexcept {
   ensureSwitchIds();
   size_t failed = 0;
-  for (const auto& nexthop : subscribedPeers_) {
+  for (const auto& nexthop : subscribedNexthops_) {
     /*
      * Best-effort: addFsdbPathsForNexthop() can throw (e.g. allocation
      * failure). This method is noexcept, so an escaping exception would
@@ -207,7 +201,7 @@ void FsdbFibWatcher::addPaths() noexcept {
       INFO,
       "[FsdbFibWatcher] Added FSDB paths for {} nexthops x {} switch IDs"
       " ({} nexthop(s) failed)",
-      subscribedPeers_.size(),
+      subscribedNexthops_.size(),
       switchIds_.size(),
       failed);
 }
@@ -218,7 +212,7 @@ std::vector<NexthopKey> FsdbFibWatcher::filterNewNexthops(
   folly::F14FastSet<NexthopKey, NexthopKey::Hash> seen;
   for (const auto& nh : nexthops) {
     // Skip nexthops already tracked, and de-dupe within the input.
-    if (!subscribedPeers_.contains(nh) && seen.insert(nh).second) {
+    if (!subscribedNexthops_.contains(nh) && seen.insert(nh).second) {
       newNexthops.push_back(nh);
     }
   }
@@ -240,22 +234,22 @@ void FsdbFibWatcher::addNexthopPaths(
   ensureSwitchIds();
   size_t added = 0;
   for (const auto& nexthop : newNexthops) {
-    if (subscribedPeers_.contains(nexthop)) {
+    if (subscribedNexthops_.contains(nexthop)) {
       // Already tracked — paths already registered.
       continue;
     }
     /*
-     * Register paths first, then commit to subscribedPeers_ only on success. If
-     * addFsdbPathsForNexthop throws, the nexthop is left OUT of
-     * subscribedPeers_ so filterNewNexthops will surface it again on a future
-     * request (retry) rather than silently skipping it forever.
+     * Register paths first, then commit to subscribedNexthops_ only on success.
+     * If addFsdbPathsForNexthop throws, the nexthop is left OUT of
+     * subscribedNexthops_ so filterNewNexthops will surface it again on a
+     * future request (retry) rather than silently skipping it forever.
      * addFsdbPathsForNexthop is idempotent, so the retry re-adds only the paths
      * not registered on the failed attempt. The exception is swallowed (logged)
      * so it can neither crash the process nor abort the remaining nexthops.
      */
     try {
       addFsdbPathsForNexthop(nexthop, liveAdd);
-      subscribedPeers_.insert(nexthop);
+      subscribedNexthops_.insert(nexthop);
       ++added;
     } catch (const std::exception& ex) {
       XLOGF(
@@ -272,23 +266,22 @@ void FsdbFibWatcher::addNexthopPaths(
         "[FsdbFibWatcher] Added {} new nexthop(s) for tracking ({} total,"
         " liveAdd={})",
         added,
-        subscribedPeers_.size(),
+        subscribedNexthops_.size(),
         liveAdd);
   }
 }
 
-void FsdbFibWatcher::registerPeers(
-    const std::vector<NexthopKey>& peerAddresses) {
-  for (const auto& peerAddr : peerAddresses) {
-    addPeerAddress(peerAddr);
+void FsdbFibWatcher::registerNexthops(const std::vector<NexthopKey>& nexthops) {
+  for (const auto& nexthop : nexthops) {
+    addNexthop(nexthop);
   }
 
   evb_->runInEventBaseThread([this]() { addPaths(); });
 
   XLOGF(
       INFO,
-      "[FsdbFibWatcher] {} static peer addresses queued for subscription",
-      peerAddresses.size());
+      "[FsdbFibWatcher] {} static nexthops queued for subscription",
+      nexthops.size());
 }
 
 void FsdbFibWatcher::stop() noexcept {
@@ -544,7 +537,7 @@ namespace {
  * reconcile's newReachable) stays with each branch.
  */
 void emitReachabilityUpdate(
-    const NexthopKey& peerAddr,
+    const NexthopKey& nexthop,
     bool exists,
     const std::optional<uint32_t>& igpCost,
     bool wasReachable,
@@ -556,7 +549,7 @@ void emitReachabilityUpdate(
       FsdbStatsDC::incrFsdbNhtNexthopReachable();
     }
     batchUpdates.emplace_back(
-        peerAddr,
+        nexthop,
         /*isReachable=*/true,
         igpCost,
         /*isConnected=*/std::nullopt,
@@ -566,7 +559,7 @@ void emitReachabilityUpdate(
           INFO,
           "[FsdbFibWatcher] {}Nexthop {}: {} igpCost={}",
           logPrefix,
-          formatNexthop(peerAddr),
+          formatNexthop(nexthop),
           wasReachable ? "cost update" : "became reachable",
           igpCost ? fmt::format("{}", *igpCost) : "none");
     }
@@ -575,7 +568,7 @@ void emitReachabilityUpdate(
       FsdbStatsDC::incrFsdbNhtNexthopUnreachable();
     }
     batchUpdates.emplace_back(
-        peerAddr,
+        nexthop,
         /*isReachable=*/false,
         /*igpCost=*/std::nullopt,
         /*isConnected=*/std::nullopt,
@@ -585,7 +578,7 @@ void emitReachabilityUpdate(
           INFO,
           "[FsdbFibWatcher] {}Nexthop unreachable: {} igpCost=none",
           logPrefix,
-          formatNexthop(peerAddr));
+          formatNexthop(nexthop));
     }
   }
 }
@@ -603,7 +596,7 @@ folly::coro::Task<void> FsdbFibWatcher::co_processFibUpdate(
    *    reachableNexthops_, so a still-reachable nexthop is never transiently
    *    withdrawn (no route churn on an FSDB restart).
    *
-   * No notification / no route for a prefix means the peer is unreachable.
+   * No notification / no route for a prefix means the nexthop is unreachable.
    **/
   co_await folly::coro::co_safe_point;
   FsdbStatsDC::setFsdbNhtConnected(1);

@@ -37,19 +37,14 @@
 namespace facebook::bgp {
 
 /**
- * FsdbFibWatcher: Tracks FIB host routes for statically configured BGP peers.
+ * FsdbFibWatcher: Tracks FIB host routes for nexthop resolution keys.
  *
- * Subscribes to per-peer host-route paths in FSDB (e.g.,
+ * Subscribes to per-nexthop host-route paths in FSDB (e.g.,
  * agent/switchState/fibsInfoMap["0"]/fibsMap[0]/fibV4["10.0.0.1/32"]) for
  * all switch IDs on the device (fetched from the agent). Each key selects
  * its FIB VRF.
- * Only static peers (those with exact IP peer_addr from
- * getPeerToConfig()) are subscribed — dynamic peers (CIDR peer_addr from
- * getDynamicPeerToConfig()) are NOT tracked here.
- *
- * Dynamic peers are always directly connected: ARP/NDP must resolve before
- * a TCP/BGP session can form, so FsdbNeighborWatcher handles them with
- * isConnected=true. There is no need for FIB-based tracking.
+ * Initial nexthops can be registered before the FSDB subscription starts;
+ * RIB-learned nexthops can be added at runtime.
  *
  * Updates pushed to NexthopCache use isConnected=nullopt (FIB entries do not
  * imply L2 adjacency). NexthopCache enforces source-priority: if a nexthop
@@ -81,24 +76,24 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
   virtual ~FsdbFibWatcher() = default;
 
   /**
-   * Add a peer address to track. Must be called before addPaths() to
+   * Add a nexthop to track. Must be called before addPaths() to
    * include in the FSDB subscription. If called after addPaths(), logs a
    * warning (paths are already registered with the shared sub manager).
    **/
-  void addPeerAddress(const NexthopKey& peerAddr);
+  void addNexthop(const NexthopKey& nexthop);
 
   /**
-   * Remove a peer address from tracking. If called after addPaths(), logs
+   * Remove a nexthop from tracking. If called after addPaths(), logs
    * a warning (paths are already registered with the shared sub manager).
    **/
-  void removePeerAddress(const NexthopKey& peerAddr);
+  void removeNexthop(const NexthopKey& nexthop);
 
   /**
-   * Add peer addresses and register their FSDB FIB host-route paths on the
+   * Add nexthops and register their FSDB FIB host-route paths on the
    * shared sub manager. Schedules addPaths() on evb_. Must be called before
    * NeighborWatcher::subscribe() so paths are registered before subscribe().
    **/
-  void registerPeers(const std::vector<NexthopKey>& peerAddresses);
+  void registerNexthops(const std::vector<NexthopKey>& nexthops);
 
   /**
    * Return keys not already tracked and de-dupe the input. Runs on evb_.
@@ -186,7 +181,7 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
       const std::vector<std::string>& pathTokens) const;
 
   /**
-   * Add FSDB paths for all tracked peer addresses to the shared sub manager.
+   * Add FSDB paths for all tracked nexthops to the shared sub manager.
    * Fetches switch IDs from the agent and registers FIB host-route paths.
    **/
   void addPaths() noexcept;
@@ -241,7 +236,7 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
    * learned nexthops at runtime. Used for dedup so a nexthop is subscribed
    * exactly once per nextHopVrfId.
    **/
-  folly::F14FastSet<NexthopKey, NexthopKey::Hash> subscribedPeers_;
+  folly::F14FastSet<NexthopKey, NexthopKey::Hash> subscribedNexthops_;
 
   /* For example, ("2001:db8::1/128", 7) identifies one resolution VRF. */
   SubscribedPrefixMap subscribedPrefixes_;
@@ -257,7 +252,7 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
   folly::F14FastSet<std::string> registeredFsdbPaths_;
 
   /**
-   * Whether addPaths() has been called. After this point, peer addresses
+   * Whether addPaths() has been called. After this point, nexthops
    * cannot be added or removed (paths are already registered with the
    * shared sub manager).
    **/

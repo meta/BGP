@@ -343,14 +343,14 @@ class NeighborWatcher : public BgpModuleBase {
       nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage>& ribInQ);
 
   /**
-   * Create FsdbFibWatcher and register FIB host-route paths for static
-   * peers. Must be called before subscribe() so FIB paths are registered
+   * Create FsdbFibWatcher and register FIB host-route paths for the initial
+   * nexthops. Must be called before subscribe() so FIB paths are registered
    * before the subscription starts.
    **/
   void startFibWatcher(
       std::shared_ptr<NexthopCache> nexthopCache,
       nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage>& ribInQ,
-      const std::vector<NexthopKey>& peerAddresses);
+      const std::vector<NexthopKey>& nexthops);
 
   /**
    * Subscribe the shared FSDB sub manager for all registered paths

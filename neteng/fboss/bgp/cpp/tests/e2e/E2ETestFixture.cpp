@@ -3509,6 +3509,19 @@ std::shared_ptr<NexthopCache> E2ETestFixture::getNexthopCache() {
   return rib_->nexthopCache_;
 }
 
+/* Read NexthopInfo on its owning RIB thread, rather than the cache's epoch. */
+std::optional<uint64_t> E2ETestFixture::getRibNexthopEpoch(
+    const folly::IPAddress& nexthop) {
+  std::optional<uint64_t> epoch;
+  rib_->getEventBase().runInEventBaseThreadAndWait([&] {
+    const auto it = rib_->nexthopInfoMap_.find(nexthop);
+    if (it != rib_->nexthopInfoMap_.end()) {
+      epoch = it->second.getEpoch();
+    }
+  });
+  return epoch;
+}
+
 void E2ETestFixture::injectNexthopStatuses(
     const std::vector<NexthopStatus>& nexthopStatuses) {
   ASSERT_NE(rib_, nullptr) << "RIB must be created first";

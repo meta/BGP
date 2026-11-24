@@ -1278,6 +1278,9 @@ class E2ETestFixture : public ::testing::Test {
   /* Share the real RIB cache with nexthop producers in integration tests. */
   std::shared_ptr<NexthopCache> getNexthopCache();
 
+  /* Read the RIB worker's epoch independently of the shared cache. */
+  std::optional<uint64_t> getRibNexthopEpoch(const folly::IPAddress& nexthop);
+
   /*
    * Get the number of routes that use a nexthop in RIB's nexthopInfoMap_.
    * Thread-safe: runs check on RIB's event base

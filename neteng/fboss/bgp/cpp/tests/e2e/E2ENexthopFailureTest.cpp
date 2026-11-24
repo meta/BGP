@@ -166,6 +166,9 @@ TEST_F(E2ENexthopFailureTest, MultipleRoutesShareNexthop) {
   addRoute("v4", "10.0.0.0", 8, kPeerAddr3, "11.0.0.1", "65001");
   addRoute("v4", "20.0.0.0", 8, kPeerAddr3, "11.0.0.1", "65001");
   addRoute("v4", "30.0.0.0", 8, kPeerAddr3, "11.0.0.1", "65001");
+  ASSERT_TRUE(waitForPathCountInRib("10.0.0.0/8", 1));
+  ASSERT_TRUE(waitForPathCountInRib("20.0.0.0/8", 1));
+  ASSERT_TRUE(waitForPathCountInRib("30.0.0.0/8", 1));
 
   // Verify all routes are NOT active - routes never were in RIB
   EXPECT_TRUE(verifyRouteNotInShadowRib(prefix1));

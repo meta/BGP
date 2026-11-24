@@ -1275,6 +1275,9 @@ class E2ETestFixture : public ::testing::Test {
    */
   void injectNexthopStatuses(const std::vector<NexthopStatus>& nexthopStatuses);
 
+  /* Share the real RIB cache with nexthop producers in integration tests. */
+  std::shared_ptr<NexthopCache> getNexthopCache();
+
   /*
    * Get the number of routes that use a nexthop in RIB's nexthopInfoMap_.
    * Thread-safe: runs check on RIB's event base

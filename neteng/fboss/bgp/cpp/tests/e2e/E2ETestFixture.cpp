@@ -3504,6 +3504,11 @@ void E2ETestFixture::enableDynamicPolicyEvaluation(bool enable) {
 
 // ==================== NEXTHOP TRACKING IMPLEMENTATIONS ====================
 
+/* The RIB retains ownership while external producers share its cache. */
+std::shared_ptr<NexthopCache> E2ETestFixture::getNexthopCache() {
+  return rib_->nexthopCache_;
+}
+
 void E2ETestFixture::injectNexthopStatuses(
     const std::vector<NexthopStatus>& nexthopStatuses) {
   ASSERT_NE(rib_, nullptr) << "RIB must be created first";

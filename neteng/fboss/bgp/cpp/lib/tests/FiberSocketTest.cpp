@@ -19,9 +19,9 @@
 #include <folly/fibers/EventBaseLoopController.h>
 #include <folly/io/Cursor.h>
 #include <folly/io/async/EventBase.h>
-#include <folly/io/async/test/MockAsyncSocket.h>
 #include <folly/io/async/test/ScopedBoundPort.h>
 #include <folly/io/async/test/SocketPair.h>
+#include <folly/io/async/testing/MockAsyncSocket.h>
 #include <folly/logging/xlog.h>
 #include <gtest/gtest.h>
 

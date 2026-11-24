@@ -24,6 +24,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "fboss/agent/Constants.h"
 
 #include <folly/coro/BlockingWait.h>
 #include <folly/io/async/EventBase.h>
@@ -97,7 +98,8 @@ class RibFsdbCpsCostTest : public RibFixture {
     watcher_ = std::make_shared<FsdbFibWatcher>(
         cache_, ribInQ_, &evb_, subMgr_, fboss::ClientID::OPENR);
     watcher_->switchIds_ = {"id=0"};
-    watcher_->registerPeers({kV4Nexthop1, kV4Nexthop2});
+    watcher_->registerPeers(
+        {NexthopKey{.ip = kV4Nexthop1}, NexthopKey{.ip = kV4Nexthop2}});
     evb_.loopOnce();
   }
 

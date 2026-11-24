@@ -507,8 +507,14 @@ RibDC::RibDC(
    */
   if (nexthopCache_ && neighborWatcher) {
     setNexthopSubscribeRequester(
-        [neighborWatcher](std::vector<folly::IPAddress> nexthops) {
-          neighborWatcher->requestNexthopSubscribe(std::move(nexthops));
+        [neighborWatcher](const std::vector<folly::IPAddress>& nexthops) {
+          std::vector<NexthopKey> keys;
+          keys.reserve(nexthops.size());
+          for (const auto& ip : nexthops) {
+            keys.push_back(
+                NexthopKey{.ip = ip, .nextHopVrfId = fboss::kDefaultVrf});
+          }
+          neighborWatcher->requestNexthopSubscribe(std::move(keys));
         });
   }
 

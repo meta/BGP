@@ -687,7 +687,7 @@ void NeighborWatcher::learnConnectedNeighbors(
 void NeighborWatcher::startFibWatcher(
     std::shared_ptr<NexthopCache> nexthopCache,
     nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage>& ribInQ,
-    const std::vector<folly::IPAddress>& peerAddresses) {
+    const std::vector<NexthopKey>& peerAddresses) {
   if (!sharedFsdbSubMgr_) {
     XLOG(ERR, "startFibWatcher called but shared sub manager is not available");
     return;
@@ -770,7 +770,7 @@ void NeighborWatcher::subscribe() {
 }
 
 void NeighborWatcher::requestNexthopSubscribe(
-    std::vector<folly::IPAddress> nexthops) {
+    std::vector<NexthopKey> nexthops) {
   if (!sharedFsdbSubMgr_ || !fsdbFibWatcher_) {
     return;
   }
@@ -825,7 +825,7 @@ void NeighborWatcher::requestNexthopSubscribe(
        * subscription; no teardown, nothing to re-establish.
        */
       try {
-        fsdbFibWatcher_->addNexthopPaths(newNexthops, true);
+        fsdbFibWatcher_->addNexthopPaths(newNexthops, /*liveAdd=*/true);
       } catch (const std::exception& ex) {
         XLOGF(
             ERR,
@@ -855,7 +855,7 @@ void NeighborWatcher::requestNexthopSubscribe(
      */
     try {
       sharedFsdbSubMgr_->stop();
-      fsdbFibWatcher_->addNexthopPaths(newNexthops, false);
+      fsdbFibWatcher_->addNexthopPaths(newNexthops, /*liveAdd=*/false);
     } catch (const std::exception& ex) {
       XLOGF(
           ERR,

@@ -17,6 +17,7 @@
 #pragma once
 
 #include <folly/io/async/AsyncSocket.h>
+#include "fboss/agent/Constants.h"
 
 #include <folly/IPAddress.h>
 #include <folly/container/F14Set.h>
@@ -349,7 +350,7 @@ class NeighborWatcher : public BgpModuleBase {
   void startFibWatcher(
       std::shared_ptr<NexthopCache> nexthopCache,
       nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage>& ribInQ,
-      const std::vector<folly::IPAddress>& peerAddresses);
+      const std::vector<NexthopKey>& peerAddresses);
 
   /**
    * Subscribe the shared FSDB sub manager for all registered paths
@@ -368,7 +369,7 @@ class NeighborWatcher : public BgpModuleBase {
    * stop() -> addPath() -> subscribeLocked() (a full re-subscribe). Safe to
    * call from any thread (e.g. the RIB thread).
    **/
-  void requestNexthopSubscribe(std::vector<folly::IPAddress> nexthops);
+  void requestNexthopSubscribe(std::vector<NexthopKey> nexthops);
 
   /*
    * return nullopt if connection is not ready

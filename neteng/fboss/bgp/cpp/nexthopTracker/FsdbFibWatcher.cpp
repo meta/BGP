@@ -20,14 +20,22 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <folly/CancellationToken.h>
+#include <folly/Conv.h>
 #include <folly/coro/Task.h>
 #include <folly/logging/xlog.h>
+#include <algorithm>
 #include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
 #include "neteng/fboss/bgp/cpp/common/ThriftClientUtils.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsDC.h"
 namespace facebook::bgp {
 namespace thrift_tags = apache::thrift::ident;
+
+namespace {
+std::string formatNexthop(const NexthopKey& nexthop) {
+  return fmt::format("{} (vrf={})", nexthop.ip.str(), nexthop.nextHopVrfId);
+}
+} // namespace
 
 FsdbFibWatcher::FsdbFibWatcher(
     std::shared_ptr<NexthopCache> nexthopCache,
@@ -41,31 +49,37 @@ FsdbFibWatcher::FsdbFibWatcher(
       evb_(evb),
       igpCostClientId_(igpCostClientId) {}
 
-void FsdbFibWatcher::addPeerAddress(const folly::IPAddress& peerAddr) {
+void FsdbFibWatcher::addPeerAddress(const NexthopKey& peerAddr) {
   if (pathsAdded_) {
     XLOGF(
         WARNING,
         "[FsdbFibWatcher] Cannot add peer {} after paths have been registered"
         " — runtime subscription changes are not yet supported",
-        peerAddr.str());
+        formatNexthop(peerAddr));
     return;
   }
   if (subscribedPeers_.insert(peerAddr).second) {
-    XLOGF(INFO, "[FsdbFibWatcher] Added peer address: {}", peerAddr.str());
+    XLOGF(
+        INFO,
+        "[FsdbFibWatcher] Added peer address: {}",
+        formatNexthop(peerAddr));
   }
 }
 
-void FsdbFibWatcher::removePeerAddress(const folly::IPAddress& peerAddr) {
+void FsdbFibWatcher::removePeerAddress(const NexthopKey& peerAddr) {
   if (pathsAdded_) {
     XLOGF(
         WARNING,
         "[FsdbFibWatcher] Cannot remove peer {} after paths have been"
         " registered — runtime subscription changes are not yet supported",
-        peerAddr.str());
+        formatNexthop(peerAddr));
     return;
   }
   if (subscribedPeers_.erase(peerAddr)) {
-    XLOGF(INFO, "[FsdbFibWatcher] Removed peer address: {}", peerAddr.str());
+    XLOGF(
+        INFO,
+        "[FsdbFibWatcher] Removed peer address: {}",
+        formatNexthop(peerAddr));
   }
 }
 
@@ -108,10 +122,11 @@ void FsdbFibWatcher::ensureSwitchIds() noexcept {
 }
 
 void FsdbFibWatcher::addFsdbPathsForNexthop(
-    const folly::IPAddress& nexthop,
+    const NexthopKey& nexthop,
     bool liveAdd) {
-  bool isV4 = nexthop.isV4();
-  auto hostPrefix = fmt::format("{}/{}", nexthop.str(), nexthop.bitCount());
+  bool isV4 = nexthop.ip.isV4();
+  auto hostPrefix =
+      fmt::format("{}/{}", nexthop.ip.str(), nexthop.ip.bitCount());
   /*
    * Route each path to the live add-path API for RIB-IN-learned nexthops (the
    * subscription is already up), or to the pre-subscribe addPath for statically
@@ -125,23 +140,31 @@ void FsdbFibWatcher::addFsdbPathsForNexthop(
       fsdbSubMgr_->addPath(std::forward<decltype(path)>(path));
     }
   };
+  /* A successful path can deliver updates before other switch paths exist. */
+  subscribedPrefixes_.emplace(
+      PrefixKey{hostPrefix, nexthop.nextHopVrfId}, nexthop);
   for (const auto& switchId : switchIds_) {
     /*
-     * Idempotent guard: skip a (switchId, prefix) path already registered with
-     * the sub manager. Without this, a retry after a partial failure (see
+     * Idempotent guard: skip a (switchId, nextHopVrfId, prefix) path registered
+     * with the sub manager. Without this, a retry after a partial failure (see
      * addNexthopPaths) would re-add an already-registered path and trip the sub
      * manager's fatal "Duplicate path added" CHECK. The key is recorded only
      * after the add succeeds, so a throwing add leaves the path eligible for a
      * clean retry.
      */
-    auto pathKey = fmt::format("{}|{}", switchId, hostPrefix);
+    /*
+     * Include nextHopVrfId in both dedup and subscription paths: the same
+     * address can be tracked through different FIB containers.
+     */
+    auto pathKey =
+        fmt::format("{}|{}|{}", switchId, nexthop.nextHopVrfId, hostPrefix);
     if (registeredFsdbPaths_.contains(pathKey)) {
       continue;
     }
     auto basePath = fsdbStateRootPath_.agent()
                         .switchState()
                         .fibsInfoMap()[switchId]
-                        .fibsMap()[fboss::kDefaultVrf];
+                        .fibsMap()[nexthop.nextHopVrfId];
     if (isV4) {
       addOne(basePath.fibV4()[hostPrefix]);
     } else {
@@ -155,13 +178,12 @@ void FsdbFibWatcher::addFsdbPathsForNexthop(
         "[FsdbFibWatcher] Added FSDB path: [{}]",
         fmt::join(pathTokens, "/"));
   }
-  subscribedPrefixes_.emplace(hostPrefix, std::make_pair(nexthop, isV4));
 }
 
 void FsdbFibWatcher::addPaths() noexcept {
   ensureSwitchIds();
   size_t failed = 0;
-  for (const auto& peerAddr : subscribedPeers_) {
+  for (const auto& nexthop : subscribedPeers_) {
     /*
      * Best-effort: addFsdbPathsForNexthop() can throw (e.g. allocation
      * failure). This method is noexcept, so an escaping exception would
@@ -169,13 +191,13 @@ void FsdbFibWatcher::addPaths() noexcept {
      * single failure cannot crash the daemon nor block the remaining paths.
      */
     try {
-      addFsdbPathsForNexthop(peerAddr, /*liveAdd=*/false);
+      addFsdbPathsForNexthop(nexthop, /*liveAdd=*/false);
     } catch (const std::exception& ex) {
       ++failed;
       XLOGF(
           ERR,
           "[FsdbFibWatcher] Failed to add FSDB paths for {}: {}",
-          peerAddr.str(),
+          formatNexthop(nexthop),
           ex.what());
     }
   }
@@ -190,13 +212,13 @@ void FsdbFibWatcher::addPaths() noexcept {
       failed);
 }
 
-std::vector<folly::IPAddress> FsdbFibWatcher::filterNewNexthops(
-    const std::vector<folly::IPAddress>& nexthops) const {
-  std::vector<folly::IPAddress> newNexthops;
-  folly::F14FastSet<folly::IPAddress> seen;
+std::vector<NexthopKey> FsdbFibWatcher::filterNewNexthops(
+    const std::vector<NexthopKey>& nexthops) const {
+  std::vector<NexthopKey> newNexthops;
+  folly::F14FastSet<NexthopKey, NexthopKey::Hash> seen;
   for (const auto& nh : nexthops) {
     // Skip nexthops already tracked, and de-dupe within the input.
-    if (subscribedPeers_.count(nh) == 0 && seen.insert(nh).second) {
+    if (!subscribedPeers_.contains(nh) && seen.insert(nh).second) {
       newNexthops.push_back(nh);
     }
   }
@@ -204,7 +226,7 @@ std::vector<folly::IPAddress> FsdbFibWatcher::filterNewNexthops(
 }
 
 void FsdbFibWatcher::addNexthopPaths(
-    const std::vector<folly::IPAddress>& newNexthops,
+    const std::vector<NexthopKey>& newNexthops,
     bool liveAdd) {
   /**
    * Register FSDB FIB host-route paths for nexthops learned at runtime (e.g.,
@@ -217,8 +239,8 @@ void FsdbFibWatcher::addNexthopPaths(
    **/
   ensureSwitchIds();
   size_t added = 0;
-  for (const auto& nh : newNexthops) {
-    if (subscribedPeers_.count(nh) != 0) {
+  for (const auto& nexthop : newNexthops) {
+    if (subscribedPeers_.contains(nexthop)) {
       // Already tracked — paths already registered.
       continue;
     }
@@ -232,15 +254,15 @@ void FsdbFibWatcher::addNexthopPaths(
      * so it can neither crash the process nor abort the remaining nexthops.
      */
     try {
-      addFsdbPathsForNexthop(nh, liveAdd);
-      subscribedPeers_.insert(nh);
+      addFsdbPathsForNexthop(nexthop, liveAdd);
+      subscribedPeers_.insert(nexthop);
       ++added;
     } catch (const std::exception& ex) {
       XLOGF(
           ERR,
           "[FsdbFibWatcher] Failed to add FSDB paths for nexthop {}: {}"
           " — will retry on a future request",
-          nh.str(),
+          formatNexthop(nexthop),
           ex.what());
     }
   }
@@ -256,7 +278,7 @@ void FsdbFibWatcher::addNexthopPaths(
 }
 
 void FsdbFibWatcher::registerPeers(
-    const std::vector<folly::IPAddress>& peerAddresses) {
+    const std::vector<NexthopKey>& peerAddresses) {
   for (const auto& peerAddr : peerAddresses) {
     addPeerAddress(peerAddr);
   }
@@ -375,13 +397,53 @@ std::optional<uint32_t> FsdbFibWatcher::lookupIgpCostFromRoute(
   return minCost(*it->second.nexthops());
 }
 
+FsdbFibWatcher::SubscribedPrefixMap::const_iterator
+FsdbFibWatcher::findUpdatedPrefix(
+    const std::vector<std::string>& pathTokens) const {
+  for (const auto& switchId : switchIds_) {
+    auto fibsMapPath = fsdbStateRootPath_.agent()
+                           .switchState()
+                           .fibsInfoMap()[switchId]
+                           .fibsMap();
+    const auto& mapTokens = fibsMapPath.idTokens();
+    const auto prefixIndex =
+        fibsMapPath[fboss::kDefaultVrf].fibV4().idTokens().size();
+    if (pathTokens.size() <= prefixIndex ||
+        !std::equal(mapTokens.begin(), mapTokens.end(), pathTokens.begin())) {
+      continue;
+    }
+    auto vrfId = folly::tryTo<uint16_t>(pathTokens[mapTokens.size()]);
+    if (vrfId.hasError()) {
+      continue;
+    }
+    const auto& prefixStr = pathTokens[prefixIndex];
+    auto it = subscribedPrefixes_.find(PrefixKey{prefixStr, vrfId.value()});
+    if (it == subscribedPrefixes_.end()) {
+      continue;
+    }
+    auto vrfPath = fibsMapPath[vrfId.value()];
+    const auto routeTokens = it->second.ip.isV4()
+        ? vrfPath.fibV4()[prefixStr].idTokens()
+        : vrfPath.fibV6()[prefixStr].idTokens();
+    if (std::equal(
+            routeTokens.begin(), routeTokens.end(), pathTokens.begin())) {
+      return it;
+    }
+  }
+  return subscribedPrefixes_.end();
+}
+
 std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
-    const std::string& prefixStr,
-    bool isV4,
+    const PrefixKey& prefix,
+    const NexthopKey& nexthop,
     const fboss::fsdb::FsdbCowStateSubManager::Data& data) {
+  const bool isV4 = nexthop.ip.isV4();
+  const auto& [prefixStr, nextHopVrfId] = prefix;
+  const auto prefixForLog = fmt::format("{} (vrf={})", prefixStr, nextHopVrfId);
   auto agentNode = data->safe_cref<thrift_tags::agent>();
   if (!agentNode) {
-    XLOGF(INFO, "[FsdbFibWatcher] routeExists({}): no agent node", prefixStr);
+    XLOGF(
+        INFO, "[FsdbFibWatcher] routeExists({}): no agent node", prefixForLog);
     return {false, std::nullopt};
   }
   auto switchStateNode =
@@ -390,7 +452,7 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
     XLOGF(
         INFO,
         "[FsdbFibWatcher] routeExists({}): no switchState node",
-        prefixStr);
+        prefixForLog);
     return {false, std::nullopt};
   }
   auto fibsInfoMapNode =
@@ -399,7 +461,7 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
     XLOGF(
         INFO,
         "[FsdbFibWatcher] routeExists({}): no fibsInfoMap node",
-        prefixStr);
+        prefixForLog);
     return {false, std::nullopt};
   }
 
@@ -408,7 +470,7 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
       XLOGF(
           INFO,
           "[FsdbFibWatcher] routeExists({}): switchId={} not in fibsInfoMap",
-          prefixStr,
+          prefixForLog,
           switchId);
       continue;
     }
@@ -418,20 +480,21 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
       XLOGF(
           INFO,
           "[FsdbFibWatcher] routeExists({}): switchId={} no fibsMap",
-          prefixStr,
+          prefixForLog,
           switchId);
       continue;
     }
-    if (!fibsMapNode->count(fboss::kDefaultVrf)) {
+    if (!fibsMapNode->count(nextHopVrfId)) {
       XLOGF(
           INFO,
-          "[FsdbFibWatcher] routeExists({}): switchId={} vrfId=0 not in"
+          "[FsdbFibWatcher] routeExists({}): switchId={} vrfId={} not in"
           " fibsMap",
-          prefixStr,
-          switchId);
+          prefixForLog,
+          switchId,
+          nextHopVrfId);
       continue;
     }
-    const auto& fibContainerNode = fibsMapNode->cref(fboss::kDefaultVrf);
+    const auto& fibContainerNode = fibsMapNode->cref(nextHopVrfId);
     auto mapNode = isV4
         ? fibContainerNode->template safe_cref<thrift_tags::fibV4>()
         : fibContainerNode->template safe_cref<thrift_tags::fibV6>();
@@ -439,7 +502,7 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
       XLOGF(
           INFO,
           "[FsdbFibWatcher] routeExists({}): switchId={} no {} node",
-          prefixStr,
+          prefixForLog,
           switchId,
           isV4 ? "fibV4" : "fibV6");
       continue;
@@ -452,7 +515,7 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
           INFO,
           "[FsdbFibWatcher] routeExists({}): found in switchId={} {}"
           " igpCost={}",
-          prefixStr,
+          prefixForLog,
           switchId,
           isV4 ? "fibV4" : "fibV6",
           igpCost ? fmt::format("{}", *igpCost) : "none");
@@ -461,7 +524,7 @@ std::pair<bool, std::optional<uint32_t>> FsdbFibWatcher::routeExistsInCowTree(
     XLOGF(
         INFO,
         "[FsdbFibWatcher] routeExists({}): prefix not in switchId={} {}",
-        prefixStr,
+        prefixForLog,
         switchId,
         isV4 ? "fibV4" : "fibV6");
   }
@@ -481,7 +544,7 @@ namespace {
  * reconcile's newReachable) stays with each branch.
  */
 void emitReachabilityUpdate(
-    const folly::IPAddress& peerAddr,
+    const NexthopKey& peerAddr,
     bool exists,
     const std::optional<uint32_t>& igpCost,
     bool wasReachable,
@@ -493,7 +556,7 @@ void emitReachabilityUpdate(
       FsdbStatsDC::incrFsdbNhtNexthopReachable();
     }
     batchUpdates.emplace_back(
-        NexthopKey{.ip = peerAddr, .nextHopVrfId = fboss::kDefaultVrf},
+        peerAddr,
         /*isReachable=*/true,
         igpCost,
         /*isConnected=*/std::nullopt,
@@ -503,7 +566,7 @@ void emitReachabilityUpdate(
           INFO,
           "[FsdbFibWatcher] {}Nexthop {}: {} igpCost={}",
           logPrefix,
-          peerAddr.str(),
+          formatNexthop(peerAddr),
           wasReachable ? "cost update" : "became reachable",
           igpCost ? fmt::format("{}", *igpCost) : "none");
     }
@@ -512,7 +575,7 @@ void emitReachabilityUpdate(
       FsdbStatsDC::incrFsdbNhtNexthopUnreachable();
     }
     batchUpdates.emplace_back(
-        NexthopKey{.ip = peerAddr, .nextHopVrfId = fboss::kDefaultVrf},
+        peerAddr,
         /*isReachable=*/false,
         /*igpCost=*/std::nullopt,
         /*isConnected=*/std::nullopt,
@@ -522,7 +585,7 @@ void emitReachabilityUpdate(
           INFO,
           "[FsdbFibWatcher] {}Nexthop unreachable: {} igpCost=none",
           logPrefix,
-          peerAddr.str());
+          formatNexthop(peerAddr));
     }
   }
 }
@@ -532,10 +595,8 @@ folly::coro::Task<void> FsdbFibWatcher::co_processFibUpdate(
     fboss::fsdb::FsdbCowStateSubManager::SubUpdate update) {
   /**
    * Two update modes:
-   *  - Event-driven (steady state): scan updatedPath tokens for subscribed
-   *    prefix strings. Struct fields use numeric thrift IDs, but map keys (like
-   *    "fdad:500::d:0/128") appear as literal string tokens. Match these
-   *    against subscribedPrefixes_ to find affected peers and update status.
+   *  - Event-driven (steady state): match the FIB prefix and VRF in each
+   *    updatedPath to subscribedPrefixes_ and update that nexthop.
    *  - Reconcile (first update after a (re)connect, when needsReconcile_ is
    *    armed by co_markNeedsReconcile): recompute reachability for every
    *    subscribed prefix against the full snapshot and emit only the delta vs
@@ -557,29 +618,25 @@ folly::coro::Task<void> FsdbFibWatcher::co_processFibUpdate(
      * nexthops that actually changed (newly reachable/unreachable, or cost
      * changed while disconnected) reach the RIB.
      */
-    folly::F14FastSet<folly::IPAddress> newReachable;
+    folly::F14FastSet<NexthopKey, NexthopKey::Hash> newReachable;
     newReachable.reserve(subscribedPrefixes_.size());
     /*
-     * subscribedPrefixes_ is keyed by a host prefix derived 1:1 from the
-     * nexthop, so each peerAddr appears in exactly one entry (each peer visited
-     * once). reachableNexthops_ still holds the pre-reconcile state during the
+     * Each (address, nextHopVrfId) is visited once. reachableNexthops_ still
+     * holds the pre-reconcile state during the
      * loop -- it is replaced only after -- so contains() detects genuine
      * transitions.
      */
-    for (const auto& [prefixStr, peerInfo] : subscribedPrefixes_) {
-      const auto& peerAddr = peerInfo.first;
-      const bool isV4 = peerInfo.second;
+    for (const auto& [prefix, nexthop] : subscribedPrefixes_) {
       auto [exists, igpCost] =
-          routeExistsInCowTree(prefixStr, isV4, update.data);
-      const bool wasReachable = reachableNexthops_.contains(peerAddr);
+          routeExistsInCowTree(prefix, nexthop, update.data);
+      const bool wasReachable = reachableNexthops_.contains(nexthop);
       if (exists) {
-        newReachable.insert(peerAddr);
+        newReachable.insert(nexthop);
       } else if (!wasReachable) {
-        // Still absent and never reachable: nothing to emit.
         continue;
       }
       emitReachabilityUpdate(
-          peerAddr,
+          nexthop,
           exists,
           igpCost,
           wasReachable,
@@ -600,30 +657,26 @@ folly::coro::Task<void> FsdbFibWatcher::co_processFibUpdate(
         reachableNexthops_.size());
   } else {
     for (const auto& pathTokens : update.updatedPaths) {
-      for (const auto& token : pathTokens) {
-        auto it = subscribedPrefixes_.find(token);
-        if (it == subscribedPrefixes_.end()) {
-          continue;
-        }
-        const auto& [peerAddr, isV4] = it->second;
-        const auto& prefixStr = it->first;
-        auto [exists, igpCost] =
-            routeExistsInCowTree(prefixStr, isV4, update.data);
-        const bool wasReachable = reachableNexthops_.contains(peerAddr);
-        if (exists) {
-          reachableNexthops_.insert(peerAddr);
-        } else {
-          reachableNexthops_.erase(peerAddr);
-        }
-        emitReachabilityUpdate(
-            peerAddr,
-            exists,
-            igpCost,
-            wasReachable,
-            /*isReconcile=*/false,
-            batchUpdates);
-        break; // found the relevant token, done with this path
+      auto it = findUpdatedPrefix(pathTokens);
+      if (it == subscribedPrefixes_.end()) {
+        continue;
       }
+      const auto& [prefix, nexthop] = *it;
+      auto [exists, igpCost] =
+          routeExistsInCowTree(prefix, nexthop, update.data);
+      const bool wasReachable = reachableNexthops_.contains(nexthop);
+      if (exists) {
+        reachableNexthops_.insert(nexthop);
+      } else {
+        reachableNexthops_.erase(nexthop);
+      }
+      emitReachabilityUpdate(
+          nexthop,
+          exists,
+          igpCost,
+          wasReachable,
+          /*isReconcile=*/false,
+          batchUpdates);
     }
   }
 

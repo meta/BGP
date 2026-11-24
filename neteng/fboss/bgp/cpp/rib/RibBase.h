@@ -224,7 +224,8 @@ class RibBase : public BgpModuleBase, public MonitoredModule {
    * Set the callback invoked (on the RIB thread) with nexthops newly learned
    * from RIB-IN, so they can be registered for FSDB tracking. Wired in Main.cpp
    * to NeighborWatcher::requestNexthopSubscribe when nexthop tracking is
-   * enabled. When unset (default), no RIB-IN-driven tracking is performed.
+   * enabled. Current RIBs use default-VRF IGP resolution. When unset, no
+   * tracking is performed.
    */
   void setNexthopSubscribeRequester(
       std::function<void(std::vector<folly::IPAddress>)> requester) {

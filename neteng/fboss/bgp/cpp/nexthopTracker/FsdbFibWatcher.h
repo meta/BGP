@@ -32,6 +32,7 @@
 #include <folly/coro/Task.h>
 #include <folly/io/async/EventBase.h>
 #include <optional>
+#include <utility>
 
 namespace facebook::bgp {
 
@@ -40,7 +41,8 @@ namespace facebook::bgp {
  *
  * Subscribes to per-peer host-route paths in FSDB (e.g.,
  * agent/switchState/fibsInfoMap["0"]/fibsMap[0]/fibV4["10.0.0.1/32"]) for
- * all switch IDs on the device (fetched from the agent), fboss::kDefaultVrf=0.
+ * all switch IDs on the device (fetched from the agent). Each key selects
+ * its FIB VRF.
  * Only static peers (those with exact IP peer_addr from
  * getPeerToConfig()) are subscribed — dynamic peers (CIDR peer_addr from
  * getDynamicPeerToConfig()) are NOT tracked here.
@@ -83,28 +85,28 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
    * include in the FSDB subscription. If called after addPaths(), logs a
    * warning (paths are already registered with the shared sub manager).
    **/
-  void addPeerAddress(const folly::IPAddress& peerAddr);
+  void addPeerAddress(const NexthopKey& peerAddr);
 
   /**
    * Remove a peer address from tracking. If called after addPaths(), logs
    * a warning (paths are already registered with the shared sub manager).
    **/
-  void removePeerAddress(const folly::IPAddress& peerAddr);
+  void removePeerAddress(const NexthopKey& peerAddr);
 
   /**
    * Add peer addresses and register their FSDB FIB host-route paths on the
    * shared sub manager. Schedules addPaths() on evb_. Must be called before
    * NeighborWatcher::subscribe() so paths are registered before subscribe().
    **/
-  void registerPeers(const std::vector<folly::IPAddress>& peerAddresses);
+  void registerPeers(const std::vector<NexthopKey>& peerAddresses);
 
   /**
-   * Return the subset of the given nexthops not already tracked (and de-dupe
-   * the input). Runs on evb_. Used by NeighborWatcher to decide whether a
+   * Return keys not already tracked and de-dupe the input. Runs on evb_.
+   * Used by NeighborWatcher to decide whether a
    * re-subscribe is needed for newly-learned nexthops.
    **/
-  std::vector<folly::IPAddress> filterNewNexthops(
-      const std::vector<folly::IPAddress>& nexthops) const;
+  std::vector<NexthopKey> filterNewNexthops(
+      const std::vector<NexthopKey>& nexthops) const;
 
   /**
    * Register FSDB FIB host-route paths for newly-learned nexthops (e.g., from
@@ -114,20 +116,19 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
    * stream. When liveAdd is false (older server) the paths are staged with the
    * pre-subscribe addPath(); the caller is responsible for the surrounding
    * stop()/subscribe() (see NeighborWatcher::requestNexthopSubscribe). Runs on
-   * evb_.
+   * evb_. Each key selects its FSDB FIB container and cached result.
    **/
   void addNexthopPaths(
-      const std::vector<folly::IPAddress>& newNexthops,
+      const std::vector<NexthopKey>& newNexthops,
       bool liveAdd);
 
   void stop() noexcept;
 
   /**
    * Called on evb_ for each FSDB update. Purely event-driven: scans
-   * updatedPaths for subscribed prefix strings (map keys appear as literal
-   * tokens even when struct fields use numeric IDs) and checks only
-   * affected peers. Non-FIB updates (e.g., interfaceMap) are skipped
-   * because no subscribed prefix token will match.
+   * updatedPaths for subscribed FIB prefixes and their VRFs, using the
+   * numeric field IDs registered with FSDB. Checks only affected nexthops;
+   * non-FIB updates (e.g., interfaceMap) are skipped.
    *
    * No notification for a prefix means the route does not exist yet.
    * As notifications arrive, nexthop status is updated. After a reconnect
@@ -174,6 +175,16 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
   folly::coro::Task<void> co_updateCacheAndPushToRib(
       const std::vector<NexthopStatus>& updates);
 
+  /*
+   * Used as a key to identify a unique FIB route for a given prefix across
+   * all switchIds. First element is the prefix string, second is the VRF ID.
+   */
+  using PrefixKey = std::pair<std::string, uint16_t>;
+  using SubscribedPrefixMap = folly::F14FastMap<PrefixKey, NexthopKey>;
+
+  SubscribedPrefixMap::const_iterator findUpdatedPrefix(
+      const std::vector<std::string>& pathTokens) const;
+
   /**
    * Add FSDB paths for all tracked peer addresses to the shared sub manager.
    * Fetches switch IDs from the agent and registers FIB host-route paths.
@@ -196,9 +207,7 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
    * without crashing. virtual so tests can inject a failure to exercise the
    * no-crash/retry path.
    **/
-  virtual void addFsdbPathsForNexthop(
-      const folly::IPAddress& nexthop,
-      bool liveAdd);
+  virtual void addFsdbPathsForNexthop(const NexthopKey& nexthop, bool liveAdd);
 
   /**
    * Check if a route exists in the COW tree for the given prefix and
@@ -207,8 +216,8 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
    * when the route does not exist or no applicable nexthop carries a cost.
    **/
   std::pair<bool, std::optional<uint32_t>> routeExistsInCowTree(
-      const std::string& prefixStr,
-      bool isV4,
+      const PrefixKey& prefix,
+      const NexthopKey& nexthop,
       const fboss::fsdb::FsdbCowStateSubManager::Data& data);
 
   /**
@@ -222,31 +231,28 @@ class FsdbFibWatcher : public std::enable_shared_from_this<FsdbFibWatcher> {
   // Switch IDs fetched from agent in addPaths(), used in routeExistsInCowTree()
   std::vector<std::string> switchIds_;
 
-  // Current set of nexthop IPs reachable via FIB host routes
-  folly::F14FastSet<folly::IPAddress> reachableNexthops_;
+  // Reachable nexthop identities from subscribed FIB host routes
+  folly::F14FastSet<NexthopKey, NexthopKey::Hash> reachableNexthops_;
 
   /**
    * The authoritative set of nexthop addresses whose FIB host routes are
    * subscribed (or pending subscription) in FSDB. Populated from configured
    * BGP peers at startup (before the initial subscribe) and from RIB-IN
    * learned nexthops at runtime. Used for dedup so a nexthop is subscribed
-   * exactly once.
+   * exactly once per nextHopVrfId.
    **/
-  folly::F14FastSet<folly::IPAddress> subscribedPeers_;
+  folly::F14FastSet<NexthopKey, NexthopKey::Hash> subscribedPeers_;
+
+  /* For example, ("2001:db8::1/128", 7) identifies one resolution VRF. */
+  SubscribedPrefixMap subscribedPrefixes_;
 
   /**
-   * Map from prefix string (e.g., "fdad:500::d:0/128") to {peerAddr, isV4}.
-   * Built in addPaths() for fast lookup when scanning updatedPath tokens.
-   **/
-  folly::F14FastMap<std::string, std::pair<folly::IPAddress, bool>>
-      subscribedPrefixes_;
-
-  /**
-   * Per-(switchId, prefix) paths already registered with the sub manager,
-   * recorded only after a successful addPath(). Makes addFsdbPathsForNexthop()
-   * idempotent so that a retry following a partial failure does not re-add an
-   * already-registered path (which would trip the sub manager's fatal
-   * "Duplicate path added" CHECK). Key format: "<switchId>|<prefix>".
+   * Per-(switchId, nextHopVrfId, prefix) paths already registered with the sub
+   * manager, recorded only after a successful addPath(). Makes
+   * addFsdbPathsForNexthop() idempotent so that a retry following a partial
+   * failure does not re-add an already-registered path (which would trip the
+   * sub manager's fatal "Duplicate path added" CHECK). Key format:
+   * "<switchId>|<nextHopVrfId>|<prefix>".
    **/
   folly::F14FastSet<std::string> registeredFsdbPaths_;
 

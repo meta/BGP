@@ -318,6 +318,39 @@ class E2ENexthopVrfTest
 };
 
 /* Untracked resolution keys must not consume a pending default-key change. */
+TEST_P(E2ENexthopVrfTest, UntrackedResolutionVrfUpdatePreservesDefaultRoutes) {
+  const auto nh = nexthop();
+  const auto network = prefix();
+  const auto markerNh = otherNexthop();
+  const auto markerNetwork = prefix(/*second=*/true);
+  injectNexthopStatuses(
+      {NexthopStatus(NexthopKey{.ip = nh}, /*isReachable=*/true, 10),
+       NexthopStatus(NexthopKey{.ip = markerNh}, /*isReachable=*/true, 10)});
+  ASSERT_NO_FATAL_FAILURE(announce(network, kPeerAddr3, nh));
+  ASSERT_NO_FATAL_FAILURE(expectAdvertised(network, nh));
+  ASSERT_NO_FATAL_FAILURE(announce(markerNetwork, kPeerAddr3, markerNh));
+  ASSERT_NO_FATAL_FAILURE(expectAdvertised(markerNetwork, markerNh));
+
+  /* Withhold the default notification to expose a foreign cache reread. */
+  const auto pending = cache_->addOrUpdateNextHopStatus(
+      {NexthopStatus(NexthopKey{.ip = nh}, /*isReachable=*/false)});
+  ASSERT_EQ(1, pending.size());
+  ribInQ_.fiberPush(RibInNexthopUpdate({NexthopStatus(
+      NexthopKey{.ip = nh, .nextHopVrfId = 7}, /*isReachable=*/false)}));
+  /* A separate route's withdrawal fences the preceding queue messages. */
+  injectNexthopStatuses(
+      {NexthopStatus(NexthopKey{.ip = markerNh}, /*isReachable=*/false)});
+  ASSERT_NO_FATAL_FAILURE(expectWithdrawn(markerNetwork));
+  EXPECT_NE(nullptr, getBestPath(network));
+  const auto fib =
+      getFibWeightedNexthops(folly::IPAddress::networkToString(network));
+  ASSERT_NE(nullptr, fib);
+  EXPECT_TRUE(fib->contains(nh));
+
+  ribInQ_.fiberPush(RibInNexthopUpdate(pending));
+  ASSERT_NO_FATAL_FAILURE(expectWithdrawn(network));
+}
+
 TEST_P(E2ENexthopVrfTest, LateResolutionWithdrawalAndRecovery) {
   ASSERT_NO_FATAL_FAILURE(startWatcher());
   announce(prefix(), kPeerAddr3, nexthop());
@@ -442,6 +475,142 @@ TEST_P(E2ENexthopVrfTest, ReachableWithoutCostRemainsEligible) {
   removeHostRoute(nexthop());
   publish();
   expectWithdrawn(prefix());
+}
+
+TEST_P(E2ENexthopVrfTest, UnregisteredKeyKeepsStatusWithoutNotifications) {
+  ASSERT_NO_FATAL_FAILURE(startWatcher(/*handlerOnly=*/true));
+  const NexthopKey key{.ip = nexthop()};
+  cache_->registerAndGetNexthopStatus(key);
+  watcher_->requestNexthopSubscribe({key, key});
+  setHostRoute(nexthop(), fboss::kDefaultVrf, 10);
+  publish();
+  expectUpdates({NexthopKey{.ip = nexthop()}}, /*reachable=*/true, 10);
+  const auto epoch = cache_->getNexthopStatus(key)->getEpoch();
+  cache_->unregisterAndRemoveNexthopStatus(key);
+  setHostRoute(nexthop(), fboss::kDefaultVrf, 20);
+  publish();
+  expectNoMoreUpdates();
+  EXPECT_FALSE(cache_->isRegistered(key));
+  EXPECT_GT(cache_->getNexthopStatus(key)->getEpoch(), epoch);
+  EXPECT_EQ(20, cache_->registerAndGetNexthopStatus(key).getIgpCost());
+  removeHostRoute(nexthop());
+  publish();
+  expectUpdates(
+      {NexthopKey{.ip = nexthop()}}, /*reachable=*/false, std::nullopt);
+}
+
+TEST_P(E2ENexthopVrfTest, SameAddressHasIndependentNextHopVrfs) {
+  ASSERT_NO_FATAL_FAILURE(startWatcher(/*handlerOnly=*/true));
+  cache_->registerAndGetNexthopStatus(NexthopKey{.ip = nexthop()});
+  cache_->registerAndGetNexthopStatus(
+      NexthopKey{.ip = nexthop(), .nextHopVrfId = 7});
+  cache_->registerAndGetNexthopStatus(
+      NexthopKey{.ip = nexthop(), .nextHopVrfId = 7});
+  watcher_->requestNexthopSubscribe(
+      {NexthopKey{.ip = nexthop()},
+       NexthopKey{.ip = nexthop(), .nextHopVrfId = 7}});
+  setHostRoute(nexthop(), fboss::kDefaultVrf, 10);
+  setHostRoute(nexthop(), 7, 10);
+  publish();
+  expectUpdates(
+      {NexthopKey{.ip = nexthop()},
+       NexthopKey{.ip = nexthop(), .nextHopVrfId = 7}},
+      /*reachable=*/true,
+      10);
+  const auto defaultEpoch =
+      cache_->getNexthopStatus(NexthopKey{.ip = nexthop()})->getEpoch();
+  setHostRoute(nexthop(), 7, 70);
+  publish();
+  expectUpdates(
+      {NexthopKey{.ip = nexthop(), .nextHopVrfId = 7}}, /*reachable=*/true, 70);
+  EXPECT_EQ(
+      defaultEpoch,
+      cache_->getNexthopStatus(NexthopKey{.ip = nexthop()})->getEpoch());
+  const auto otherEpoch =
+      cache_->getNexthopStatus(NexthopKey{.ip = nexthop(), .nextHopVrfId = 7})
+          ->getEpoch();
+  removeHostRoute(nexthop());
+  publish();
+  expectUpdates(
+      {NexthopKey{.ip = nexthop()}}, /*reachable=*/false, std::nullopt);
+  EXPECT_EQ(
+      otherEpoch,
+      cache_->getNexthopStatus(NexthopKey{.ip = nexthop(), .nextHopVrfId = 7})
+          ->getEpoch());
+  cache_->unregisterAndRemoveNexthopStatus(NexthopKey{.ip = nexthop()});
+  EXPECT_TRUE(
+      cache_->isRegistered(NexthopKey{.ip = nexthop(), .nextHopVrfId = 7}));
+  removeHostRoute(nexthop(), 7);
+  publish();
+  expectUpdates(
+      {NexthopKey{.ip = nexthop(), .nextHopVrfId = 7}},
+      /*reachable=*/false,
+      std::nullopt);
+  expectNoMoreUpdates();
+}
+
+/*
+ * A cost change while disconnected must reach only its registered context on
+ * initial sync. The unchanged VRF must retain its epoch and emit no update.
+ */
+TEST_P(E2ENexthopVrfTest, ReconnectReconcilesCostWithoutVrfChurn) {
+  ASSERT_NO_FATAL_FAILURE(startWatcher(/*handlerOnly=*/true));
+  cache_->registerAndGetNexthopStatus(NexthopKey{.ip = nexthop()});
+  cache_->registerAndGetNexthopStatus(
+      NexthopKey{.ip = nexthop(), .nextHopVrfId = 7});
+  watcher_->requestNexthopSubscribe(
+      {NexthopKey{.ip = nexthop()},
+       NexthopKey{.ip = nexthop(), .nextHopVrfId = 7}});
+  setHostRoute(nexthop(), fboss::kDefaultVrf, 10);
+  setHostRoute(nexthop(), 7, 10);
+  publish();
+  expectUpdates(
+      {NexthopKey{.ip = nexthop()},
+       NexthopKey{.ip = nexthop(), .nextHopVrfId = 7}},
+      /*reachable=*/true,
+      10);
+  const auto epoch =
+      cache_->getNexthopStatus(NexthopKey{.ip = nexthop(), .nextHopVrfId = 7})
+          ->getEpoch();
+  watcher_->getEventBase().runInEventBaseThreadAndWait(
+      [this] { subMgr_->stop(); });
+  setHostRoute(nexthop(), fboss::kDefaultVrf, 20);
+  setHostRoute(marker_, fboss::kDefaultVrf, 101);
+  publish();
+  watcher_->subscribe();
+
+  /* The changed marker fences receipt of the post-disconnect snapshot. */
+  folly::F14FastSet<NexthopKey, NexthopKey::Hash> remaining{
+      NexthopKey{.ip = marker_}, NexthopKey{.ip = nexthop()}};
+  while (!remaining.empty()) {
+    const auto message =
+        test::boundedBlockingPop(handlerQ_, "reconnect snapshot");
+    const auto* update = std::get_if<RibInNexthopUpdate>(&message);
+    ASSERT_NE(nullptr, update);
+    ASSERT_FALSE(update->nexthopStatuses.empty());
+    for (const auto& status : update->nexthopStatuses) {
+      ASSERT_EQ(1, remaining.erase(status.getNexthopKey()));
+      if (status.getNexthop() == marker_) {
+        EXPECT_EQ(101, status.getIgpCost());
+      } else {
+        EXPECT_EQ(nexthop(), status.getNexthop());
+        EXPECT_TRUE(status.isReachable());
+        EXPECT_EQ(20, status.getIgpCost());
+      }
+    }
+  }
+  EXPECT_TRUE(handlerQ_.empty());
+  EXPECT_EQ(
+      epoch,
+      cache_->getNexthopStatus(NexthopKey{.ip = nexthop(), .nextHopVrfId = 7})
+          ->getEpoch());
+  EXPECT_TRUE(
+      cache_->getNexthopStatus(NexthopKey{.ip = nexthop(), .nextHopVrfId = 7})
+          ->isReachable());
+  removeHostRoute(nexthop());
+  publish();
+  expectUpdates(
+      {NexthopKey{.ip = nexthop()}}, /*reachable=*/false, std::nullopt);
 }
 
 INSTANTIATE_TEST_SUITE_P(

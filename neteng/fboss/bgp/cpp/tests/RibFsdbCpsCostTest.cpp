@@ -102,11 +102,17 @@ class RibFsdbCpsCostTest : public RibFixture {
   }
 
   void injectFibCosts(int64_t firstCost, int64_t secondCost) {
+    auto fibV4Path = watcher_->fsdbStateRootPath_.agent()
+                         .switchState()
+                         .fibsInfoMap()["id=0"]
+                         .fibsMap()[fboss::kDefaultVrf]
+                         .fibV4();
     folly::coro::blockingWait(watcher_->co_processFibUpdate(
         fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
             makeFibState(firstCost, secondCost),
             {},
-            {{kV4Nexthop1.str() + "/32"}, {kV4Nexthop2.str() + "/32"}},
+            {fibV4Path[kV4Nexthop1.str() + "/32"].idTokens(),
+             fibV4Path[kV4Nexthop2.str() + "/32"].idTokens()},
             std::nullopt,
             std::nullopt,
             /*streamRevision=*/std::nullopt}));

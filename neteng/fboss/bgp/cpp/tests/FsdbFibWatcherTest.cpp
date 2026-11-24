@@ -33,11 +33,15 @@
   FRIEND_TEST(NeighborWatcherFibTest, CleanShutdownWithoutSharedSubMgr);    \
   FRIEND_TEST(NeighborWatcherFibTest, StopAfterSubscribeIsClean);
 
+#include <folly/CancellationToken.h>
 #include <folly/IPAddress.h>
+#include <folly/coro/Baton.h>
 #include <folly/coro/GtestHelpers.h>
+#include <folly/executors/ManualExecutor.h>
 #include <folly/io/async/EventBase.h>
 #include <folly/logging/xlog.h>
 #include <stdexcept>
+#include "fboss/agent/Constants.h"
 #include "fboss/agent/gen-cpp2/switch_state_types.h"
 #include "fboss/agent/if/gen-cpp2/common_types.h"
 #include "fboss/agent/if/gen-cpp2/ctrl_types.h"
@@ -116,6 +120,18 @@ fboss::fsdb::FsdbCowStateSubManager::Data makeCowDataWithoutRoute() {
 }
 
 namespace {
+std::vector<std::string> makeFibPath(
+    const std::string& prefix,
+    uint16_t vrfId = fboss::kDefaultVrf) {
+  auto path = thriftpath::RootThriftPath<fboss::fsdb::FsdbOperStateRoot>()
+                  .agent()
+                  .switchState()
+                  .fibsInfoMap()["id=0"]
+                  .fibsMap()[vrfId];
+  return folly::IPAddress::createNetwork(prefix).first.isV4()
+      ? path.fibV4()[prefix].idTokens()
+      : path.fibV6()[prefix].idTokens();
+}
 /*
  * Test seam: a watcher that intercepts path registration so tests can
  * (a) force failures to exercise addNexthopPaths's no-crash / rollback / retry
@@ -394,7 +410,7 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileKeepsStillReachableNexthopWithoutChurn) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           makeCowDataWithRoute("10.0.0.1/32", /*isV4=*/true, {42}),
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -442,7 +458,7 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileWithdrawsNexthopGoneWhileDisconnected) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           makeCowDataWithRoute("10.0.0.1/32", /*isV4=*/true, {42}),
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -450,7 +466,7 @@ CO_TEST_F(FsdbFibWatcherTest, ReconcileWithdrawsNexthopGoneWhileDisconnected) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           makeCowDataWithRoute("fdad:500::d:0/128", /*isV4=*/false, {7}),
           {},
-          {{"fdad:500::d:0/128"}},
+          {makeFibPath("fdad:500::d:0/128")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -492,6 +508,87 @@ TEST_F(FsdbFibWatcherTest, StopIsIdempotent) {
 
   watcher->stop();
   watcher->stop(); // idempotent
+}
+
+CO_TEST_F(FsdbFibWatcherTest, CancellationBeforeUpdateLeavesCacheUnchanged) {
+  const NexthopKey nexthop{.ip = kPeerV4};
+  auto watcher = std::make_shared<FsdbFibWatcher>(
+      nexthopCache_, ribInQ_, &evb_, makeTestSubMgr());
+  watcher->registerPeers({nexthop.ip});
+  evb_.loopOnce();
+  nexthopCache_->registerAndGetNexthopStatus(nexthop);
+  folly::CancellationSource cancellation;
+  cancellation.requestCancellation();
+  auto result = co_await folly::coro::co_awaitTry(
+      folly::coro::co_withCancellation(
+          cancellation.getToken(),
+          watcher->co_processFibUpdate(
+              {makeCowDataWithRoute("10.0.0.1/32", true, {42}),
+               {},
+               {makeFibPath("10.0.0.1/32")},
+               std::nullopt,
+               std::nullopt,
+               std::nullopt})));
+  EXPECT_TRUE(result.hasException<folly::OperationCancelled>());
+  EXPECT_FALSE(nexthopCache_->getNexthopStatus(nexthop)->isReachable());
+  EXPECT_TRUE(ribInQ_.empty());
+}
+
+CO_TEST_F(FsdbFibWatcherTest, CancellationAfterCacheUpdateStillDeliversToRib) {
+  const NexthopKey nexthop{.ip = kPeerV4};
+  nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage> queue{1};
+  auto watcher = std::make_shared<FsdbFibWatcher>(
+      nexthopCache_, queue, &evb_, makeTestSubMgr());
+  watcher->registerPeers({nexthop.ip});
+  evb_.loopOnce();
+  nexthopCache_->registerAndGetNexthopStatus(nexthop);
+  co_await watcher->co_processFibUpdate(
+      {makeCowDataWithRoute("10.0.0.1/32", true, {42}),
+       {},
+       {makeFibPath("10.0.0.1/32")},
+       std::nullopt,
+       std::nullopt,
+       std::nullopt});
+  CO_ASSERT_EQ(1, queue.size());
+
+  folly::ManualExecutor executor;
+  folly::CancellationSource cancellation;
+  folly::coro::Baton finished;
+  folly::Try<void> result;
+  folly::coro::co_withExecutor(
+      &executor,
+      watcher->co_processFibUpdate(
+          {makeCowDataWithoutRoute(),
+           {},
+           {makeFibPath("10.0.0.1/32")},
+           std::nullopt,
+           std::nullopt,
+           std::nullopt}))
+      .start(
+          [&](folly::Try<void> outcome) {
+            result = std::move(outcome);
+            finished.post();
+          },
+          cancellation.getToken());
+  executor.drain();
+  EXPECT_FALSE(nexthopCache_->getNexthopStatus(nexthop)->isReachable());
+  EXPECT_FALSE(finished.ready());
+  cancellation.requestCancellation();
+  executor.drain();
+  EXPECT_FALSE(finished.ready());
+  co_await queue.pop();
+  executor.drain();
+  co_await finished;
+  EXPECT_TRUE(result.hasValue());
+  CO_ASSERT_EQ(1, queue.size());
+  auto message = co_await queue.pop();
+  const auto& updates = std::get<RibInNexthopUpdate>(message).nexthopStatuses;
+  CO_ASSERT_EQ(1, updates.size());
+  EXPECT_EQ(nexthop, updates.front().getNexthopKey());
+  EXPECT_FALSE(updates.front().isReachable());
+  EXPECT_EQ(
+      nexthopCache_->getNexthopStatus(nexthop)->getEpoch(),
+      updates.front().getEpoch());
 }
 
 /*
@@ -606,7 +703,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateSingleNexthopWithCost) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -635,7 +732,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateMultipleNexthopsMinCost) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -664,7 +761,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateNexthopWithoutCost) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -694,7 +791,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateMixedCostNexthopsV6) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData,
           {},
-          {{"fdad:500::d:0/128"}},
+          {makeFibPath("fdad:500::d:0/128")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -723,7 +820,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateBecameUnreachable) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData1,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -737,7 +834,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateBecameUnreachable) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData2,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -766,7 +863,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostChangeWhileReachable) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData1,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -780,7 +877,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostChangeWhileReachable) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData2,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -808,7 +905,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostRemovedWhileReachable) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData1,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -823,7 +920,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateCostRemovedWhileReachable) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData2,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -853,7 +950,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateUnreachableCostIsNullopt) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData1,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});
@@ -867,7 +964,7 @@ CO_TEST_F(FsdbFibWatcherTest, ProcessFibUpdateUnreachableCostIsNullopt) {
       fboss::fsdb::FsdbCowStateSubManager::SubUpdate{
           cowData2,
           {},
-          {{"10.0.0.1/32"}},
+          {makeFibPath("10.0.0.1/32")},
           std::nullopt,
           std::nullopt,
           /*streamRevision=*/std::nullopt});

@@ -111,7 +111,7 @@ void FsdbFibWatcher::addFsdbPathsForNexthop(
     const folly::IPAddress& nexthop,
     bool liveAdd) {
   bool isV4 = nexthop.isV4();
-  auto hostPrefix = fmt::format("{}/{}", nexthop.str(), isV4 ? 32 : 128);
+  auto hostPrefix = fmt::format("{}/{}", nexthop.str(), nexthop.bitCount());
   /*
    * Route each path to the live add-path API for RIB-IN-learned nexthops (the
    * subscription is already up), or to the pre-subscribe addPath for statically
@@ -280,11 +280,8 @@ folly::coro::Task<void> FsdbFibWatcher::co_updateCacheAndPushToRib(
     const std::vector<NexthopStatus>& updates) {
   auto statuses = nexthopCache_->addOrUpdateNextHopStatus(updates);
   if (!statuses.empty()) {
-    auto result = co_await co_awaitTry(
-        ribInQ_.push(RibInNexthopUpdate(std::move(statuses))));
-    if (!result.hasValue()) {
-      co_yield folly::coro::co_error(std::move(result).exception());
-    }
+    co_await ribInQ_.nonCancellablePush(
+        RibInNexthopUpdate(std::move(statuses)));
   }
 }
 
@@ -547,6 +544,7 @@ folly::coro::Task<void> FsdbFibWatcher::co_processFibUpdate(
    *
    * No notification / no route for a prefix means the peer is unreachable.
    **/
+  co_await folly::coro::co_safe_point;
   FsdbStatsDC::setFsdbNhtConnected(1);
   std::vector<NexthopStatus> batchUpdates;
 

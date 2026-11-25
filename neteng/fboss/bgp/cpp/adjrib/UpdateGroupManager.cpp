@@ -47,20 +47,6 @@ std::shared_ptr<AdjRibOutGroup> UpdateGroupManager::findOrCreateGroup(
       updateGroupConfig_);
   groups[key] = group;
 
-  /*
-   * Auto-trigger initial dump if BGP is already initialized.
-   * This handles the case where new groups are created after initial BGP init.
-   */
-  if (isRibInitDone_ && isRibInitDone_()) {
-    if (group->getMemberCount() > 0) {
-      group->scheduleInitialDump();
-      XLOGF(
-          INFO,
-          "BGP already initialized - triggering initial dump for new group: {}",
-          group->getGroupDescriptor());
-    }
-  }
-
   BgpStats::incrNumUpdateGroups();
 
   XLOGF(INFO, "Update group: {} is created", group->getGroupDescriptor());

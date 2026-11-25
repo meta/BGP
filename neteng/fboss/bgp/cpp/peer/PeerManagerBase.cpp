@@ -237,9 +237,7 @@ PeerManagerBase::PeerManagerBase(
 
   if (enableUpdateGroup_) {
     updateGroupManager_ = std::make_unique<UpdateGroupManager>(
-        evb_, updateGroupConfig, policyManager_, [this]() {
-          return ribInitialAnnouncementDone_;
-        });
+        evb_, updateGroupConfig, policyManager_);
   }
 
   // receives from fromAdjRibQ_, so the direction is IN

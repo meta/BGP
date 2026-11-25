@@ -610,8 +610,7 @@ TEST_F(UpdateGroupManagerTest, PolicyManagerPassedToConstructor) {
   UpdateGroupManager manager2(
       evb,
       UpdateGroupConfig{},
-      nullptr, // policyManager
-      nullptr); // isRibInitDone
+      nullptr); // policyManager
   EXPECT_EQ(0, manager2.getGroupCount(fboss::kDefaultVrf));
 }
 
@@ -630,11 +629,7 @@ TEST_F(
   /*
    * Create UpdateGroupManager with the policyManager
    */
-  UpdateGroupManager manager(
-      evb,
-      UpdateGroupConfig{},
-      policyManager,
-      nullptr); // isRibInitDone
+  UpdateGroupManager manager(evb, UpdateGroupConfig{}, policyManager);
 
   /*
    * Create an update group with egress policy configured

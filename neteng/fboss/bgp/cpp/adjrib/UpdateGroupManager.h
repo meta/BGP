@@ -52,12 +52,10 @@ class UpdateGroupManager {
   explicit UpdateGroupManager(
       folly::EventBase& evb,
       const UpdateGroupConfig& updateGroupConfig,
-      std::shared_ptr<PolicyManager> policyManager = nullptr,
-      std::function<bool()> isRibInitDone = nullptr)
+      std::shared_ptr<PolicyManager> policyManager = nullptr)
       : evb_(evb),
         updateGroupConfig_(updateGroupConfig),
-        policyManager_(std::move(policyManager)),
-        isRibInitDone_(std::move(isRibInitDone)) {}
+        policyManager_(std::move(policyManager)) {}
   ~UpdateGroupManager() = default;
 
   /*
@@ -169,12 +167,6 @@ class UpdateGroupManager {
    * peer/update-groups
    */
   std::shared_ptr<PolicyManager> policyManager_{nullptr};
-
-  /*
-   * Callback to check if RIB initialization is complete.
-   * Used to auto-trigger initial dumps for new groups created after BGP init.
-   */
-  std::function<bool()> isRibInitDone_{nullptr};
 };
 
 } // namespace facebook::bgp

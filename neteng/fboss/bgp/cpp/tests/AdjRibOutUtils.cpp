@@ -107,7 +107,8 @@ void AdjRibOutboundFixture::setupAdjRib(
     const bool allowLoopbackReflection,
     const std::optional<nettools::bgplib::BgpAddPathSendRec>& addPathCapa,
     const std::optional<std::string>& ingressPolicyName) {
-  auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(evb_, "GroupOut");
+  auto adjRibOutGroup =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "GroupOut");
   adjRibInQ_->open();
   ribInQ_.open();
   adjRib_ = std::make_shared<AdjRib>(

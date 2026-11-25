@@ -21,6 +21,7 @@
 #include <chrono>
 
 #include "configerator/structs/neteng/fboss/bgp/if/gen-cpp2/bgp_attr_types.h"
+#include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/common/BgpPath.h"
 #include "neteng/fboss/bgp/cpp/common/Types.h"
 
@@ -67,11 +68,14 @@ struct UpdateGroupKey {
   uint32_t localAs{0};
   /* Confederation identifier used by the shared AS_PATH transform. */
   std::optional<uint32_t> asConfedId{std::nullopt};
+  /* VRF of the group's peers. Peers in different VRFs never share a group. */
+  VrfId vrfId{fboss::kDefaultVrf};
 
   bool operator==(const UpdateGroupKey& other) const;
   size_t hash() const;
 
   static UpdateGroupKey buildUpdateGroupKey(
+      VrfId vrfId,
       std::optional<std::string> policyName,
       std::string routeFilterStmtName,
       std::chrono::seconds outDelay,

@@ -96,6 +96,7 @@ UpdateGroupKey createTestKey(
     uint32_t localAs = 0,
     std::optional<uint32_t> asConfedId = std::nullopt) {
   return UpdateGroupKey::buildUpdateGroupKey(
+      fboss::kDefaultVrf,
       std::move(policyName),
       std::move(routeFilterStmtName),
       outDelay,
@@ -123,7 +124,7 @@ TEST_F(UpdateGroupManagerTest, InitialStateEmpty) {
   UpdateGroupManager manager(evb, UpdateGroupConfig{});
   UpdateGroupKey key = createTestKey();
 
-  EXPECT_EQ(manager.getGroupCount(), 0);
+  EXPECT_EQ(manager.getGroupCount(fboss::kDefaultVrf), 0);
   EXPECT_FALSE(manager.hasGroup(key));
   EXPECT_EQ(manager.getGroup(key), nullptr);
 }
@@ -136,7 +137,7 @@ TEST_F(UpdateGroupManagerTest, CreateAndFindGroup) {
   /*
    * Initially no groups exist
    */
-  EXPECT_EQ(0, manager.getGroupCount());
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_FALSE(manager.hasGroup(key));
   EXPECT_THAT(manager.getGroup(key), IsNull());
   EXPECT_EQ(0, getNumUpdateGroupsCounter());
@@ -144,9 +145,9 @@ TEST_F(UpdateGroupManagerTest, CreateAndFindGroup) {
   /*
    * findOrCreateGroup creates a new group
    */
-  auto group1 = manager.findOrCreateGroup(key);
+  auto group1 = manager.findOrCreateGroup(key, ShadowRibView::empty());
   EXPECT_THAT(group1, NotNull());
-  EXPECT_EQ(1, manager.getGroupCount());
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_TRUE(manager.hasGroup(key));
   EXPECT_EQ(1, getNumUpdateGroupsCounter());
 
@@ -154,10 +155,10 @@ TEST_F(UpdateGroupManagerTest, CreateAndFindGroup) {
    * findOrCreateGroup returns existing group for same key
    * Counter should not change
    */
-  auto group2 = manager.findOrCreateGroup(key);
+  auto group2 = manager.findOrCreateGroup(key, ShadowRibView::empty());
   EXPECT_THAT(group2, NotNull());
   EXPECT_EQ(group1.get(), group2.get());
-  EXPECT_EQ(1, manager.getGroupCount());
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_EQ(1, getNumUpdateGroupsCounter());
 }
 
@@ -171,18 +172,18 @@ TEST_F(UpdateGroupManagerTest, MultipleGroups) {
   /*
    * Create first group
    */
-  auto group1 = manager.findOrCreateGroup(key1);
+  auto group1 = manager.findOrCreateGroup(key1, ShadowRibView::empty());
   EXPECT_THAT(group1, NotNull());
-  EXPECT_EQ(1, manager.getGroupCount());
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_TRUE(manager.hasGroup(key1));
   EXPECT_FALSE(manager.hasGroup(key2));
 
   /*
    * Create second group with different key
    */
-  auto group2 = manager.findOrCreateGroup(key2);
+  auto group2 = manager.findOrCreateGroup(key2, ShadowRibView::empty());
   EXPECT_THAT(group2, NotNull());
-  EXPECT_EQ(2, manager.getGroupCount());
+  EXPECT_EQ(2, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_TRUE(manager.hasGroup(key1));
   EXPECT_TRUE(manager.hasGroup(key2));
 
@@ -208,13 +209,13 @@ TEST_F(UpdateGroupManagerTest, DifferentLocalAsCreatesSeparateGroups) {
   auto key2 = key1;
   key2.localAs = 65002;
 
-  auto group1 = manager.findOrCreateGroup(key1);
-  auto group2 = manager.findOrCreateGroup(key2);
+  auto group1 = manager.findOrCreateGroup(key1, ShadowRibView::empty());
+  auto group2 = manager.findOrCreateGroup(key2, ShadowRibView::empty());
 
   EXPECT_THAT(group1, NotNull());
   EXPECT_THAT(group2, NotNull());
   EXPECT_NE(group1.get(), group2.get());
-  EXPECT_EQ(2, manager.getGroupCount());
+  EXPECT_EQ(2, manager.getGroupCount(fboss::kDefaultVrf));
 }
 
 TEST_F(UpdateGroupManagerTest, DifferentAsConfedIdCreatesSeparateGroups) {
@@ -227,13 +228,13 @@ TEST_F(UpdateGroupManagerTest, DifferentAsConfedIdCreatesSeparateGroups) {
   auto key2 = key1;
   key2.asConfedId = 65002;
 
-  auto group1 = manager.findOrCreateGroup(key1);
-  auto group2 = manager.findOrCreateGroup(key2);
+  auto group1 = manager.findOrCreateGroup(key1, ShadowRibView::empty());
+  auto group2 = manager.findOrCreateGroup(key2, ShadowRibView::empty());
 
   EXPECT_THAT(group1, NotNull());
   EXPECT_THAT(group2, NotNull());
   EXPECT_NE(group1.get(), group2.get());
-  EXPECT_EQ(2, manager.getGroupCount());
+  EXPECT_EQ(2, manager.getGroupCount(fboss::kDefaultVrf));
 }
 
 TEST_F(UpdateGroupManagerTest, GroupNameGeneration) {
@@ -246,8 +247,8 @@ TEST_F(UpdateGroupManagerTest, GroupNameGeneration) {
   /*
    * Create groups and verify they have unique names
    */
-  auto group1 = manager.findOrCreateGroup(key1);
-  auto group2 = manager.findOrCreateGroup(key2);
+  auto group1 = manager.findOrCreateGroup(key1, ShadowRibView::empty());
+  auto group2 = manager.findOrCreateGroup(key2, ShadowRibView::empty());
 
   EXPECT_THAT(group1, NotNull());
   EXPECT_THAT(group2, NotNull());
@@ -271,32 +272,84 @@ TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroups) {
   /*
    * An empty group (no members) is destroyed and erased from the manager.
    */
-  auto group = manager.findOrCreateGroup(key);
-  EXPECT_EQ(1, manager.getGroupCount());
+  auto group = manager.findOrCreateGroup(key, ShadowRibView::empty());
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kDefaultVrf));
   folly::coro::blockingWait(manager.maybeDestroyUpdateGroups({group}));
-  EXPECT_EQ(0, manager.getGroupCount());
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kDefaultVrf));
 
   /*
    * Passing an already-destroyed group (and an empty list) is a safe no-op.
    */
   folly::coro::blockingWait(manager.maybeDestroyUpdateGroups({group}));
   folly::coro::blockingWait(manager.maybeDestroyUpdateGroups({}));
-  EXPECT_EQ(0, manager.getGroupCount());
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kDefaultVrf));
 }
 
 TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsDestroysAllEmptyGroups) {
   folly::EventBase evb;
   UpdateGroupManager manager(evb, UpdateGroupConfig{});
 
-  auto group1 = manager.findOrCreateGroup(createTestKey("policy1"));
-  auto group2 = manager.findOrCreateGroup(createTestKey("policy2"));
-  auto group3 = manager.findOrCreateGroup(createTestKey("policy3"));
-  EXPECT_EQ(3, manager.getGroupCount());
+  auto group1 = manager.findOrCreateGroup(
+      createTestKey("policy1"), ShadowRibView::empty());
+  auto group2 = manager.findOrCreateGroup(
+      createTestKey("policy2"), ShadowRibView::empty());
+  auto group3 = manager.findOrCreateGroup(
+      createTestKey("policy3"), ShadowRibView::empty());
+  EXPECT_EQ(3, manager.getGroupCount(fboss::kDefaultVrf));
 
   // All three groups are empty, so passing them together destroys every one.
   folly::coro::blockingWait(
       manager.maybeDestroyUpdateGroups({group1, group2, group3}));
-  EXPECT_EQ(0, manager.getGroupCount());
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kDefaultVrf));
+}
+
+/*
+ * Keys that differ only in their VRF create two groups, each stored and found
+ * under its own VRF.
+ */
+TEST_F(UpdateGroupManagerTest, SameKeyInTwoVrfsCreatesSeparateGroups) {
+  folly::EventBase evb;
+  UpdateGroupManager manager(evb, UpdateGroupConfig{});
+
+  auto key = createTestKey("policy1");
+  auto otherVrfKey = key;
+  otherVrfKey.vrfId = fboss::kQuarantineVrfId;
+  EXPECT_FALSE(key == otherVrfKey);
+  EXPECT_TRUE(UpdateGroupKey::toString(otherVrfKey).ends_with("-1"));
+
+  auto defaultVrfGroup = manager.findOrCreateGroup(key, ShadowRibView::empty());
+  auto otherVrfGroup =
+      manager.findOrCreateGroup(otherVrfKey, ShadowRibView::empty());
+
+  EXPECT_NE(defaultVrfGroup.get(), otherVrfGroup.get());
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kDefaultVrf));
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kQuarantineVrfId));
+  EXPECT_EQ(defaultVrfGroup, manager.getGroup(key));
+  EXPECT_EQ(otherVrfGroup, manager.getGroup(otherVrfKey));
+  EXPECT_EQ(fboss::kDefaultVrf, defaultVrfGroup->getVrfId());
+  EXPECT_EQ(fboss::kQuarantineVrfId, otherVrfGroup->getVrfId());
+  EXPECT_THAT(
+      otherVrfGroup->getGroupDescriptor(), testing::HasSubstr(",vrf=1)"));
+  EXPECT_EQ(2, getNumUpdateGroupsCounter());
+}
+
+// One maybeDestroyUpdateGroups call destroys empty groups from several VRFs.
+TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsAcrossVrfs) {
+  folly::EventBase evb;
+  UpdateGroupManager manager(evb, UpdateGroupConfig{});
+
+  auto key = createTestKey("policy1");
+  auto otherVrfKey = key;
+  otherVrfKey.vrfId = fboss::kQuarantineVrfId;
+  auto defaultVrfGroup = manager.findOrCreateGroup(key, ShadowRibView::empty());
+  auto otherVrfGroup =
+      manager.findOrCreateGroup(otherVrfKey, ShadowRibView::empty());
+
+  folly::coro::blockingWait(
+      manager.maybeDestroyUpdateGroups({defaultVrfGroup, otherVrfGroup}));
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kDefaultVrf));
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kQuarantineVrfId));
+  EXPECT_EQ(0, getNumUpdateGroupsCounter());
 }
 
 TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsSkipsNonEmptyGroups) {
@@ -306,10 +359,13 @@ TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsSkipsNonEmptyGroups) {
   auto emptyKey1 = createTestKey("policy1");
   auto nonEmptyKey = createTestKey("policy2");
   auto emptyKey2 = createTestKey("policy3");
-  auto emptyGroup1 = manager.findOrCreateGroup(emptyKey1);
-  auto nonEmptyGroup = manager.findOrCreateGroup(nonEmptyKey);
-  auto emptyGroup2 = manager.findOrCreateGroup(emptyKey2);
-  EXPECT_EQ(3, manager.getGroupCount());
+  auto emptyGroup1 =
+      manager.findOrCreateGroup(emptyKey1, ShadowRibView::empty());
+  auto nonEmptyGroup =
+      manager.findOrCreateGroup(nonEmptyKey, ShadowRibView::empty());
+  auto emptyGroup2 =
+      manager.findOrCreateGroup(emptyKey2, ShadowRibView::empty());
+  EXPECT_EQ(3, manager.getGroupCount(fboss::kDefaultVrf));
 
   /*
    * Register a peer into the middle group so it has a member; only the two
@@ -336,7 +392,7 @@ TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsSkipsNonEmptyGroups) {
       {emptyGroup1, nonEmptyGroup, emptyGroup2}));
 
   // Only the non-empty group survives.
-  EXPECT_EQ(1, manager.getGroupCount());
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_TRUE(manager.hasGroup(nonEmptyKey));
   EXPECT_FALSE(manager.hasGroup(emptyKey1));
   EXPECT_FALSE(manager.hasGroup(emptyKey2));
@@ -347,7 +403,7 @@ TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsFreesPinnedRibOut) {
   UpdateGroupManager manager(evb, UpdateGroupConfig{});
 
   auto key = createTestKey();
-  auto group = manager.findOrCreateGroup(key);
+  auto group = manager.findOrCreateGroup(key, ShadowRibView::empty());
 
   nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage> ribInQ{
       nettools::bgplib::kMaxIngressQueueSize};
@@ -384,7 +440,7 @@ TEST_F(UpdateGroupManagerTest, MaybeDestroyUpdateGroupsFreesPinnedRibOut) {
   group->unregisterPeer(adjRib);
   folly::coro::blockingWait(manager.maybeDestroyUpdateGroups({group}));
 
-  EXPECT_EQ(0, manager.getGroupCount());
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_EQ(nullptr, adjRib->getUpdateGroup());
 
   /*
@@ -418,7 +474,7 @@ TEST_F(
   UpdateGroupManager manager(evb, UpdateGroupConfig{});
 
   auto key = createTestKey();
-  auto group = manager.findOrCreateGroup(key);
+  auto group = manager.findOrCreateGroup(key, ShadowRibView::empty());
 
   nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage> ribInQ{
       nettools::bgplib::kMaxIngressQueueSize};
@@ -455,7 +511,7 @@ TEST_F(
   ASSERT_TRUE(destroyed.isReady());
   std::move(destroyed).get();
 
-  EXPECT_EQ(0, manager.getGroupCount());
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_FALSE(group->isRibDumpScheduled());
 
   // The cancelled dump never walked: no state advance, no resurrected consumer.
@@ -477,8 +533,9 @@ TEST_F(
 
   auto emptyKey = createTestKey("policy1");
   auto nonEmptyKey = createTestKey("policy2");
-  auto emptyGroup = manager.findOrCreateGroup(emptyKey);
-  auto nonEmptyGroup = manager.findOrCreateGroup(nonEmptyKey);
+  auto emptyGroup = manager.findOrCreateGroup(emptyKey, ShadowRibView::empty());
+  auto nonEmptyGroup =
+      manager.findOrCreateGroup(nonEmptyKey, ShadowRibView::empty());
 
   nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage> ribInQ{
       nettools::bgplib::kMaxIngressQueueSize};
@@ -507,7 +564,7 @@ TEST_F(
   folly::coro::blockingWait(
       manager.maybeDestroyUpdateGroups({emptyGroup, nonEmptyGroup}));
 
-  EXPECT_EQ(1, manager.getGroupCount());
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kDefaultVrf));
   EXPECT_TRUE(manager.hasGroup(nonEmptyKey));
   EXPECT_TRUE(nonEmptyGroup->isRibDumpScheduled());
 
@@ -533,7 +590,7 @@ TEST_F(UpdateGroupManagerTest, SetUpdateGroupState) {
    * Calling setUpdateGroupState on non-existent group should not crash
    */
   manager.setUpdateGroupState(key, UpdateGroupState::UNINITIALIZED);
-  EXPECT_EQ(0, manager.getGroupCount());
+  EXPECT_EQ(0, manager.getGroupCount(fboss::kDefaultVrf));
 }
 
 TEST_F(UpdateGroupManagerTest, PolicyManagerPassedToConstructor) {
@@ -543,9 +600,8 @@ TEST_F(UpdateGroupManagerTest, PolicyManagerPassedToConstructor) {
    * Test that UpdateGroupManager can be created with nullptr policyManager
    * This is the common case when policyManager is not needed
    */
-  UpdateGroupManager manager1(
-      evb, UpdateGroupConfig{}, ShadowRibView::empty(), nullptr);
-  EXPECT_EQ(0, manager1.getGroupCount());
+  UpdateGroupManager manager1(evb, UpdateGroupConfig{}, nullptr);
+  EXPECT_EQ(0, manager1.getGroupCount(fboss::kDefaultVrf));
 
   /*
    * Test that UpdateGroupManager can be created with explicit nullptr
@@ -554,10 +610,9 @@ TEST_F(UpdateGroupManagerTest, PolicyManagerPassedToConstructor) {
   UpdateGroupManager manager2(
       evb,
       UpdateGroupConfig{},
-      ShadowRibView::empty(),
       nullptr, // policyManager
       nullptr); // isRibInitDone
-  EXPECT_EQ(0, manager2.getGroupCount());
+  EXPECT_EQ(0, manager2.getGroupCount(fboss::kDefaultVrf));
 }
 
 TEST_F(
@@ -578,7 +633,6 @@ TEST_F(
   UpdateGroupManager manager(
       evb,
       UpdateGroupConfig{},
-      ShadowRibView::empty(),
       policyManager,
       nullptr); // isRibInitDone
 
@@ -604,9 +658,9 @@ TEST_F(
       true, // as4ByteCapable
       false); // extNhEncodingCapable
 
-  auto group = manager.findOrCreateGroup(key);
+  auto group = manager.findOrCreateGroup(key, ShadowRibView::empty());
   ASSERT_NE(nullptr, group);
-  EXPECT_EQ(1, manager.getGroupCount());
+  EXPECT_EQ(1, manager.getGroupCount(fboss::kDefaultVrf));
 
   /*
    * Verify the group was created successfully and has a valid name
@@ -685,7 +739,7 @@ TEST_F(UpdateGroupManagerTest, InitialDumpTimestampAndDiscrepancies) {
   folly::EventBase evb;
   UpdateGroupManager manager(evb, UpdateGroupConfig{});
   auto key = createTestKey();
-  auto group = manager.findOrCreateGroup(key);
+  auto group = manager.findOrCreateGroup(key, ShadowRibView::empty());
 
   EXPECT_FALSE(group->getInitialDumpCompletionTimeMs().has_value());
   EXPECT_EQ(0, group->getTotalDiscrepancies());
@@ -701,7 +755,7 @@ TEST_F(UpdateGroupManagerTest, RekeyGroupUpdatesMapKey) {
   UpdateGroupManager manager(evb, config);
 
   auto oldKey = createTestKey("OLD_POLICY");
-  auto group = manager.findOrCreateGroup(oldKey);
+  auto group = manager.findOrCreateGroup(oldKey, ShadowRibView::empty());
   ASSERT_NE(group, nullptr);
   EXPECT_TRUE(manager.hasGroup(oldKey));
 
@@ -739,7 +793,7 @@ TEST_F(UpdateGroupManagerTest, RekeyGroupUpdatesMapKey) {
   EXPECT_EQ(newKey.egressPolicyName, "NEW_POLICY");
   EXPECT_TRUE(manager.hasGroup(newKey));
   EXPECT_EQ(manager.getGroup(newKey), group);
-  EXPECT_EQ(manager.getGroupCount(), 1);
+  EXPECT_EQ(manager.getGroupCount(fboss::kDefaultVrf), 1);
 
   // Verify adjRib's key was updated by rekeyGroup
   EXPECT_EQ(adjRib->getUpdateGroupKey().egressPolicyName, "NEW_POLICY");
@@ -769,14 +823,14 @@ TEST_F(UpdateGroupManagerTest, RekeyGroupNoOpWhenKeyUnchanged) {
   // Build the key from the peer first, then create the group with that key
   adjRib->buildAndSetUpdateGroupKey();
   auto key = adjRib->getUpdateGroupKey();
-  auto group = manager.findOrCreateGroup(key);
+  auto group = manager.findOrCreateGroup(key, ShadowRibView::empty());
   group->registerPeer(adjRib);
 
   // Rekey without changing the policy — should be a no-op
   manager.rekeyGroup(group, key);
 
   EXPECT_TRUE(manager.hasGroup(key));
-  EXPECT_EQ(manager.getGroupCount(), 1);
+  EXPECT_EQ(manager.getGroupCount(fboss::kDefaultVrf), 1);
 }
 
 TEST_F(UpdateGroupManagerTest, RekeyGroupUpdatesAllPeerKeys) {
@@ -814,7 +868,8 @@ TEST_F(UpdateGroupManagerTest, RekeyGroupUpdatesAllPeerKeys) {
       nullptr,
       std::make_shared<std::atomic<bool>>(false));
 
-  auto group = manager.findOrCreateGroup(UpdateGroupKey{});
+  auto group =
+      manager.findOrCreateGroup(UpdateGroupKey{}, ShadowRibView::empty());
   group->registerPeer(adjRib1);
   group->registerPeer(adjRib2);
 

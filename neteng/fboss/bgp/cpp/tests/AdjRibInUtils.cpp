@@ -553,7 +553,8 @@ void AdjRibInboundFixture::setupAdjRib(
   postFilterLimit.warning_only() = acptWarningOnly;
   postFilterLimit.warning_limit() = acptWarningLimit;
 
-  auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(evb_, "Group1");
+  auto adjRibOutGroup =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group1");
   adjRibInQ_->open();
   ribInQ_.open();
   adjRib_ = std::make_shared<AdjRib>(
@@ -620,7 +621,8 @@ void AdjRibInboundFixture::setupAdjRib(
 std::shared_ptr<AdjRib> AdjRibInboundFixture::setupAdjRib(
     const nettools::bgplib::BgpPeerId& peerId,
     const PeeringParams& params) {
-  auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(evb_, "Group2");
+  auto adjRibOutGroup =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group2");
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
       params,

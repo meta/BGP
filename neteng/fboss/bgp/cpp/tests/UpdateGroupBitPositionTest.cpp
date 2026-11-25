@@ -58,7 +58,11 @@ class UpdateGroupBitPositionTest : public AdjRibOutboundFixture {
    */
   std::shared_ptr<AdjRibOutGroup> createGroup(const std::string& name) {
     return std::make_shared<AdjRibOutGroup>(
-        evb_, name, 0 /* groupId */, true /* enableUpdateGroup */);
+        evb_,
+        fboss::kDefaultVrf,
+        name,
+        0 /* groupId */,
+        true /* enableUpdateGroup */);
   }
 
   std::shared_ptr<AdjRibOutGroup> group_;

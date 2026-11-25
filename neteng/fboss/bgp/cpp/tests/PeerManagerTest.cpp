@@ -598,7 +598,8 @@ TEST_F(PeerManagerTestFixture, AdjRibOutGroupPeerEntriesTest) {
         config);
     peerMgr->adjRibs_[kPeerId1] = adjRib1;
     EXPECT_NE(vrf->getChangeListTracker(), nullptr);
-    adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group");
+    adjRib1->adjRibOutGroup_ =
+        std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group");
     auto adjRib2 = setupAdjRib(
         evb,
         vrf->getChangeListTracker(),
@@ -710,7 +711,8 @@ TEST_F(PeerManagerTestFixture, AdjRibOutGroupAddPathPeerEntriesTest) {
         sessionTerminateBaton_,
         config);
     peerMgr->adjRibs_[kPeerId1] = adjRib1;
-    adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group");
+    adjRib1->adjRibOutGroup_ =
+        std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group");
     adjRib1->sendAddPath_ = true;
     auto adjRib2 = setupAdjRib(
         evb,
@@ -3029,7 +3031,8 @@ TEST_F(PeerManagerTestFixture, SetRouteFilterPolicyTest) {
       config);
   adjRib1->peeringParams_.description = "adjRib1";
   adjRib1->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib1->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
 
   auto adjRib2 = setupAdjRib(
       evb,
@@ -3040,7 +3043,8 @@ TEST_F(PeerManagerTestFixture, SetRouteFilterPolicyTest) {
       config);
   adjRib2->peeringParams_.description = "adjRib2";
   adjRib2->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib2->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group2");
+  adjRib2->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group2");
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
   peerMgr->adjRibs_[kPeerId2] = adjRib2;
@@ -3240,7 +3244,8 @@ TEST_F(PeerManagerTestFixture, SetRouteFilterPolicyVersionCheckTest) {
       config);
   adjRib1->peeringParams_.description = "adjRib1";
   adjRib1->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib1->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
 
@@ -3367,7 +3372,8 @@ TEST_F(PeerManagerTestFixture, IdenticalRouteFilterPolicyPreservesPendingWork) {
       config);
   adjRib->peeringParams_.description = "adjRib1";
   adjRib->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
   peerMgr->adjRibs_[kPeerId1] = adjRib;
 
   auto peerMgrThread = peerMgr->runInThread();
@@ -3457,7 +3463,8 @@ TEST_F(PeerManagerTestFixture, SetRouteFilterPolicyForceUpdateTest) {
       config);
   adjRib1->peeringParams_.description = "adjRib1";
   adjRib1->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib1->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
 
@@ -4347,7 +4354,8 @@ TEST_F(PeerManagerTestFixture, GoldenPrefixesPolicyStatusTestDropMode) {
       config);
   adjRib1->peeringParams_.description = "adjRib1";
   adjRib1->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib1->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
 
   auto adjRib2 = setupAdjRib(
       evb,
@@ -4358,7 +4366,8 @@ TEST_F(PeerManagerTestFixture, GoldenPrefixesPolicyStatusTestDropMode) {
       config);
   adjRib2->peeringParams_.description = "adjRib2";
   adjRib2->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib2->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group2");
+  adjRib2->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group2");
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
   peerMgr->adjRibs_[kPeerId2] = adjRib2;
@@ -4434,7 +4443,8 @@ TEST_F(PeerManagerTestFixture, GoldenPrefixesPolicyStatusTestSwitchLimitUnset) {
       config);
   adjRib1->peeringParams_.description = "adjRib1";
   adjRib1->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib1->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
 
   auto adjRib2 = setupAdjRib(
       evb,
@@ -4445,7 +4455,8 @@ TEST_F(PeerManagerTestFixture, GoldenPrefixesPolicyStatusTestSwitchLimitUnset) {
       config);
   adjRib2->peeringParams_.description = "adjRib2";
   adjRib2->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib2->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group2");
+  adjRib2->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group2");
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
   peerMgr->adjRibs_[kPeerId2] = adjRib2;
@@ -4731,7 +4742,8 @@ TEST_P(ClearRouteFiltersFixture, ClearIngressEgressRouteFiltersPolicyTest) {
       config);
   adjRib1->peeringParams_.description = "adjRib1";
   adjRib1->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib1->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
 
   auto adjRib2 = setupAdjRib(
       evb,
@@ -4742,7 +4754,8 @@ TEST_P(ClearRouteFiltersFixture, ClearIngressEgressRouteFiltersPolicyTest) {
       config);
   adjRib2->peeringParams_.description = "adjRib2";
   adjRib2->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib2->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group2");
+  adjRib2->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group2");
 
   /*
    * A golden prefix policy is set on each adjRib; clearing the route filters
@@ -4934,7 +4947,8 @@ TEST_F(PeerManagerTestFixture, ClearGoldenPrefixesPolicyTest) {
       config);
   adjRib1->peeringParams_.description = "adjRib1";
   adjRib1->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib1->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
 
   auto adjRib2 = setupAdjRib(
       evb,
@@ -4945,7 +4959,8 @@ TEST_F(PeerManagerTestFixture, ClearGoldenPrefixesPolicyTest) {
       config);
   adjRib2->peeringParams_.description = "adjRib2";
   adjRib2->isSafeModeOn_ = std::make_shared<std::atomic<bool>>(false);
-  adjRib2->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group2");
+  adjRib2->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group2");
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
   peerMgr->adjRibs_[kPeerId2] = adjRib2;
@@ -5030,7 +5045,8 @@ TEST_F(PeerManagerTestFixture, DisableScubaLoggingTest) {
       sessionTerminateBaton_,
       config);
   adjRib1->peeringParams_.description = "adjRib1";
-  adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+  adjRib1->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
 
   auto adjRib2 = setupAdjRib(
       evb,
@@ -5040,7 +5056,8 @@ TEST_F(PeerManagerTestFixture, DisableScubaLoggingTest) {
       sessionTerminateBaton_,
       config);
   adjRib2->peeringParams_.description = "adjRib2";
-  adjRib2->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group2");
+  adjRib2->adjRibOutGroup_ =
+      std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group2");
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
   peerMgr->adjRibs_[kPeerId2] = adjRib2;
@@ -7486,7 +7503,8 @@ TEST_F(PeerManagerTestFixture, MarkDaemonShutdownClearsAdjRibTreesTest) {
         config);
     peerMgr->adjRibs_[kPeerId1] = adjRib1;
 
-    auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(evb, "TestGroup");
+    auto adjRibOutGroup =
+        std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "TestGroup");
     adjRib1->adjRibOutGroup_ = adjRibOutGroup;
 
     auto adjRib2 = setupAdjRib(
@@ -7673,7 +7691,8 @@ TEST_F(PeerManagerTestFixture, GetEffectivePostOutPrefixCountTest) {
         config);
 
     /* Attach an update-group. */
-    adjRib1->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group");
+    adjRib1->adjRibOutGroup_ =
+        std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group");
 
     /* Bump group post-out count to 100 (IPv4). */
     for (uint32_t i = 0; i < 100; ++i) {
@@ -7729,7 +7748,8 @@ TEST_F(PeerManagerTestFixture, GetEffectivePostOutPrefixCountTest) {
         config);
 
     /* Attach an update-group with a count of 20. */
-    adjRib3->adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(evb, "Group");
+    adjRib3->adjRibOutGroup_ =
+        std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group");
     for (uint32_t i = 0; i < 20; ++i) {
       adjRib3->adjRibOutGroup_->stats_.incrementPostOutPrefixCount(
           /*isIpv4=*/true);

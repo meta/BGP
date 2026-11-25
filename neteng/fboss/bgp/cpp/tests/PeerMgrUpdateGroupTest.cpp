@@ -129,11 +129,12 @@ TEST_F(PeerManagerUpdateGroupTestFixture, UpdateGroupConstructionTest) {
     // Validation of update-group creation
     auto adjRib = peerMgr_->adjRibs_.at(kPeerId3);
     auto updateGroupKey = adjRib->getUpdateGroupKey();
-    EXPECT_EQ(1, peerMgr_->updateGroupManager_->getGroupCount());
+    EXPECT_EQ(
+        1, peerMgr_->updateGroupManager_->getGroupCount(fboss::kDefaultVrf));
     EXPECT_TRUE(peerMgr_->updateGroupManager_->hasGroup(updateGroupKey));
     auto adjRibOutGroup = peerMgr_->adjRibOutGroups_.begin()->second;
-    auto updateGroup =
-        peerMgr_->updateGroupManager_->findOrCreateGroup(updateGroupKey);
+    auto updateGroup = peerMgr_->updateGroupManager_->findOrCreateGroup(
+        updateGroupKey, peerMgr_->getDefaultVrf().getShadowRibView());
     EXPECT_NE(adjRibOutGroup, updateGroup);
 
     // trigger stop of task
@@ -172,8 +173,8 @@ TEST_F(
     auto adjRib = peerMgr_->adjRibs_.at(kPeerId3);
     auto updateGroupKey = adjRib->getUpdateGroupKey();
     // Read the group from the same manager getUpdateGroupInfo() iterates.
-    auto group =
-        peerMgr_->updateGroupManager_->findOrCreateGroup(updateGroupKey);
+    auto group = peerMgr_->updateGroupManager_->findOrCreateGroup(
+        updateGroupKey, peerMgr_->getDefaultVrf().getShadowRibView());
     ASSERT_NE(group, nullptr);
 
     /*
@@ -259,7 +260,8 @@ TEST_F(PeerManagerUpdateGroupTestFixture, GetAdjRibStatsReturnsTypedSnapshots) {
 
     const auto adjRib = peerMgr_->adjRibs_.at(kPeerId3);
     const auto group = peerMgr_->updateGroupManager_->findOrCreateGroup(
-        adjRib->getUpdateGroupKey());
+        adjRib->getUpdateGroupKey(),
+        peerMgr_->getDefaultVrf().getShadowRibView());
     ASSERT_NE(nullptr, group);
 
     auto attrs = std::make_shared<BgpPath>(BgpPathFields());

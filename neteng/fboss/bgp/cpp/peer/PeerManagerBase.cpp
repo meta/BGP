@@ -202,7 +202,8 @@ PeerManagerBase::PeerManagerBase(
           std::chrono::seconds(
               *configManager->getConfig()->getConfig().eor_time_s())),
       defaultVrf_(createVrf(fboss::kDefaultVrf)),
-      quarantineVrf_(createVrf(fboss::kQuarantineVrfId)),
+      // TODO: re-enable the quarantine VRF. See @quarantineVrf_.
+      // quarantineVrf_(createVrf(fboss::kQuarantineVrfId)),
       configManager_(configManager),
       policyManager_(policyManager),
       ribInQ_(ribInQ),
@@ -236,11 +237,9 @@ PeerManagerBase::PeerManagerBase(
 
   if (enableUpdateGroup_) {
     updateGroupManager_ = std::make_unique<UpdateGroupManager>(
-        evb_,
-        updateGroupConfig,
-        defaultVrf_.getShadowRibView(),
-        policyManager_,
-        [this]() { return ribInitialAnnouncementDone_; });
+        evb_, updateGroupConfig, policyManager_, [this]() {
+          return ribInitialAnnouncementDone_;
+        });
   }
 
   // receives from fromAdjRibQ_, so the direction is IN
@@ -1357,7 +1356,8 @@ void PeerManagerBase::markRibInitialAnnouncementDone(
        * BGP initialization complete - trigger group-level initial dumps
        * for any update groups in UNINITIALIZED state
        */
-      updateGroupManager_->triggerInitialDumpsForUninitializedGroups();
+      updateGroupManager_->triggerInitialDumpsForUninitializedGroups(
+          vrf.vrfId());
     } else {
       XLOG(
           ERR,
@@ -2057,7 +2057,8 @@ folly::coro::Task<void> PeerManagerBase::sessionEstablished(
        * "UpdateGroupKey".
        */
       const auto& updateGroupKey = adjRib->getUpdateGroupKey();
-      auto updateGroup = updateGroupManager_->findOrCreateGroup(updateGroupKey);
+      auto updateGroup = updateGroupManager_->findOrCreateGroup(
+          updateGroupKey, vrf->getShadowRibView());
 
       /*
        * Wire the group's change list tracker and bitmaps once. The group's
@@ -3285,10 +3286,11 @@ std::shared_ptr<AdjRibOutGroup> PeerManagerBase::createAdjRibOutGroup(
    */
   adjRibOutGroup = std::make_shared<AdjRibOutGroup>(
       evb_,
+      vrf.vrfId(),
       groupName,
       0 /* groupId */,
       false /* enableUpdateGroup */,
-      UpdateGroupKey{},
+      UpdateGroupKey{.vrfId = vrf.vrfId()},
       vrf.getShadowRibView());
   adjRibOutGroups_.emplace(groupName, adjRibOutGroup);
   BgpStats::incrAdjRibOutGroupsCount();
@@ -4508,6 +4510,15 @@ PeerManagerBase::processUpdateGroupsEgressPolicyReevaluation() {
    */
   folly::F14FastSet<std::shared_ptr<AdjRibOutGroup>> allAffectedGroups;
   for (auto& [newKey, adjRibsToMoveFromSource] : newKeyToSourceGroups) {
+    auto* vrf = findVrf(newKey.vrfId);
+    if (!vrf) {
+      XLOGF(
+          ERR,
+          "Skipping update group reconciliation for key {} due to non-existent VRF {}",
+          UpdateGroupKey::toString(newKey),
+          newKey.vrfId);
+      continue;
+    }
     auto targetGroup = updateGroupManager_->getGroup(newKey);
     std::shared_ptr<AdjRibOutGroup> baseGroup;
     bool baseGroupNeedsPolicyReEval = false;
@@ -4542,7 +4553,8 @@ PeerManagerBase::processUpdateGroupsEgressPolicyReevaluation() {
          * Only part of the group moves; copy the state of the group and
          * split the moving adjRibs into a newly created group container.
          */
-        targetGroup = updateGroupManager_->findOrCreateGroup(newKey);
+        targetGroup = updateGroupManager_->findOrCreateGroup(
+            newKey, vrf->getShadowRibView());
         baseGroup->splitToNewGroup(targetGroup, adjRibsFromBaseGroup);
       }
 
@@ -4607,23 +4619,16 @@ PeerManagerBase::processUpdateGroupsEgressPolicyReevaluation() {
       sourceGroup->movePeers(
           adjRibsToMove,
           targetGroup,
-          [this, peersNeedPolicyReEval](const std::shared_ptr<AdjRib>& adjRib) {
+          [vrf, peersNeedPolicyReEval](const std::shared_ptr<AdjRib>& adjRib) {
             /*
              * Policy changed: re-evaluate (walk the shadow RIB under the new
              * policy, consume the CL to the end). This only refreshes RIB-OUT;
              * it does not activate, so control falls through to the activation
-             * below.
+             * below. Every moved peer lands in targetGroup, so they all share
+             * its VRF.
              */
             if (peersNeedPolicyReEval) {
-              if (auto* vrf = findVrf(adjRib->getVrfId())) {
-                vrf->processDetachedPeerEgressPolicyReEvaluation(adjRib);
-              } else {
-                XLOGF(
-                    ERR,
-                    "Ignoring egress policy re-evaluation for peer {} due to non-existent VRF {}",
-                    adjRib->getPeerName(),
-                    adjRib->getVrfId());
-              }
+              vrf->processDetachedPeerEgressPolicyReEvaluation(adjRib);
             }
             /*
              * Activate every moved peer so it drains and rejoins the target
@@ -4783,6 +4788,16 @@ void PeerManagerBase::processGroupEgressPolicyReEvaluation(
   // Step 1: Group-level re-evaluation (serves all IN_SYNC members)
   group->reEvaluateSyncPeersEgressPolicy();
 
+  // Every member of an update group is in the group's VRF.
+  auto* vrf = findVrf(group->getVrfId());
+  if (!vrf) {
+    XLOGF(
+        ERR,
+        "Group {}: Ignoring detached peer egress policy re-evaluation due to non-existent VRF {}",
+        group->getGroupDescriptor(),
+        group->getVrfId());
+  }
+
   /*
    * Step 2: Detached peers are not served by the group walk above, so each
    * needs its own RIB walk. Cancel any rib dump already scheduled for the peer
@@ -4799,14 +4814,8 @@ void PeerManagerBase::processGroupEgressPolicyReEvaluation(
           "Group {}: Re-evaluating detached peer {}",
           group->getGroupDescriptor(),
           adjRib->getPeerName());
-      if (auto* vrf = findVrf(adjRib->getVrfId())) {
+      if (vrf) {
         vrf->processDetachedPeerEgressPolicyReEvaluation(adjRib);
-      } else {
-        XLOGF(
-            ERR,
-            "Ignoring egress policy re-evaluation for peer {} due to non-existent VRF {}",
-            adjRib->getPeerName(),
-            adjRib->getVrfId());
       }
       /*
        * Activate detached mode processing so the peer schedules coroutine to

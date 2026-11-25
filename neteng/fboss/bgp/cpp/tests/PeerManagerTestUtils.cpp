@@ -553,8 +553,8 @@ std::shared_ptr<AdjRib> PeerManagerTestFixture::setupAdjRib(
     bool enableStatefulHa,
     bool v4OverV6Nexthop,
     std::shared_ptr<PolicyManager> policyManager) {
-  auto adjRibOutGroup =
-      std::make_shared<AdjRibOutGroup>(evb, "PeerManagerTest");
+  auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(
+      evb, fboss::kDefaultVrf, "PeerManagerTest");
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
       PeeringParams(
@@ -630,8 +630,8 @@ std::shared_ptr<AdjRib> PeerManagerTestFixture::setupAdjRib(
     const folly::IPAddress& v6Nexthop,
     bool enableStatefulHa,
     bool v4OverV6Nexthop) {
-  auto adjRibOutGroup =
-      std::make_shared<AdjRibOutGroup>(evb, "PeerManagerTest");
+  auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(
+      evb, fboss::kDefaultVrf, "PeerManagerTest");
   auto adjRib = std::make_shared<AdjRib>(
       peerId,
       PeeringParams(

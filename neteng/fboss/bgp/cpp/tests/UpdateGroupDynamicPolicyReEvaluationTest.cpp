@@ -105,8 +105,8 @@ class UpdateGroupDynamicPolicyReEvaluationTest : public PeerManagerTestFixture {
       std::shared_ptr<const Config> config,
       const std::string& description,
       const std::string& peerGroupName) {
-    auto adjRibOutGroup =
-        std::make_shared<AdjRibOutGroup>(evb, "PeerManagerTest");
+    auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(
+        evb, fboss::kDefaultVrf, "PeerManagerTest");
     auto adjRib = std::make_shared<AdjRib>(
         peerId,
         PeeringParams(
@@ -199,7 +199,8 @@ class UpdateGroupDynamicPolicyReEvaluationTest : public PeerManagerTestFixture {
         config,
         "adjRib1",
         "PEERGROUP_RSW_FSW_V4");
-    auto group1 = std::make_shared<AdjRibOutGroup>(evb, "Group1");
+    auto group1 =
+        std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group1");
     adjRib1->adjRibOutGroup_ = group1;
     adjRib1->resetInInitialAnnouncement();
     group1->registerPeer(adjRib1);
@@ -213,7 +214,8 @@ class UpdateGroupDynamicPolicyReEvaluationTest : public PeerManagerTestFixture {
         config,
         "adjRib2",
         "PEERGROUP_FSW_RSW_V4");
-    auto group2 = std::make_shared<AdjRibOutGroup>(evb, "Group2");
+    auto group2 =
+        std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group2");
     adjRib2->adjRibOutGroup_ = group2;
     adjRib2->resetInInitialAnnouncement();
     group2->registerPeer(adjRib2);
@@ -227,7 +229,8 @@ class UpdateGroupDynamicPolicyReEvaluationTest : public PeerManagerTestFixture {
         config,
         "adjRib3",
         "PEERGROUP_RSW_FSW_V4");
-    auto group3 = std::make_shared<AdjRibOutGroup>(evb, "Group3");
+    auto group3 =
+        std::make_shared<AdjRibOutGroup>(evb, fboss::kDefaultVrf, "Group3");
     adjRib3->adjRibOutGroup_ = group3;
     adjRib3->resetInInitialAnnouncement();
     group3->registerPeer(adjRib3);
@@ -351,7 +354,8 @@ TEST_F(
   UpdateGroupKey originalKey;
   evb.runInEventBaseThreadAndWait([&]() {
     originalKey = ctx.adjRib1->buildAndSetUpdateGroupKey();
-    group = ctx.peerMgr->updateGroupManager_->findOrCreateGroup(originalKey);
+    group = ctx.peerMgr->updateGroupManager_->findOrCreateGroup(
+        originalKey, ctx.peerMgr->getDefaultVrf().getShadowRibView());
 
     auto oldGroup1 = ctx.adjRib1->getUpdateGroup();
     oldGroup1->unregisterPeer(ctx.adjRib1);
@@ -697,6 +701,7 @@ TEST_F(
   evb.runInEventBaseThreadAndWait([&]() {
     group = std::make_shared<AdjRibOutGroup>(
         evb,
+        fboss::kDefaultVrf,
         "ReEvalMaxRibVersion",
         1 /* groupId */,
         true /* enableUpdateGroup */,
@@ -761,8 +766,10 @@ class SinglePeerPolicyReEvaluation : public ::testing::Test {
   void SetUp() override {
     folly::SingletonVault::singleton()->registrationComplete();
     evb_ = std::make_unique<folly::EventBase>();
-    sourceGroup_ = std::make_shared<AdjRibOutGroup>(*evb_, "source_group");
-    targetGroup_ = std::make_shared<AdjRibOutGroup>(*evb_, "target_group");
+    sourceGroup_ = std::make_shared<AdjRibOutGroup>(
+        *evb_, fboss::kDefaultVrf, "source_group");
+    targetGroup_ = std::make_shared<AdjRibOutGroup>(
+        *evb_, fboss::kDefaultVrf, "target_group");
 
     auto peerId = nettools::bgplib::BgpPeerId(
         folly::IPAddress("10.0.0.1"),
@@ -832,12 +839,14 @@ TEST_F(SinglePeerPolicyReEvaluation, MovePeerPathTreeMixedEntries) {
   addPathKey.sendAddPath = true;
   auto sourceGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "source_addpath",
       /*groupId=*/0,
       /*enableUpdateGroup=*/false,
       addPathKey);
   auto targetGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "target_addpath",
       /*groupId=*/1,
       /*enableUpdateGroup=*/false,
@@ -928,12 +937,14 @@ TEST_F(
   addPathKey.sendAddPath = true;
   auto sourceGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "source_addpath",
       /*groupId=*/0,
       /*enableUpdateGroup=*/false,
       addPathKey);
   auto targetGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "target_addpath",
       /*groupId=*/1,
       /*enableUpdateGroup=*/false,
@@ -1759,12 +1770,14 @@ TEST_F(SinglePeerPolicyReEvaluation, MovePeersMultiPeerPathTree) {
   addPathKey.sendAddPath = true;
   auto sourceGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "source_addpath",
       /*groupId=*/0,
       /*enableUpdateGroup=*/false,
       addPathKey);
   auto targetGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "target_addpath",
       /*groupId=*/1,
       /*enableUpdateGroup=*/false,
@@ -1862,10 +1875,10 @@ TEST_F(SinglePeerPolicyReEvaluation, MovePeersMultiPeerPathTree) {
  * stays in the old group; its per-peer entries must be left untouched.
  */
 TEST_F(SinglePeerPolicyReEvaluation, MovePeersSharedRibOutLiteTree) {
-  auto sourceGroup =
-      std::make_shared<AdjRibOutGroup>(*evb_, "source_group", /*groupId=*/0);
-  auto targetGroup =
-      std::make_shared<AdjRibOutGroup>(*evb_, "target_group", /*groupId=*/1);
+  auto sourceGroup = std::make_shared<AdjRibOutGroup>(
+      *evb_, fboss::kDefaultVrf, "source_group", /*groupId=*/0);
+  auto targetGroup = std::make_shared<AdjRibOutGroup>(
+      *evb_, fboss::kDefaultVrf, "target_group", /*groupId=*/1);
 
   auto makePeer = [&](const std::string& ip) {
     auto pid = nettools::bgplib::BgpPeerId(
@@ -1996,12 +2009,14 @@ TEST_F(SinglePeerPolicyReEvaluation, MovePeersSharedRibOutPathTree) {
   addPathKey.sendAddPath = true;
   auto sourceGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "source_addpath",
       /*groupId=*/0,
       /*enableUpdateGroup=*/false,
       addPathKey);
   auto targetGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "target_addpath",
       /*groupId=*/1,
       /*enableUpdateGroup=*/false,

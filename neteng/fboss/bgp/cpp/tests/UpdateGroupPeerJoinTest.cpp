@@ -81,7 +81,12 @@ class UpdateGroupPeerJoinTest : public ::testing::Test {
     folly::SingletonVault::singleton()->registrationComplete();
     evb_ = std::make_unique<folly::EventBase>();
     group_ = std::make_shared<AdjRibOutGroup>(
-        *evb_, "test_group", 1, true /* enableUpdateGroup */, UpdateGroupKey{});
+        *evb_,
+        fboss::kDefaultVrf,
+        "test_group",
+        1,
+        true /* enableUpdateGroup */,
+        UpdateGroupKey{});
   }
 
   void TearDown() override {

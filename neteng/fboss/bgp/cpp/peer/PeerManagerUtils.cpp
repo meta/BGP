@@ -150,7 +150,8 @@ std::vector<TUpdateGroupSummary> PeerManagerBase::getUpdateGroupSummaries() {
       return;
     }
 
-    const auto& allGroups = updateGroupManager_->getAllGroups();
+    const auto& allGroups =
+        updateGroupManager_->getAllGroups(fboss::kDefaultVrf);
     result.reserve(allGroups.size());
 
     for (const auto& [key, group] : allGroups) {
@@ -185,7 +186,8 @@ std::vector<TUpdateGroupInfo> PeerManagerBase::getUpdateGroupInfo(
       return;
     }
 
-    const auto& allGroups = updateGroupManager_->getAllGroups();
+    const auto& allGroups =
+        updateGroupManager_->getAllGroups(fboss::kDefaultVrf);
     result.reserve(1);
 
     for (const auto& [key, group] : allGroups) {

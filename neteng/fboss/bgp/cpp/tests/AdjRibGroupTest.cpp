@@ -111,6 +111,7 @@ class AdjRibGroupTest : public ::testing::Test {
       const UpdateGroupKey& groupKey = UpdateGroupKey{}) {
     adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
         *evb_,
+        fboss::kDefaultVrf,
         groupName,
         groupId,
         true /* enableUpdateGroup */,
@@ -420,6 +421,7 @@ TEST_F(AdjRibGroupTest, MultipleGroupsSameTracker) {
   /* Create second group with same tracker */
   auto group2 = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "group2",
       2,
       true /* enableUpdateGroup */,
@@ -443,8 +445,10 @@ TEST_F(AdjRibGroupTest, MultipleGroupsSameTracker) {
  * Test: Group ID uniqueness
  */
 TEST_F(AdjRibGroupTest, GroupIdUniqueness) {
-  auto group1 = std::make_shared<AdjRibOutGroup>(*evb_, "group1", 1);
-  auto group2 = std::make_shared<AdjRibOutGroup>(*evb_, "group2", 2);
+  auto group1 =
+      std::make_shared<AdjRibOutGroup>(*evb_, fboss::kDefaultVrf, "group1", 1);
+  auto group2 =
+      std::make_shared<AdjRibOutGroup>(*evb_, fboss::kDefaultVrf, "group2", 2);
 
   // Group IDs should be different
   EXPECT_NE(group1->getGroupId(), group2->getGroupId());
@@ -625,7 +629,12 @@ TEST_F(
   peerPath1->setRibVersion(150);
 
   auto targetGroup = std::make_shared<AdjRibOutGroup>(
-      *evb_, "target_group", 43, true /* enableUpdateGroup */, key);
+      *evb_,
+      fboss::kDefaultVrf,
+      "target_group",
+      43,
+      true /* enableUpdateGroup */,
+      key);
 
   adjRibOutGroup_->movePeerMaterializedRibOutPathEntries({adjRib}, targetGroup);
 
@@ -719,6 +728,7 @@ TEST_F(AdjRibGroupTest, ResolveEntriesForPeer_UpdateGroupDisabled) {
   // --- Lite (non-add-path) ---
   adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "test_group_disabled_lite",
       42,
       false /* enableUpdateGroup */,
@@ -752,6 +762,7 @@ TEST_F(AdjRibGroupTest, ResolveEntriesForPeer_UpdateGroupDisabled) {
   pathKey.sendAddPath = true;
   adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "test_group_disabled_path",
       43,
       false /* enableUpdateGroup */,
@@ -907,7 +918,7 @@ TEST_F(AdjRibGroupTest, SetLastSeenRibVersionMonotonicity) {
   EXPECT_THAT(
       messages[0].first.getMessage(),
       testing::HasSubstr(
-          "Group 0(/none,peerOverride=false) RIB version "
+          "Group 0(/none,peerOverride=false,vrf=0) RIB version "
           "monotonicity violation, ignoring attempt to set last seen RIB "
           "version 4 below current 10"));
 }
@@ -964,6 +975,7 @@ TEST_F(AdjRibGroupTest, ScheduleInitialDumpSetsRibVersionOnJoinedPeers) {
   uint64_t maxRibVersion = 42;
   adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "test_group",
       0,
       true /* enableUpdateGroup */,
@@ -1024,6 +1036,7 @@ TEST_F(AdjRibGroupTest, InitialDumpOnEmptyShadowRibUsesMaxRibVersion) {
 
   adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "test_group",
       0,
       true /* enableUpdateGroup */,
@@ -1057,6 +1070,7 @@ TEST_F(AdjRibGroupTest, DumpWithNothingPendingSettlesIdle) {
 
   adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "test_group",
       0,
       true /* enableUpdateGroup */,
@@ -1773,7 +1787,11 @@ TEST_F(
    */
 
   auto groupWithAddPath = std::make_shared<AdjRibOutGroup>(
-      *evb_, "test_group_addpath", 43, true /* enableUpdateGroup */);
+      *evb_,
+      fboss::kDefaultVrf,
+      "test_group_addpath",
+      43,
+      true /* enableUpdateGroup */);
 
   /*
    * Manually enable sendAddPath (would normally be set from peer config)
@@ -2718,6 +2736,7 @@ TEST_F(AdjRibGroupPackingFixture, EorCountedSeparatelyFromUpdate) {
   uint64_t maxRibVersion = 0;
   adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "test_group",
       0,
       true /* enableUpdateGroup */,
@@ -3191,6 +3210,7 @@ class AdjRibGroupAddPathFixture : public AdjRibGroupTest {
 
     adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
         *evb_,
+        fboss::kDefaultVrf,
         "test_group",
         42,
         true /* enableUpdateGroup */,
@@ -3564,7 +3584,12 @@ TEST_F(AdjRibGroupPackingFixture, GetGroupKey) {
   key.sendAddPath = true;
 
   auto group = std::make_shared<AdjRibOutGroup>(
-      *evb_, "test_group", 1, true /* enableUpdateGroup */, key);
+      *evb_,
+      fboss::kDefaultVrf,
+      "test_group",
+      1,
+      true /* enableUpdateGroup */,
+      key);
 
   const auto& retrievedKey = group->getGroupKey();
   EXPECT_EQ(retrievedKey.egressPolicyName, "test_policy");
@@ -3649,7 +3674,12 @@ TEST_F(
   key.afiIpv6Negotiated = false;
 
   adjRibOutGroup_ = std::make_shared<AdjRibOutGroup>(
-      *evb_, "test_group", 1, true /* enableUpdateGroup */, key);
+      *evb_,
+      fboss::kDefaultVrf,
+      "test_group",
+      1,
+      true /* enableUpdateGroup */,
+      key);
 
   // Create IPv6 announcement entry (unsupported AFI)
   RibOutAnnouncementEntry entryV6(
@@ -4754,7 +4784,7 @@ TEST_F(AdjRibGroupTest, GroupLabelIncludesV4Only) {
   createAdjRibOutGroup("test", 2, key);
   EXPECT_EQ(
       adjRibOutGroup_->getGroupDescriptor(),
-      "2(EB-FA-OUT/v4,peerOverride=false)");
+      "2(EB-FA-OUT/v4,peerOverride=false,vrf=0)");
 }
 
 TEST_F(AdjRibGroupTest, GroupLabelIncludesV6Only) {
@@ -4766,7 +4796,7 @@ TEST_F(AdjRibGroupTest, GroupLabelIncludesV6Only) {
   createAdjRibOutGroup("test", 3, key);
   EXPECT_EQ(
       adjRibOutGroup_->getGroupDescriptor(),
-      "3(EB-FA-OUT/v6,peerOverride=false)");
+      "3(EB-FA-OUT/v6,peerOverride=false,vrf=0)");
 }
 
 TEST_F(AdjRibGroupTest, GroupLabelIncludesV4V6) {
@@ -4778,7 +4808,7 @@ TEST_F(AdjRibGroupTest, GroupLabelIncludesV4V6) {
   createAdjRibOutGroup("test", 4, key);
   EXPECT_EQ(
       adjRibOutGroup_->getGroupDescriptor(),
-      "4(EB-FA-OUT/v4v6,peerOverride=false)");
+      "4(EB-FA-OUT/v4v6,peerOverride=false,vrf=0)");
 }
 
 TEST_F(AdjRibGroupTest, GroupLabelIncludesV4OverV6) {
@@ -4790,7 +4820,7 @@ TEST_F(AdjRibGroupTest, GroupLabelIncludesV4OverV6) {
   createAdjRibOutGroup("test", 5, key);
   EXPECT_EQ(
       adjRibOutGroup_->getGroupDescriptor(),
-      "5(EB-FA-OUT/v4ov6,peerOverride=false)");
+      "5(EB-FA-OUT/v4ov6,peerOverride=false,vrf=0)");
 }
 
 TEST_F(AdjRibGroupTest, GroupLabelIncludesV4V6WithV4OverV6) {
@@ -4802,7 +4832,7 @@ TEST_F(AdjRibGroupTest, GroupLabelIncludesV4V6WithV4OverV6) {
   createAdjRibOutGroup("test", 6, key);
   EXPECT_EQ(
       adjRibOutGroup_->getGroupDescriptor(),
-      "6(EB-FA-OUT/v4v6+v4ov6,peerOverride=false)");
+      "6(EB-FA-OUT/v4v6+v4ov6,peerOverride=false,vrf=0)");
 }
 
 TEST_F(AdjRibGroupTest, GroupLabelNoAfiNegotiated) {
@@ -4814,7 +4844,7 @@ TEST_F(AdjRibGroupTest, GroupLabelNoAfiNegotiated) {
   createAdjRibOutGroup("test", 7, key);
   EXPECT_EQ(
       adjRibOutGroup_->getGroupDescriptor(),
-      "7(EB-FA-OUT/none,peerOverride=false)");
+      "7(EB-FA-OUT/none,peerOverride=false,vrf=0)");
 }
 
 TEST_F(AdjRibGroupTest, GroupLabelIncludesPeerOverride) {
@@ -4827,7 +4857,7 @@ TEST_F(AdjRibGroupTest, GroupLabelIncludesPeerOverride) {
   createAdjRibOutGroup("test", 8, key);
   EXPECT_EQ(
       adjRibOutGroup_->getGroupDescriptor(),
-      "8(EB-FA-OUT/v4v6,peerOverride=true)");
+      "8(EB-FA-OUT/v4v6,peerOverride=true,vrf=0)");
 }
 
 TEST_F(

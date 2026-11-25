@@ -78,6 +78,7 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
  public:
   explicit AdjRibOutGroup(
       folly::EventBase& evb,
+      VrfId vrfId,
       const std::string& groupName,
       uint64_t groupId = 0,
       bool enableUpdateGroup = false,
@@ -88,9 +89,10 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
       : evb_(evb),
         groupName_(groupName),
         groupId_(groupId),
+        vrfId_(vrfId),
         enableUpdateGroup_(enableUpdateGroup),
         groupKey_(groupKey),
-        groupDescriptor_(buildGroupDescriptor(groupId, groupKey)),
+        groupDescriptor_(buildGroupDescriptor(groupId, vrfId, groupKey)),
         shadowRibEntries_(shadowRib.entries),
         maxRibVersion_(shadowRib.maxRibVersion),
         policyManager_(std::move(policyManager)),
@@ -131,7 +133,7 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
 
   /**
    * @brief  Get friendly group descriptor for logging:
-   *         "groupId(policyName/afiLabel)"
+   *         "groupId(policyName/afiLabel,peerOverride=...,vrf=...)"
    */
   inline const std::string& getGroupDescriptor() const {
     return groupDescriptor_;
@@ -142,6 +144,11 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
    */
   inline uint64_t getGroupId() const {
     return groupId_;
+  }
+
+  // VRF whose peers and shadow RIB this group serves.
+  VrfId getVrfId() const noexcept {
+    return vrfId_;
   }
 
   /**
@@ -1106,7 +1113,7 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
    */
   void setGroupKey(const UpdateGroupKey& key) {
     groupKey_ = key;
-    groupDescriptor_ = buildGroupDescriptor(groupId_, groupKey_);
+    groupDescriptor_ = buildGroupDescriptor(groupId_, vrfId_, groupKey_);
   }
 
   /*
@@ -1472,6 +1479,9 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
    */
   uint64_t groupId_;
 
+  // VRF whose peers and shadow RIB this group serves.
+  const VrfId vrfId_;
+
   /*
    * Boolean flag to indicate if update-group feature is enabled or NOT
    */
@@ -1518,13 +1528,15 @@ class AdjRibOutGroup : public std::enable_shared_from_this<AdjRibOutGroup> {
    */
   static std::string buildGroupDescriptor(
       uint64_t groupId,
+      VrfId vrfId,
       const UpdateGroupKey& key) {
     return fmt::format(
-        "{}({}/{},peerOverride={})",
+        "{}({}/{},peerOverride={},vrf={})",
         groupId,
         key.egressPolicyName.value_or(""),
         buildAfiLabel(key),
-        key.peerOverride);
+        key.peerOverride,
+        vrfId);
   }
 
   /*

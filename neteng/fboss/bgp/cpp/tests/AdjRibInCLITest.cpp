@@ -757,7 +757,12 @@ TEST_F(
    */
   adjRib_->setUpdateGroup(
       std::make_shared<AdjRibOutGroup>(
-          evb_, "ug", 1, /*enableUpdateGroup=*/true, UpdateGroupKey{}));
+          evb_,
+          fboss::kDefaultVrf,
+          "ug",
+          1,
+          /*enableUpdateGroup=*/true,
+          UpdateGroupKey{}));
 
   fm_->addTask([&] {
     auto group = adjRib_->getUpdateGroup();
@@ -807,7 +812,12 @@ TEST_F(AdjRibInboundFixture, V4GetNetworks2_AdvertisedDetachedVersionGate) {
    */
   adjRib_->setUpdateGroup(
       std::make_shared<AdjRibOutGroup>(
-          evb_, "ug", 1, /*enableUpdateGroup=*/true, UpdateGroupKey{}));
+          evb_,
+          fboss::kDefaultVrf,
+          "ug",
+          1,
+          /*enableUpdateGroup=*/true,
+          UpdateGroupKey{}));
 
   fm_->addTask([&] {
     auto group = adjRib_->getUpdateGroup();

@@ -25,9 +25,11 @@
 namespace facebook::bgp {
 
 std::shared_ptr<AdjRibOutGroup> UpdateGroupManager::findOrCreateGroup(
-    const UpdateGroupKey& key) {
-  auto it = updateGroups_.find(key);
-  if (it != updateGroups_.end()) {
+    const UpdateGroupKey& key,
+    const ShadowRibView& shadowRib) {
+  auto& groups = updateGroups_[key.vrfId];
+  auto it = groups.find(key);
+  if (it != groups.end()) {
     return it->second;
   }
 
@@ -35,14 +37,15 @@ std::shared_ptr<AdjRibOutGroup> UpdateGroupManager::findOrCreateGroup(
   auto groupName = UpdateGroupKey::toString(key);
   auto group = std::make_shared<AdjRibOutGroup>(
       evb_,
+      key.vrfId,
       groupName,
       groupId,
       true /* enableUpdateGroup */,
       key,
-      shadowRib_,
+      shadowRib,
       policyManager_ /* policyManager */,
       updateGroupConfig_);
-  updateGroups_[key] = group;
+  groups[key] = group;
 
   /*
    * Auto-trigger initial dump if BGP is already initialized.
@@ -67,11 +70,27 @@ std::shared_ptr<AdjRibOutGroup> UpdateGroupManager::findOrCreateGroup(
 
 std::shared_ptr<AdjRibOutGroup> UpdateGroupManager::getGroup(
     const UpdateGroupKey& key) const {
-  auto it = updateGroups_.find(key);
-  if (it != updateGroups_.end()) {
+  const auto& groups = getAllGroups(key.vrfId);
+  auto it = groups.find(key);
+  if (it != groups.end()) {
     return it->second;
   }
   return nullptr;
+}
+
+uint64_t UpdateGroupManager::getGroupCount(VrfId vrfId) const {
+  return getAllGroups(vrfId).size();
+}
+
+bool UpdateGroupManager::hasGroup(const UpdateGroupKey& key) const {
+  return getAllGroups(key.vrfId).contains(key);
+}
+
+const UpdateGroupManager::UpdateGroupMap& UpdateGroupManager::getAllGroups(
+    VrfId vrfId) const noexcept {
+  static const UpdateGroupMap kNoGroups;
+  auto it = updateGroups_.find(vrfId);
+  return it != updateGroups_.end() ? it->second : kNoGroups;
 }
 
 folly::coro::Task<void> UpdateGroupManager::maybeDestroyUpdateGroups(
@@ -85,8 +104,13 @@ folly::coro::Task<void> UpdateGroupManager::maybeDestroyUpdateGroups(
     if (!group || group->getMemberCount() != 0) {
       continue;
     }
-    auto it = updateGroups_.find(group->getGroupKey());
-    if (it == updateGroups_.end() || it->second != group) {
+    auto vrfIt = updateGroups_.find(group->getVrfId());
+    if (vrfIt == updateGroups_.end()) {
+      continue;
+    }
+    auto& vrfGroups = vrfIt->second;
+    auto it = vrfGroups.find(group->getGroupKey());
+    if (it == vrfGroups.end() || it->second != group) {
       continue;
     }
 
@@ -105,7 +129,7 @@ folly::coro::Task<void> UpdateGroupManager::maybeDestroyUpdateGroups(
     group->clearPackingList();
     group->clearLastSeenRibVersion();
 
-    updateGroups_.erase(it);
+    vrfGroups.erase(it);
     BgpStats::decrNumUpdateGroups();
     removedGroups.push_back(group);
   }
@@ -133,9 +157,19 @@ void UpdateGroupManager::rekeyGroup(
     return;
   }
 
+  if (newKey.vrfId != group->getVrfId()) {
+    XLOGF(
+        ERR,
+        "Group {}: rekeyGroup rejected new key {} from another VRF",
+        group->getGroupDescriptor(),
+        UpdateGroupKey::toString(newKey));
+    return;
+  }
+
   group->setGroupKey(newKey);
 
-  auto [it, inserted] = updateGroups_.try_emplace(newKey, group);
+  auto& groups = updateGroups_[group->getVrfId()];
+  auto [it, inserted] = groups.try_emplace(newKey, group);
   if (!inserted) {
     XLOGF(
         ERR,
@@ -146,7 +180,7 @@ void UpdateGroupManager::rekeyGroup(
     it->second = group;
   }
 
-  updateGroups_.erase(oldKey);
+  groups.erase(oldKey);
 
   XLOGF(
       INFO,
@@ -172,13 +206,14 @@ void UpdateGroupManager::setUpdateGroupState(
    */
 }
 
-void UpdateGroupManager::triggerInitialDumpsForUninitializedGroups() noexcept {
+void UpdateGroupManager::triggerInitialDumpsForUninitializedGroups(
+    VrfId vrfId) noexcept {
   /*
    * Walk all update groups and trigger initial dump for those in UNINITIALIZED
    * state. Called when BGP initialization completes
    * (markRibInitialAnnouncementDone).
    */
-  for (const auto& [key, group] : updateGroups_) {
+  for (const auto& [key, group] : getAllGroups(vrfId)) {
     if (group->getState() == UpdateGroupState::UNINITIALIZED) {
       // Only trigger if group has members
       if (group->getMemberCount() > 0) {
@@ -198,9 +233,10 @@ void UpdateGroupManager::triggerInitialDumpsForUninitializedGroups() noexcept {
 }
 
 void UpdateGroupManager::testOnlySetDeferDrjAcceptance(
+    VrfId vrfId,
     const folly::IPAddress& peerAddr,
     bool defer) noexcept {
-  for (auto& [_, group] : updateGroups_) {
+  for (const auto& [_, group] : getAllGroups(vrfId)) {
     group->testOnlySetDeferDrjAcceptance(peerAddr, defer);
   }
 }

@@ -1906,7 +1906,8 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
       AdvertiseLinkBandwidth::DISABLE;
   peeringParamsOutPeer1.peerAddr = outPeer1.addr;
   peeringParamsOutPeer1.localAs = kLocalAs1;
-  auto adjRibOutGroup1 = std::make_shared<AdjRibOutGroup>(evb_, "Group1");
+  auto adjRibOutGroup1 =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group1");
   AdjRib adjRibOutPeer1{
       outPeerId1,
       peeringParamsOutPeer1,
@@ -1928,7 +1929,8 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
       AdvertiseLinkBandwidth::BEST_PATH;
   peeringParamsOutPeer2.peerAddr = outPeer2.addr;
   peeringParamsOutPeer2.localAs = kLocalAs1;
-  auto adjRibOutGroup2 = std::make_shared<AdjRibOutGroup>(evb_, "Group2");
+  auto adjRibOutGroup2 =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group2");
   AdjRib adjRibOutPeer2{
       outPeerId2,
       peeringParamsOutPeer2,
@@ -1951,7 +1953,8 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
   peeringParamsOutPeer3.linkBandwidthBps = kLbw5G;
   peeringParamsOutPeer3.peerAddr = outPeer3.addr;
   peeringParamsOutPeer3.localAs = kLocalAs1;
-  auto adjRibOutGroup3 = std::make_shared<AdjRibOutGroup>(evb_, "Group3");
+  auto adjRibOutGroup3 =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group3");
   AdjRib adjRibOutPeer3{
       outPeerId3,
       peeringParamsOutPeer3,
@@ -1973,7 +1976,8 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
       AdvertiseLinkBandwidth::AGGREGATE_RECEIVED;
   peeringParamsOutPeer4.peerAddr = outPeer4.addr;
   peeringParamsOutPeer4.localAs = kLocalAs1;
-  auto adjRibOutGroup4 = std::make_shared<AdjRibOutGroup>(evb_, "Group4");
+  auto adjRibOutGroup4 =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group4");
   AdjRib adjRibOutPeer4{
       outPeerId4,
       peeringParamsOutPeer4,
@@ -1995,7 +1999,8 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
       AdvertiseLinkBandwidth::AGGREGATE_LOCAL;
   peeringParamsOutPeer5.peerAddr = outPeer5.addr;
   peeringParamsOutPeer5.localAs = kLocalAs1;
-  auto adjRibOutGroup5 = std::make_shared<AdjRibOutGroup>(evb_, "Group5");
+  auto adjRibOutGroup5 =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group5");
   AdjRib adjRibOutPeer5{
       outPeerId5,
       peeringParamsOutPeer5,
@@ -2017,7 +2022,8 @@ TEST_F(AdjRibOutboundFixture, AdvertiseLinkBandwidth) {
       AdvertiseLinkBandwidth::RIB_POLICY_LBW;
   peeringParamsOutPeer6.peerAddr = outPeer6.addr;
   peeringParamsOutPeer6.localAs = kLocalAs1;
-  auto adjRibOutGroup6 = std::make_shared<AdjRibOutGroup>(evb_, "Group6");
+  auto adjRibOutGroup6 =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group6");
   AdjRib adjRibOutPeer6{
       outPeerId6,
       peeringParamsOutPeer6,
@@ -2598,7 +2604,8 @@ TEST_P(EgressUcmpPolicyFixture, EgressUcmpPolicy) {
     peeringParamsOutPeer.peerAddr = outPeer.addr;
     peeringParamsOutPeer.localAs = kLocalAs1;
 
-    auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(evb_, "Group");
+    auto adjRibOutGroup =
+        std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group");
     AdjRib adjRibOutPeer{
         outPeerId,
         peeringParamsOutPeer,
@@ -5842,7 +5849,8 @@ TEST_F(AdjRibOutboundFixture, EgressPolicyLinkBandwidthPropagationEBGPTest) {
   peeringParamsOutPeer.localAs = kLocalAs1;
   peeringParamsOutPeer.remoteAs = kRemoteAs2; // Different AS for EBGP
 
-  auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(evb_, "Group");
+  auto adjRibOutGroup =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group");
   AdjRib adjRibOutPeer{
       outPeerId,
       peeringParamsOutPeer,
@@ -5961,7 +5969,8 @@ TEST_F(AdjRibOutboundFixture, EgressPolicyLinkBandwidthPropagationIBGPTest) {
   peeringParamsOutPeer.localAs = kLocalAs1;
   peeringParamsOutPeer.remoteAs = kLocalAs1; // Same AS for IBGP
 
-  auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(evb_, "Group");
+  auto adjRibOutGroup =
+      std::make_shared<AdjRibOutGroup>(evb_, fboss::kDefaultVrf, "Group");
   AdjRib adjRibOutPeer{
       outPeerId,
       peeringParamsOutPeer,

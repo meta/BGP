@@ -263,6 +263,7 @@ TEST(UpdateGroupKeyTest, F14MapCompatibility) {
 TEST(UpdateGroupKeyTest, CompleteFieldsTest) {
   // Test with all fields set to non-default values
   auto key1 = UpdateGroupKey::buildUpdateGroupKey(
+      fboss::kDefaultVrf,
       "PROPAGATE_FSW_SSW_OUT", /* egress policy */
       "^10\\.0\\..*", /* routeFilterStmtName */
       std::chrono::seconds(45), /* oudelay */
@@ -283,6 +284,7 @@ TEST(UpdateGroupKeyTest, CompleteFieldsTest) {
       false, /* peerOverride */
       65001 /* localAs */);
   auto key2 = UpdateGroupKey::buildUpdateGroupKey(
+      fboss::kDefaultVrf,
       "PROPAGATE_FSW_SSW_OUT", /* egress policy */
       "^10\\.0\\..*", /* routeFilterStmtName */
       std::chrono::seconds(45), /* oudelay */

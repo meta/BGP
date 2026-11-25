@@ -979,7 +979,8 @@ TEST_F(PeerManagerTestFixture, GetBgpSessionAdjRibMessageCountsTest) {
    * own cumulative counts.
    */
   folly::EventBase groupEvb;
-  auto group = std::make_shared<AdjRibOutGroup>(groupEvb, "test_group", 1);
+  auto group = std::make_shared<AdjRibOutGroup>(
+      groupEvb, fboss::kDefaultVrf, "test_group", 1);
   constexpr uint64_t kGroupSentUpdates = 40;
   constexpr uint64_t kGroupSentEoRs = 4;
   group->stats_.incrementSentUpdateMsgs(kGroupSentUpdates);

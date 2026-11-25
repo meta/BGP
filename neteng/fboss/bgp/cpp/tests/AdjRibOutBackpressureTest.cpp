@@ -1888,7 +1888,12 @@ TEST_F(
 
   // Set up an update group so DFP/DSP checks can run
   auto group = std::make_shared<AdjRibOutGroup>(
-      evb_, "test_group", 1, true /* enableUpdateGroup */, UpdateGroupKey{});
+      evb_,
+      fboss::kDefaultVrf,
+      "test_group",
+      1,
+      true /* enableUpdateGroup */,
+      UpdateGroupKey{});
   adjRib_->adjRibOutGroup_ = group;
 
   // Populate PL with entries to drain

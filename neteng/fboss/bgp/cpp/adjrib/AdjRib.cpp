@@ -701,6 +701,7 @@ void AdjRib::sessionEstablished(
 
 const UpdateGroupKey& AdjRib::buildAndSetUpdateGroupKey() {
   updateGroupKey_ = UpdateGroupKey::buildUpdateGroupKey(
+      getVrfId(),
       egressPolicyName_,
       /*
        * The peer's egress route filter statement affects egress output and so

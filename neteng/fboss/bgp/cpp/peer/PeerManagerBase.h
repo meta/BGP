@@ -782,14 +782,19 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   // Peer session manager
   std::shared_ptr<SessionManager> sessionMgr_;
 
-  // Per-VRF contexts, keyed by VrfId. Holds the default and quarantine VRFs.
+  // Per-VRF contexts, keyed by VrfId. Holds only the default VRF for now.
   folly::F14NodeMap<VrfId, std::unique_ptr<PeerManagerVrf>> peerManagerVrfs_;
 
   // The default VRF's context in @peerManagerVrfs_.
   PeerManagerVrf& defaultVrf_;
 
+  /*
+   * TODO: re-enable the quarantine VRF. Right now there is only one active VRF,
+   * because the initialization state is still process-wide. The next diff
+   * gives each VRF its own initialization.
+   */
   // The quarantine VRF's context in @peerManagerVrfs_.
-  PeerManagerVrf& quarantineVrf_;
+  // PeerManagerVrf& quarantineVrf_;
 
   /*
    * Test-only: defer the shadow RIB walk for a specific peer in @vrfId.
@@ -820,7 +825,8 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
       bool defer) {
     evb_.runInEventBaseThreadAndWait([this, peerAddr, defer]() {
       if (updateGroupManager_) {
-        updateGroupManager_->testOnlySetDeferDrjAcceptance(peerAddr, defer);
+        updateGroupManager_->testOnlySetDeferDrjAcceptance(
+            fboss::kDefaultVrf, peerAddr, defer);
       }
     });
   }

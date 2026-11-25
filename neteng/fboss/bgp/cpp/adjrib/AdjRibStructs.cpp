@@ -40,7 +40,7 @@ bool UpdateGroupKey::operator==(const UpdateGroupKey& other) const {
       legacyV4NlriEncoding == other.legacyV4NlriEncoding &&
       peerGroupName == other.peerGroupName &&
       peerOverride == other.peerOverride && localAs == other.localAs &&
-      asConfedId == other.asConfedId;
+      asConfedId == other.asConfedId && vrfId == other.vrfId;
 }
 
 size_t UpdateGroupKey::hash() const {
@@ -64,10 +64,12 @@ size_t UpdateGroupKey::hash() const {
       peerGroupName,
       peerOverride,
       localAs,
-      asConfedId);
+      asConfedId,
+      vrfId);
 }
 
 UpdateGroupKey UpdateGroupKey::buildUpdateGroupKey(
+    VrfId vrfId,
     std::optional<std::string> policyName,
     std::string routeFilterStmtName,
     std::chrono::seconds outDelay,
@@ -110,12 +112,13 @@ UpdateGroupKey UpdateGroupKey::buildUpdateGroupKey(
       std::move(peerGroupName),
       peerOverride,
       localAs,
-      asConfedId};
+      asConfedId,
+      vrfId};
 }
 
 std::string UpdateGroupKey::toString(const UpdateGroupKey& key) {
   return fmt::format(
-      "{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}",
+      "{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}",
       key.egressPolicyName.value_or(""),
       key.routeFilterStmtName,
       key.outDelay.count(),
@@ -139,7 +142,8 @@ std::string UpdateGroupKey::toString(const UpdateGroupKey& key) {
       key.peerGroupName,
       key.peerOverride,
       key.localAs,
-      key.asConfedId.has_value() ? static_cast<int64_t>(*key.asConfedId) : -1);
+      key.asConfedId.has_value() ? static_cast<int64_t>(*key.asConfedId) : -1,
+      key.vrfId);
 }
 
 facebook::neteng::fboss::bgp::thrift::TUpdateGroupKey UpdateGroupKey::toThrift()

@@ -54,6 +54,7 @@ class UpdateGroupSlowPeerDetectionTest : public ::testing::Test {
     ugConfig.allowSlowPeerDetach = true;
     group_ = std::make_shared<AdjRibOutGroup>(
         *evb_,
+        fboss::kDefaultVrf,
         "test_group",
         1,
         true /* enableUpdateGroup */,
@@ -661,6 +662,7 @@ TEST_F(
   customConfig.slowPeerBlockCountWindow = std::chrono::milliseconds{60000};
   auto customGroup = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "custom_group",
       2,
       true /* enableUpdateGroup */,

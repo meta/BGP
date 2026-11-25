@@ -313,6 +313,7 @@ class UpdateGroupDetachedPeerTest : public ::testing::Test {
     ugConfig.allowSlowPeerDetach = true;
     group_ = std::make_shared<AdjRibOutGroup>(
         *evb_,
+        fboss::kDefaultVrf,
         "test_group",
         1,
         true /* enableUpdateGroup */,
@@ -841,7 +842,8 @@ TEST_F(UpdateGroupDetachedPeerTest, MovePeerDecrementsDetachedAfterJoin) {
    * Move the detached peer to another group -> must decrement the source
    * group's count (adjRib1 stays in sync, so the group is not frozen).
    */
-  auto targetGroup = std::make_shared<AdjRibOutGroup>(*evb_, "target_group");
+  auto targetGroup = std::make_shared<AdjRibOutGroup>(
+      *evb_, fboss::kDefaultVrf, "target_group");
   group_->movePeers({adjRib0}, targetGroup);
   EXPECT_EQ(group_->getNumPeersDetachedAfterJoin(), 0);
   EXPECT_EQ(adjRib0->getUpdateGroup(), targetGroup);
@@ -881,7 +883,8 @@ TEST_F(
    * Moving it out decrements back to 0; adjRib1 stays in sync so the group is
    * not frozen.
    */
-  auto targetGroup = std::make_shared<AdjRibOutGroup>(*evb_, "target_group");
+  auto targetGroup = std::make_shared<AdjRibOutGroup>(
+      *evb_, fboss::kDefaultVrf, "target_group");
   group_->movePeers({adjRib0}, targetGroup);
   EXPECT_EQ(group_->getNumPeersDetachedAfterJoin(), 0);
   EXPECT_EQ(adjRib0->getUpdateGroup(), targetGroup);
@@ -967,7 +970,8 @@ TEST_F(UpdateGroupDetachedPeerTest, LastDetachReasonPersistsAcrossRejoin) {
       adjRib0->getPeerUpdateStateInfo().lastDetachTimeMs, firstDetachTimeMs);
 
   group_->detachSlowPeer(adjRib0);
-  auto targetGroup = std::make_shared<AdjRibOutGroup>(*evb_, "target_group");
+  auto targetGroup = std::make_shared<AdjRibOutGroup>(
+      *evb_, fboss::kDefaultVrf, "target_group");
   group_->movePeers({adjRib0}, targetGroup);
   EXPECT_EQ(
       adjRib0->getPeerUpdateStateInfo().lastDetachReason,
@@ -3358,6 +3362,7 @@ class UpdateGroupDetachLifecycleTest : public ::testing::Test {
     ugKey.sessionType = BgpSessionType::EBGP;
     group_ = std::make_shared<AdjRibOutGroup>(
         *evb_,
+        fboss::kDefaultVrf,
         "test_group",
         1,
         true /* enableUpdateGroup */,
@@ -3802,7 +3807,8 @@ TEST_F(
 TEST_F(
     UpdateGroupDetachLifecycleTest,
     MoveLastSyncPeerPromotesDfpsAndCollapsesDsps) {
-  auto targetGroup = std::make_shared<AdjRibOutGroup>(*evb_, "target_group");
+  auto targetGroup = std::make_shared<AdjRibOutGroup>(
+      *evb_, fboss::kDefaultVrf, "target_group");
   const std::array<folly::CIDRNetwork, 3> prefixes = {
       kV4Prefix1, kV4Prefix2, kV4Prefix3};
   auto groupOwnerKey = group_->getGroupOwnerKey();
@@ -3930,7 +3936,8 @@ TEST_F(
 TEST_F(
     UpdateGroupDetachLifecycleTest,
     MoveLastSyncPeerWithNoPromotablePeerStaysFrozen) {
-  auto targetGroup = std::make_shared<AdjRibOutGroup>(*evb_, "target_group");
+  auto targetGroup = std::make_shared<AdjRibOutGroup>(
+      *evb_, fboss::kDefaultVrf, "target_group");
   auto adjRib0 = createAndRegisterPeer(0);
   auto adjRib1 = createAndRegisterPeer(1);
 
@@ -3969,7 +3976,8 @@ TEST_F(
 TEST_F(
     UpdateGroupDetachLifecycleTest,
     MoveLastSyncPeerPromotesAheadDepAAndAdoptsRibOut) {
-  auto targetGroup = std::make_shared<AdjRibOutGroup>(*evb_, "target_group");
+  auto targetGroup = std::make_shared<AdjRibOutGroup>(
+      *evb_, fboss::kDefaultVrf, "target_group");
   auto groupOwnerKey = group_->getGroupOwnerKey();
 
   /*
@@ -5199,6 +5207,7 @@ TEST_F(UpdateGroupDetachedPeerTest, RibWalkDetachCopiesEgressEoRsPending) {
   ugConfig.allowSlowPeerDetach = true;
   group_ = std::make_shared<AdjRibOutGroup>(
       *evb_,
+      fboss::kDefaultVrf,
       "test_group",
       1,
       true /* enableUpdateGroup */,
@@ -5371,7 +5380,12 @@ TEST_F(
   UpdateGroupKey groupKey;
   groupKey.sendAddPath = true;
   group_ = std::make_shared<AdjRibOutGroup>(
-      *evb_, "test_group", 1, true /* enableUpdateGroup */, groupKey);
+      *evb_,
+      fboss::kDefaultVrf,
+      "test_group",
+      1,
+      true /* enableUpdateGroup */,
+      groupKey);
 
   auto adjRib = createAndRegisterPeer(0);
   auto groupOwnerKey = group_->getGroupOwnerKey();
@@ -5411,7 +5425,12 @@ TEST_F(
   groupKey.sessionType = BgpSessionType::IBGP;
   groupKey.isRrClient = true;
   group_ = std::make_shared<AdjRibOutGroup>(
-      *evb_, "test_group", 1, true /* enableUpdateGroup */, groupKey);
+      *evb_,
+      fboss::kDefaultVrf,
+      "test_group",
+      1,
+      true /* enableUpdateGroup */,
+      groupKey);
 
   auto adjRib = createAndRegisterPeer(0);
 
@@ -5447,7 +5466,12 @@ TEST_F(UpdateGroupDetachedPeerTest, CanAnnounceUsesGroupRrClientSetting) {
   groupKey.sessionType = BgpSessionType::IBGP;
   groupKey.isRrClient = false;
   group_ = std::make_shared<AdjRibOutGroup>(
-      *evb_, "test_group", 1, true /* enableUpdateGroup */, groupKey);
+      *evb_,
+      fboss::kDefaultVrf,
+      "test_group",
+      1,
+      true /* enableUpdateGroup */,
+      groupKey);
 
   auto adjRib = createAndRegisterPeer(0);
   /* Override the peer's RR client setting — should be ignored */
@@ -5493,7 +5517,12 @@ TEST_F(
   groupKey.sessionType = BgpSessionType::EBGP;
   groupKey.isRrClient = false;
   group_ = std::make_shared<AdjRibOutGroup>(
-      *evb_, "test_group", 1, true /* enableUpdateGroup */, groupKey);
+      *evb_,
+      fboss::kDefaultVrf,
+      "test_group",
+      1,
+      true /* enableUpdateGroup */,
+      groupKey);
 
   auto adjRib = createAndRegisterPeer(0);
 

@@ -442,7 +442,8 @@ TEST_F(SplitToGroup, SplitBeforeInitialDumpKeepsTargetUninitialized) {
      */
     auto newKey = sourceGroup->getGroupKey();
     newKey.egressPolicyName = kPNamePermitAll;
-    targetGroup = ctx.peerMgr->updateGroupManager_->findOrCreateGroup(newKey);
+    targetGroup = ctx.peerMgr->updateGroupManager_->findOrCreateGroup(
+        newKey, ctx.peerMgr->getDefaultVrf().getShadowRibView());
     ASSERT_NE(targetGroup, sourceGroup);
 
     sourceGroup->splitToNewGroup(targetGroup, {adjRib0});

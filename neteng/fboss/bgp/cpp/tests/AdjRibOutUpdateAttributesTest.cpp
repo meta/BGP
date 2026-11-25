@@ -1935,6 +1935,7 @@ TEST_F(AdjRibOutboundFixture, UpdateGroupKeyCreationTest) {
 
   fm_->addTask([&] {
     auto key = UpdateGroupKey::buildUpdateGroupKey(
+        fboss::kDefaultVrf,
         std::nullopt, /* egress policy name (no egress policy on this peer) */
         "", /* route filter stmt name */
         std::chrono::seconds(0), /* outdelay */

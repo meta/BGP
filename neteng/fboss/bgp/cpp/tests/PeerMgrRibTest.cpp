@@ -1890,7 +1890,7 @@ TEST_F(
     UpdateGroupRouteRefreshCoalescesSameAfiAndRetainsCrossAfi) {
   auto& evb = peerMgr_->getEventBase();
   auto group = std::make_shared<AdjRibOutGroup>(
-      evb, "route-refresh-test", 1, true, UpdateGroupKey{});
+      evb, fboss::kDefaultVrf, "route-refresh-test", 1, true, UpdateGroupKey{});
   auto mockAdjRib = setupUpdateGroupPeer(kPeerId1, group);
   peerMgr_->adjRibs_[kPeerId1] = mockAdjRib;
   mockAdjRib->setPeerState(PeerUpdateState::INIT);
@@ -1966,7 +1966,7 @@ TEST_F(
     UpdateGroupRouteRefreshResumesFromReadyToJoin) {
   auto& evb = peerMgr_->getEventBase();
   auto group = std::make_shared<AdjRibOutGroup>(
-      evb, "route-refresh-test", 1, true, UpdateGroupKey{});
+      evb, fboss::kDefaultVrf, "route-refresh-test", 1, true, UpdateGroupKey{});
   auto mockAdjRib = setupUpdateGroupPeer(kPeerId1, group);
   peerMgr_->adjRibs_[kPeerId1] = mockAdjRib;
   group->markPeerDetached(mockAdjRib);
@@ -2008,7 +2008,7 @@ TEST_F(
     QueuedRouteRefreshPreservesReadyToJoinState) {
   auto& evb = peerMgr_->getEventBase();
   auto group = std::make_shared<AdjRibOutGroup>(
-      evb, "route-refresh-test", 1, true, UpdateGroupKey{});
+      evb, fboss::kDefaultVrf, "route-refresh-test", 1, true, UpdateGroupKey{});
   auto mockAdjRib = setupUpdateGroupPeer(kPeerId1, group);
   peerMgr_->adjRibs_[kPeerId1] = mockAdjRib;
   group->markPeerDetached(mockAdjRib);
@@ -2043,7 +2043,7 @@ TEST_F(
     DetachedInitDumpCompletionRetriesPendingRouteRefreshWithoutEoR) {
   auto& evb = peerMgr_->getEventBase();
   auto group = std::make_shared<AdjRibOutGroup>(
-      evb, "route-refresh-test", 2, true, UpdateGroupKey{});
+      evb, fboss::kDefaultVrf, "route-refresh-test", 2, true, UpdateGroupKey{});
   auto mockAdjRib = setupUpdateGroupPeer(kPeerId1, group);
   auto sibling = setupUpdateGroupPeer(kPeerId2, group);
   peerMgr_->adjRibs_[kPeerId1] = mockAdjRib;
@@ -2104,7 +2104,12 @@ TEST_F(
   mockAdjRib->setPeerState(PeerUpdateState::INIT);
   mockAdjRib->setUpdateGroup(
       std::make_shared<AdjRibOutGroup>(
-          evb, "route-refresh-test", 1, true, UpdateGroupKey{}));
+          evb,
+          fboss::kDefaultVrf,
+          "route-refresh-test",
+          1,
+          true,
+          UpdateGroupKey{}));
   peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
       mockAdjRib, BgpUpdateAfi::AFI_IPv4);
 
@@ -2128,7 +2133,7 @@ TEST_F(
     CancelRibDumpForAdjRib_DiscardsDeferredRouteRefresh) {
   auto& evb = peerMgr_->getEventBase();
   auto group = std::make_shared<AdjRibOutGroup>(
-      evb, "route-refresh-test", 1, true, UpdateGroupKey{});
+      evb, fboss::kDefaultVrf, "route-refresh-test", 1, true, UpdateGroupKey{});
   auto mockAdjRib = setupUpdateGroupPeer(kPeerId1, group);
   peerMgr_->adjRibs_[kPeerId1] = mockAdjRib;
   group->markPeerDetached(mockAdjRib);

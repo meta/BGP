@@ -171,6 +171,7 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
     }
     return std::make_shared<AdjRibOutGroup>(
         evb,
+        fboss::kDefaultVrf,
         "split_target",
         sourceGroup->getGroupId() + 1,
         /*enableUpdateGroup=*/true,
@@ -202,7 +203,8 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
       egressPolicyName = peerConfig->egressPolicyName;
     }
 
-    auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(evb, peerGroupName);
+    auto adjRibOutGroup = std::make_shared<AdjRibOutGroup>(
+        evb, fboss::kDefaultVrf, peerGroupName);
     auto adjRib = std::make_shared<AdjRib>(
         peerId,
         PeeringParams(
@@ -1771,7 +1773,8 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
       adjRib->buildAndSetUpdateGroupKey();
 
       auto group = peerMgr->updateGroupManager_->findOrCreateGroup(
-          adjRib->getUpdateGroupKey());
+          adjRib->getUpdateGroupKey(),
+          peerMgr->getDefaultVrf().getShadowRibView());
       adjRib->adjRibOutGroup_ = group;
       group->registerPeer(adjRib);
       peerMgr->adjRibs_[peerId] = adjRib;
@@ -1790,7 +1793,8 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
      * double-registration.
      */
     auto changeListTracker = vrf->getChangeListTracker();
-    for (auto& [key, group] : peerMgr->updateGroupManager_->getAllGroups()) {
+    for (auto& [key, group] :
+         peerMgr->updateGroupManager_->getAllGroups(fboss::kDefaultVrf)) {
       group->setChangeListTracker(
           changeListTracker,
           vrf->getAddPathConsumerBitmap(),
@@ -1830,7 +1834,7 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
     std::vector<std::shared_ptr<AdjRibOutGroup>> groups;
     evb.runInEventBaseThreadAndWait([&]() {
       for (auto& [key, group] :
-           ctx.peerMgr->updateGroupManager_->getAllGroups()) {
+           ctx.peerMgr->updateGroupManager_->getAllGroups(fboss::kDefaultVrf)) {
         groups.push_back(group);
       }
     });

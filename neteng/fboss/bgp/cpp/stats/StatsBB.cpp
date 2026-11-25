@@ -21,28 +21,6 @@ namespace facebook::bgp {
 namespace BgpStatsBB {
 
 void initCounters() {
-  fb303::ThreadCachedServiceData::get()->setCounter(kSetPeersPolicySuccess, 0);
-  fb303::ThreadCachedServiceData::get()->addStatExportType(
-      kSetPeersPolicySuccess, fb303::SUM);
-  fb303::ThreadCachedServiceData::get()->setCounter(kSetPeersPolicyFailure, 0);
-  fb303::ThreadCachedServiceData::get()->addStatExportType(
-      kSetPeersPolicyFailure, fb303::SUM);
-  fb303::ThreadCachedServiceData::get()->setCounter(
-      kSetPeerGroupsPolicySuccess, 0);
-  fb303::ThreadCachedServiceData::get()->addStatExportType(
-      kSetPeerGroupsPolicySuccess, fb303::SUM);
-  fb303::ThreadCachedServiceData::get()->setCounter(
-      kSetPeerGroupsPolicyFailure, 0);
-  fb303::ThreadCachedServiceData::get()->addStatExportType(
-      kSetPeerGroupsPolicyFailure, fb303::SUM);
-  fb303::ThreadCachedServiceData::get()->setCounter(
-      kUnsetPeersPolicySuccess, 0);
-  fb303::ThreadCachedServiceData::get()->addStatExportType(
-      kUnsetPeersPolicySuccess, fb303::SUM);
-  fb303::ThreadCachedServiceData::get()->setCounter(
-      kUnsetPeersPolicyFailure, 0);
-  fb303::ThreadCachedServiceData::get()->addStatExportType(
-      kUnsetPeersPolicyFailure, fb303::SUM);
   fb303::ThreadCachedServiceData::get()->setCounter(kAddPeersSuccess, 0);
   fb303::ThreadCachedServiceData::get()->setCounter(kAddPeersRejected, 0);
   fb303::ThreadCachedServiceData::get()->setCounter(kDelPeersSuccess, 0);
@@ -63,36 +41,6 @@ void incrDelPeersSuccess() {
 
 void incrDelPeersRejected() {
   fb303::ThreadCachedServiceData::get()->incrementCounter(kDelPeersRejected, 1);
-}
-
-void incrSetPeersPolicySuccess() {
-  fb303::ThreadCachedServiceData::get()->incrementCounter(
-      kSetPeersPolicySuccess, 1);
-}
-
-void incrSetPeersPolicyFailure() {
-  fb303::ThreadCachedServiceData::get()->incrementCounter(
-      kSetPeersPolicyFailure, 1);
-}
-
-void incrSetPeerGroupsPolicySuccess() {
-  fb303::ThreadCachedServiceData::get()->incrementCounter(
-      kSetPeerGroupsPolicySuccess, 1);
-}
-
-void incrSetPeerGroupsPolicyFailure() {
-  fb303::ThreadCachedServiceData::get()->incrementCounter(
-      kSetPeerGroupsPolicyFailure, 1);
-}
-
-void incrUnsetPeersPolicySuccess() {
-  fb303::ThreadCachedServiceData::get()->incrementCounter(
-      kUnsetPeersPolicySuccess, 1);
-}
-
-void incrUnsetPeersPolicyFailure() {
-  fb303::ThreadCachedServiceData::get()->incrementCounter(
-      kUnsetPeersPolicyFailure, 1);
 }
 
 } // namespace BgpStatsBB

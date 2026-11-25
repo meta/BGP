@@ -24,9 +24,9 @@ namespace facebook::bgp {
 /**
  * BgpServiceBB — BB-specific (Express Backbone) Thrift service handler.
  *
- * Owns BB-specific peer management RPCs (addPeers / delPeers / setPeersPolicy /
- * setPeerGroupsPolicy / unsetPeersPolicy). DC-only RPCs are not declared here;
- * Thrift's default behavior applies if a client calls them on the BB binary.
+ * Owns BB-specific peer management RPCs (addPeers / delPeers). DC-only RPCs are
+ * not declared here; Thrift's default behavior applies if a client calls them
+ * on the BB binary.
  *
  * BB also owns the NetlinkWrapper dependency: the base ctor builds a
  * HealthValidator without NetlinkWrapper, and BB's ctor body replaces it
@@ -50,26 +50,6 @@ class BgpServiceBB : public BgpServiceBase {
   /**
    * [Peer management] BB-only RPCs
    */
-  folly::coro::Task<facebook::neteng::fboss::bgp::thrift::BgpPolicyChangeResult>
-  co_setPeersPolicy(
-      std::unique_ptr<std::map<
-          std::string,
-          std::map<facebook::bgp::bgp_policy::DIRECTION, std::string>>>
-          peersPolicy) override;
-
-  folly::coro::Task<facebook::neteng::fboss::bgp::thrift::BgpPolicyChangeResult>
-  co_setPeerGroupsPolicy(
-      std::unique_ptr<std::map<
-          std::string,
-          std::map<facebook::bgp::bgp_policy::DIRECTION, std::string>>>
-          peerGroupsPolicy) override;
-
-  folly::coro::Task<facebook::neteng::fboss::bgp::thrift::BgpPolicyChangeResult>
-  co_unsetPeersPolicy(
-      std::unique_ptr<
-          std::map<std::string, std::set<facebook::bgp::bgp_policy::DIRECTION>>>
-          peersToUnset) override;
-
   folly::coro::Task<facebook::neteng::fboss::bgp::thrift::BgpConfigChangeResult>
   co_addPeers(
       std::unique_ptr<std::vector<facebook::bgp::thrift::BgpPeer>> peers)

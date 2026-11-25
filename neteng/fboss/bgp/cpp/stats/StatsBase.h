@@ -35,6 +35,24 @@ using folly::string_literals::operator""_fs;
 
 // Global BGP level stats
 namespace BgpStats {
+// Dynamic policy API success/failure counters
+constexpr auto kSetPeersPolicySuccess = "bgpd.setPeersPolicy.success"_fs;
+constexpr auto kSetPeersPolicyFailure = "bgpd.setPeersPolicy.failure"_fs;
+constexpr auto kSetPeerGroupsPolicySuccess =
+    "bgpd.setPeerGroupsPolicy.success"_fs;
+constexpr auto kSetPeerGroupsPolicyFailure =
+    "bgpd.setPeerGroupsPolicy.failure"_fs;
+constexpr auto kUnsetPeersPolicySuccess = "bgpd.unsetPeersPolicy.success"_fs;
+constexpr auto kUnsetPeersPolicyFailure = "bgpd.unsetPeersPolicy.failure"_fs;
+
+void incrSetPeersPolicySuccess();
+void incrSetPeersPolicyFailure();
+void incrSetPeerGroupsPolicySuccess();
+void incrSetPeerGroupsPolicyFailure();
+void incrUnsetPeersPolicySuccess();
+void incrUnsetPeersPolicyFailure();
+void initPolicyApiCounters();
+
 constexpr auto kNoPrefixSent = "bgpd.noPrefixSent"_fs;
 constexpr auto kConfiguredPeers = "bgpd.configuredPeers"_fs;
 // Peer groups that currently have at least one Established session

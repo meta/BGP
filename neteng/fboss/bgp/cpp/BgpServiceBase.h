@@ -59,6 +59,27 @@ class BgpServiceBase
       bool enable_thrift_protection);
   ~BgpServiceBase() override = default;
 
+  /* [Peer and peer-group routing policies] */
+  folly::coro::Task<facebook::neteng::fboss::bgp::thrift::BgpPolicyChangeResult>
+  co_setPeersPolicy(
+      std::unique_ptr<std::map<
+          std::string,
+          std::map<facebook::bgp::bgp_policy::DIRECTION, std::string>>>
+          peersPolicy) override;
+
+  folly::coro::Task<facebook::neteng::fboss::bgp::thrift::BgpPolicyChangeResult>
+  co_setPeerGroupsPolicy(
+      std::unique_ptr<std::map<
+          std::string,
+          std::map<facebook::bgp::bgp_policy::DIRECTION, std::string>>>
+          peerGroupsPolicy) override;
+
+  folly::coro::Task<facebook::neteng::fboss::bgp::thrift::BgpPolicyChangeResult>
+  co_unsetPeersPolicy(
+      std::unique_ptr<
+          std::map<std::string, std::set<facebook::bgp::bgp_policy::DIRECTION>>>
+          peersToUnset) override;
+
   /**
    * [Logging]
    *

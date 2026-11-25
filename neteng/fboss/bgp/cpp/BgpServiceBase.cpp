@@ -2050,6 +2050,216 @@ void BgpServiceBase::setDebugLevel(TBgpDebugLevel level) {
  */
 static constexpr auto kDefaultAsync = "default:async=true";
 
+folly::coro::Task<BgpPolicyChangeResult> BgpServiceBase::co_setPeersPolicy(
+    std::unique_ptr<std::map<
+        std::string,
+        std::map<facebook::bgp::bgp_policy::DIRECTION, std::string>>>
+        peersPolicy) {
+  auto log = LOG_THRIFT_CALL(DBG2);
+
+  if (exitInitiated_ || !peersPolicy) {
+    auto errStr = exitInitiated_ ? "Session exits" : "Empty peers policy";
+    XLOGF(
+        ERR,
+        "[{}]: Failed to set peers policy. Error: {}",
+        kExitNullPtrLogPrefix,
+        errStr);
+    BgpStats::incrSetPeersPolicyFailure();
+    co_return BgpPolicyChangeResult::INPUT_ERROR;
+  }
+
+  if (!peerMgr_.getIsInitialized()) {
+    XLOG(ERR, "setPeersPolicy: rejected (BGP is not initialized)");
+    BgpStats::incrSetPeersPolicyFailure();
+    co_return BgpPolicyChangeResult::INPUT_ERROR;
+  }
+
+  auto currentConfig = configManager_->getConfig();
+  auto validationResult = validatePeersAndPolicies(
+      *peersPolicy, *currentConfig, peerMgr_.getPolicyManager());
+  if (validationResult != PolicyValidationResult::SUCCESS) {
+    XLOGF(
+        ERR,
+        "[{}]: Failed to set peers policy. Error: {}",
+        kExitNullPtrLogPrefix,
+        magic_enum::enum_name(validationResult));
+    BgpStats::incrSetPeersPolicyFailure();
+    co_return BgpPolicyChangeResult::INPUT_ERROR;
+  }
+
+  if (!continueExecution(true)) {
+    XLOG(ERR, "setPeersPolicy: request rejected by thrift request dampening");
+    BgpStats::incrSetPeersPolicyFailure();
+    co_return BgpPolicyChangeResult::INTERNAL_ERROR;
+  }
+  SCOPE_EXIT {
+    decrRequestsInExecution();
+  };
+
+  try {
+    XLOGF(
+        INFO,
+        "setPeersPolicy validation passed for {} peers",
+        peersPolicy->size());
+
+    auto newConfig = configManager_->updatePeerPolicies(*peersPolicy);
+
+    auto resolvedPeerPolicies = resolveEffectivePeerPolicies(
+        *newConfig,
+        [&peersPolicy](const folly::IPAddress& peerAddr, const BgpPeerConfig&) {
+          return peersPolicy->contains(peerAddr.str());
+        });
+
+    peerMgr_.updateIngressEgressPolicyNames(std::move(resolvedPeerPolicies));
+
+    BgpStats::incrSetPeersPolicySuccess();
+    co_return BgpPolicyChangeResult::POLICIES_APPLIED;
+  } catch (const std::exception& error) {
+    auto errorMsg = folly::exceptionStr(error);
+    XLOGF(ERR, "Failed to update peer policies: {}", errorMsg);
+    BgpStats::incrSetPeersPolicyFailure();
+    co_return BgpPolicyChangeResult::INTERNAL_ERROR;
+  }
+}
+
+folly::coro::Task<BgpPolicyChangeResult> BgpServiceBase::co_setPeerGroupsPolicy(
+    std::unique_ptr<std::map<
+        std::string,
+        std::map<facebook::bgp::bgp_policy::DIRECTION, std::string>>>
+        peerGroupsPolicy) {
+  auto log = LOG_THRIFT_CALL(DBG2);
+
+  if (exitInitiated_ || !peerGroupsPolicy) {
+    auto errStr = exitInitiated_ ? "Session exits" : "Empty peer groups policy";
+    XLOGF(
+        ERR,
+        "[{}]: Failed to set peer groups policy. Error: {}",
+        kExitNullPtrLogPrefix,
+        errStr);
+    BgpStats::incrSetPeerGroupsPolicyFailure();
+    co_return BgpPolicyChangeResult::INPUT_ERROR;
+  }
+
+  if (!peerMgr_.getIsInitialized()) {
+    XLOG(ERR, "setPeerGroupsPolicy: rejected (BGP is not initialized)");
+    BgpStats::incrSetPeerGroupsPolicyFailure();
+    co_return BgpPolicyChangeResult::INPUT_ERROR;
+  }
+
+  auto currentConfig = configManager_->getConfig();
+  auto validationResult = validatePeerGroupsAndPolicies(
+      *peerGroupsPolicy, *currentConfig, peerMgr_.getPolicyManager());
+  if (validationResult != PolicyValidationResult::SUCCESS) {
+    XLOGF(
+        ERR,
+        "[{}]: Failed to set peer groups policy. Error: {}",
+        kExitNullPtrLogPrefix,
+        magic_enum::enum_name(validationResult));
+    BgpStats::incrSetPeerGroupsPolicyFailure();
+    co_return BgpPolicyChangeResult::INPUT_ERROR;
+  }
+
+  if (!continueExecution(true)) {
+    XLOG(
+        ERR,
+        "setPeerGroupsPolicy: request rejected by thrift request dampening");
+    BgpStats::incrSetPeerGroupsPolicyFailure();
+    co_return BgpPolicyChangeResult::INTERNAL_ERROR;
+  }
+  SCOPE_EXIT {
+    decrRequestsInExecution();
+  };
+
+  try {
+    XLOGF(
+        INFO,
+        "setPeerGroupsPolicy validation passed for {} peer groups",
+        peerGroupsPolicy->size());
+
+    auto newConfig = configManager_->updatePeerGroupPolicies(*peerGroupsPolicy);
+
+    auto resolvedPeerPolicies = resolveEffectivePeerPolicies(
+        *newConfig,
+        [&peerGroupsPolicy](
+            const folly::IPAddress&, const BgpPeerConfig& peerConfig) {
+          const auto& pgName = peerConfig.commonPeerGroupConfig.peerGroupName;
+          return pgName.has_value() && peerGroupsPolicy->contains(*pgName);
+        });
+
+    peerMgr_.updateIngressEgressPolicyNames(std::move(resolvedPeerPolicies));
+
+    BgpStats::incrSetPeerGroupsPolicySuccess();
+    co_return BgpPolicyChangeResult::POLICIES_APPLIED;
+  } catch (const std::exception& error) {
+    auto errorMsg = folly::exceptionStr(error);
+    XLOGF(ERR, "Failed to update peer group policies: {}", errorMsg);
+    BgpStats::incrSetPeerGroupsPolicyFailure();
+    co_return BgpPolicyChangeResult::INTERNAL_ERROR;
+  }
+}
+
+folly::coro::Task<BgpPolicyChangeResult> BgpServiceBase::co_unsetPeersPolicy(
+    std::unique_ptr<
+        std::map<std::string, std::set<facebook::bgp::bgp_policy::DIRECTION>>>
+        peersToUnset) {
+  auto log = LOG_THRIFT_CALL(DBG1);
+
+  if (exitInitiated_ || !peersToUnset) {
+    auto errStr = exitInitiated_ ? "Session exits" : "Empty peers to unset";
+    XLOGF(
+        ERR,
+        "[{}]: Failed to unset peers policy. Error: {}",
+        kExitNullPtrLogPrefix,
+        errStr);
+    BgpStats::incrUnsetPeersPolicyFailure();
+    co_return BgpPolicyChangeResult::INPUT_ERROR;
+  }
+
+  auto currentConfig = configManager_->getConfig();
+  for (const auto& [peerAddr, _] : *peersToUnset) {
+    if (!currentConfig->validatePeerExists(peerAddr)) {
+      XLOGF(ERR, "Peer {} not found in config", peerAddr);
+      BgpStats::incrUnsetPeersPolicyFailure();
+      co_return BgpPolicyChangeResult::INPUT_ERROR;
+    }
+  }
+
+  if (!continueExecution(true)) {
+    XLOG(ERR, "unsetPeersPolicy: request rejected by thrift request dampening");
+    BgpStats::incrUnsetPeersPolicyFailure();
+    co_return BgpPolicyChangeResult::INTERNAL_ERROR;
+  }
+  SCOPE_EXIT {
+    decrRequestsInExecution();
+  };
+
+  try {
+    XLOGF(
+        INFO,
+        "unsetPeersPolicy: unsetting policy for {} peers",
+        peersToUnset->size());
+
+    auto newConfig = configManager_->unsetPeerPolicies(*peersToUnset);
+
+    auto resolvedPeerPolicies = resolveEffectivePeerPolicies(
+        *newConfig,
+        [&peersToUnset](
+            const folly::IPAddress& peerAddr, const BgpPeerConfig&) {
+          return peersToUnset->count(peerAddr.str()) > 0;
+        });
+
+    peerMgr_.updateIngressEgressPolicyNames(std::move(resolvedPeerPolicies));
+
+    BgpStats::incrUnsetPeersPolicySuccess();
+    co_return BgpPolicyChangeResult::POLICIES_APPLIED;
+  } catch (const std::exception& error) {
+    auto errorMsg = folly::exceptionStr(error);
+    XLOGF(ERR, "Failed to unset peer policies: {}", errorMsg);
+    BgpStats::incrUnsetPeersPolicyFailure();
+    co_return BgpPolicyChangeResult::INTERNAL_ERROR;
+  }
+}
+
 void BgpServiceBase::setLogLevel(std::unique_ptr<std::string> levelString) {
   auto log = LOG_THRIFT_CALL(INFO);
   if (levelString->find(kDefaultAsync) != std::string::npos) {

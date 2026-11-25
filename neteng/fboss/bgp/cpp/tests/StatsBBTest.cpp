@@ -19,14 +19,12 @@
 #include <fb303/ThreadCachedServiceData.h>
 
 #include "neteng/fboss/bgp/cpp/stats/StatsBB.h"
+#include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
 
 namespace facebook::bgp {
 
 TEST(StatsBBTest, InitStatsBB_PreservesOdsKeysAndSupportsPlatformMutators) {
   EXPECT_EQ("bgpd.addPeers.success", std::string(BgpStatsBB::kAddPeersSuccess));
-  EXPECT_EQ(
-      "bgpd.setPeersPolicy.failure",
-      std::string(BgpStatsBB::kSetPeersPolicyFailure));
   EXPECT_EQ(
       "bgpd.ribPolicy.numUnsupportedPolicyMsg",
       std::string(RibStatsBB::kUnsupportedPolicyMsg));
@@ -35,19 +33,16 @@ TEST(StatsBBTest, InitStatsBB_PreservesOdsKeysAndSupportsPlatformMutators) {
   auto* stats = fb303::ThreadCachedServiceData::get();
 
   EXPECT_EQ(0, stats->getCounter(BgpStatsBB::kAddPeersSuccess));
-  EXPECT_EQ(0, stats->getCounter(BgpStatsBB::kSetPeersPolicyFailure));
   EXPECT_EQ(
       0,
       stats->getCounter(
           std::string(RibStatsBB::kUnsupportedPolicyMsg) + ".count"));
 
   BgpStatsBB::incrAddPeersSuccess();
-  BgpStatsBB::incrSetPeersPolicyFailure();
   RibStatsBB::STATS_unsupportedPolicyMsg.add(1);
   stats->publishStats();
 
   EXPECT_EQ(1, stats->getCounter(BgpStatsBB::kAddPeersSuccess));
-  EXPECT_EQ(1, stats->getCounter(BgpStatsBB::kSetPeersPolicyFailure));
   EXPECT_EQ(
       1,
       stats->getCounter(
@@ -88,34 +83,38 @@ TEST(StatsBBTest, DelPeersCounterTest) {
   EXPECT_EQ(1, counters->getCounter(BgpStatsBB::kDelPeersRejected));
 }
 
-TEST(StatsBBTest, DynamicPolicyApiCountersTest) {
-  BgpStatsBB::initCounters();
+TEST(StatsBBTest, BbInitializationPreservesSharedPolicyApiCounters) {
+  EXPECT_EQ(
+      "bgpd.setPeersPolicy.failure",
+      std::string(BgpStats::kSetPeersPolicyFailure));
+  BgpStats::initPolicyApiCounters();
 
   auto tcData = fb303::ThreadCachedServiceData::get();
 
-  EXPECT_EQ(0, tcData->getCounter(BgpStatsBB::kSetPeersPolicySuccess));
-  EXPECT_EQ(0, tcData->getCounter(BgpStatsBB::kSetPeersPolicyFailure));
-  EXPECT_EQ(0, tcData->getCounter(BgpStatsBB::kSetPeerGroupsPolicySuccess));
-  EXPECT_EQ(0, tcData->getCounter(BgpStatsBB::kSetPeerGroupsPolicyFailure));
-  EXPECT_EQ(0, tcData->getCounter(BgpStatsBB::kUnsetPeersPolicySuccess));
-  EXPECT_EQ(0, tcData->getCounter(BgpStatsBB::kUnsetPeersPolicyFailure));
+  EXPECT_EQ(0, tcData->getCounter(BgpStats::kSetPeersPolicySuccess));
+  EXPECT_EQ(0, tcData->getCounter(BgpStats::kSetPeersPolicyFailure));
+  EXPECT_EQ(0, tcData->getCounter(BgpStats::kSetPeerGroupsPolicySuccess));
+  EXPECT_EQ(0, tcData->getCounter(BgpStats::kSetPeerGroupsPolicyFailure));
+  EXPECT_EQ(0, tcData->getCounter(BgpStats::kUnsetPeersPolicySuccess));
+  EXPECT_EQ(0, tcData->getCounter(BgpStats::kUnsetPeersPolicyFailure));
 
-  BgpStatsBB::incrSetPeersPolicySuccess();
-  BgpStatsBB::incrSetPeersPolicyFailure();
-  BgpStatsBB::incrSetPeersPolicyFailure();
-  BgpStatsBB::incrSetPeerGroupsPolicySuccess();
-  BgpStatsBB::incrSetPeerGroupsPolicyFailure();
-  BgpStatsBB::incrUnsetPeersPolicySuccess();
-  BgpStatsBB::incrUnsetPeersPolicySuccess();
-  BgpStatsBB::incrUnsetPeersPolicyFailure();
+  BgpStats::incrSetPeersPolicySuccess();
+  BgpStats::incrSetPeersPolicyFailure();
+  BgpStats::incrSetPeersPolicyFailure();
+  BgpStats::incrSetPeerGroupsPolicySuccess();
+  BgpStats::incrSetPeerGroupsPolicyFailure();
+  BgpStats::incrUnsetPeersPolicySuccess();
+  BgpStats::incrUnsetPeersPolicySuccess();
+  BgpStats::incrUnsetPeersPolicyFailure();
   tcData->publishStats();
+  initStatsBB();
 
-  EXPECT_EQ(1, tcData->getCounter(BgpStatsBB::kSetPeersPolicySuccess));
-  EXPECT_EQ(2, tcData->getCounter(BgpStatsBB::kSetPeersPolicyFailure));
-  EXPECT_EQ(1, tcData->getCounter(BgpStatsBB::kSetPeerGroupsPolicySuccess));
-  EXPECT_EQ(1, tcData->getCounter(BgpStatsBB::kSetPeerGroupsPolicyFailure));
-  EXPECT_EQ(2, tcData->getCounter(BgpStatsBB::kUnsetPeersPolicySuccess));
-  EXPECT_EQ(1, tcData->getCounter(BgpStatsBB::kUnsetPeersPolicyFailure));
+  EXPECT_EQ(1, tcData->getCounter(BgpStats::kSetPeersPolicySuccess));
+  EXPECT_EQ(2, tcData->getCounter(BgpStats::kSetPeersPolicyFailure));
+  EXPECT_EQ(1, tcData->getCounter(BgpStats::kSetPeerGroupsPolicySuccess));
+  EXPECT_EQ(1, tcData->getCounter(BgpStats::kSetPeerGroupsPolicyFailure));
+  EXPECT_EQ(2, tcData->getCounter(BgpStats::kUnsetPeersPolicySuccess));
+  EXPECT_EQ(1, tcData->getCounter(BgpStats::kUnsetPeersPolicyFailure));
 }
 
 } // namespace facebook::bgp

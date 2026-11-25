@@ -41,7 +41,10 @@
   FRIEND_TEST(BgpServiceBaseTestFixture, GetFibNexthopDatabaseThrowsOnExit); \
   FRIEND_TEST(BgpServiceBaseTestFixture, GetAdjRibStatsReturnsEmptyOnExit);
 
+#define PeerManager_TEST_FRIENDS friend class BgpServiceDCPeerPolicyTestFixture;
+
 #include "neteng/fboss/bgp/cpp/BgpServiceBase.h"
+#include "neteng/fboss/bgp/cpp/BgpServiceDC.h"
 #include "neteng/fboss/bgp/cpp/config/ConfigManager.h"
 #include "neteng/fboss/bgp/cpp/peer/PeerManagerBase.h"
 #include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
@@ -235,6 +238,164 @@ class BgpServiceBaseTestFixture : public ::testing::Test {
   // Peer Manager
   std::optional<MonitoredMPMCQueue<NeighborWatcherMessage>> neighborEventQ_;
 };
+
+class BgpServiceDCPeerPolicyTestFixture : public BgpServiceBaseTestFixture {
+ public:
+  using PolicyAssignments =
+      std::map<std::string, std::map<bgp_policy::DIRECTION, std::string>>;
+
+  void SetUp() override {
+    BgpServiceBaseTestFixture::SetUp();
+    service_ = std::make_unique<BgpServiceDC>(
+        *peerManager_, configManager_, *rib_, nullptr, *watchdog_, false);
+    server_ = std::make_unique<apache::thrift::ScopedServerInterfaceThread>(
+        std::shared_ptr<BgpServiceBase>(service_.get(), [](auto*) {}),
+        kLoopBackAddressV4.str(),
+        kEphemeralPort);
+    client_ = server_->newClient<apache::thrift::Client<TBgpService>>();
+    setInitialized(true);
+  }
+
+  void TearDown() override {
+    client_.reset();
+    server_.reset();
+    BgpServiceBaseTestFixture::TearDown();
+  }
+
+  void setInitialized(bool initialized) {
+    peerManager_->initialized_ = initialized;
+  }
+
+ protected:
+  std::shared_ptr<Config> createConfig() override {
+    auto config = BgpServiceBaseTestFixture::createConfig()->getConfig();
+    for (auto& peer : *config.peers()) {
+      peer.peer_group_name() = "test-peer-group-1";
+    }
+    config.policies() = createPolicyManager()->getPolicy();
+    return std::make_shared<Config>(std::move(config));
+  }
+
+  std::unique_ptr<apache::thrift::ScopedServerInterfaceThread> server_;
+  std::unique_ptr<apache::thrift::Client<TBgpService>> client_;
+};
+
+TEST_F(BgpServiceDCPeerPolicyTestFixture, PolicyAssignmentsOverThrift) {
+  PolicyAssignments groupPolicies{
+      {"test-peer-group-1",
+       {{bgp_policy::DIRECTION::IN, "test-ingress-policy"},
+        {bgp_policy::DIRECTION::OUT, "test-egress-policy"}}}};
+
+  ASSERT_EQ(
+      BgpPolicyChangeResult::POLICIES_APPLIED,
+      folly::coro::blockingWait(
+          client_->co_setPeerGroupsPolicy(groupPolicies)));
+  auto config = configManager_->getConfig();
+  EXPECT_EQ(
+      "test-ingress-policy",
+      config->getPeerToConfig()
+          .at(kPeerAddr1)
+          ->commonPeerGroupConfig.ingressPolicyName);
+  EXPECT_EQ(
+      "test-egress-policy",
+      config->getPeerToConfig()
+          .at(kPeerAddr2)
+          ->commonPeerGroupConfig.egressPolicyName);
+
+  PolicyAssignments peerPolicies{
+      {kPeerAddr1.str(), {{bgp_policy::DIRECTION::OUT, "egress-policy-1"}}}};
+  ASSERT_EQ(
+      BgpPolicyChangeResult::POLICIES_APPLIED,
+      folly::coro::blockingWait(client_->co_setPeersPolicy(peerPolicies)));
+  groupPolicies.at("test-peer-group-1")[bgp_policy::DIRECTION::OUT] =
+      "egress-policy-2";
+  ASSERT_EQ(
+      BgpPolicyChangeResult::POLICIES_APPLIED,
+      folly::coro::blockingWait(
+          client_->co_setPeerGroupsPolicy(groupPolicies)));
+  config = configManager_->getConfig();
+  EXPECT_EQ(
+      "egress-policy-1",
+      config->getPeerToConfig()
+          .at(kPeerAddr1)
+          ->commonPeerGroupConfig.egressPolicyName);
+  EXPECT_EQ(
+      "egress-policy-2",
+      config->getPeerToConfig()
+          .at(kPeerAddr2)
+          ->commonPeerGroupConfig.egressPolicyName);
+
+  std::map<std::string, std::set<bgp_policy::DIRECTION>> policiesToUnset{
+      {kPeerAddr1.str(), {bgp_policy::DIRECTION::OUT}}};
+  ASSERT_EQ(
+      BgpPolicyChangeResult::POLICIES_APPLIED,
+      folly::coro::blockingWait(client_->co_unsetPeersPolicy(policiesToUnset)));
+  config = configManager_->getConfig();
+  EXPECT_FALSE(config->getConfig().peers()->front().egress_policy_name());
+  EXPECT_EQ(
+      "egress-policy-2",
+      config->getPeerToConfig()
+          .at(kPeerAddr1)
+          ->commonPeerGroupConfig.egressPolicyName);
+  EXPECT_EQ(
+      "test-ingress-policy",
+      config->getPeerToConfig()
+          .at(kPeerAddr1)
+          ->commonPeerGroupConfig.ingressPolicyName);
+  counters_->publishStats();
+  EXPECT_EQ(1, counters_->getCounter(BgpStats::kSetPeersPolicySuccess));
+  EXPECT_EQ(2, counters_->getCounter(BgpStats::kSetPeerGroupsPolicySuccess));
+  EXPECT_EQ(1, counters_->getCounter(BgpStats::kUnsetPeersPolicySuccess));
+}
+
+TEST_F(BgpServiceDCPeerPolicyTestFixture, InvalidAssignmentsPreserveConfig) {
+  const auto version = configManager_->getConfigVersion();
+  const auto config = configManager_->getConfig();
+  for (const PolicyAssignments& policies :
+       {PolicyAssignments{
+            {"2001:db8::ffff",
+             {{bgp_policy::DIRECTION::OUT, "test-egress-policy"}}}},
+        PolicyAssignments{
+            {kPeerAddr1.str(),
+             {{bgp_policy::DIRECTION::OUT, "unknown-policy"}}}}}) {
+    EXPECT_EQ(
+        BgpPolicyChangeResult::INPUT_ERROR,
+        folly::coro::blockingWait(client_->co_setPeersPolicy(policies)));
+  }
+  PolicyAssignments groupPolicies{
+      {"unknown-group", {{bgp_policy::DIRECTION::IN, "test-ingress-policy"}}}};
+  EXPECT_EQ(
+      BgpPolicyChangeResult::INPUT_ERROR,
+      folly::coro::blockingWait(
+          client_->co_setPeerGroupsPolicy(groupPolicies)));
+  std::map<std::string, std::set<bgp_policy::DIRECTION>> policiesToUnset{
+      {"2001:db8::ffff", {bgp_policy::DIRECTION::OUT}}};
+  EXPECT_EQ(
+      BgpPolicyChangeResult::INPUT_ERROR,
+      folly::coro::blockingWait(client_->co_unsetPeersPolicy(policiesToUnset)));
+  EXPECT_EQ(version, configManager_->getConfigVersion());
+  EXPECT_EQ(config, configManager_->getConfig());
+}
+
+TEST_F(
+    BgpServiceDCPeerPolicyTestFixture,
+    AssignmentBeforeInitializationRejected) {
+  setInitialized(false);
+  const auto version = configManager_->getConfigVersion();
+  PolicyAssignments peerPolicies{
+      {kPeerAddr1.str(), {{bgp_policy::DIRECTION::OUT, "test-egress-policy"}}}};
+  EXPECT_EQ(
+      BgpPolicyChangeResult::INPUT_ERROR,
+      folly::coro::blockingWait(client_->co_setPeersPolicy(peerPolicies)));
+  PolicyAssignments groupPolicies{
+      {"test-peer-group-1",
+       {{bgp_policy::DIRECTION::OUT, "test-egress-policy"}}}};
+  EXPECT_EQ(
+      BgpPolicyChangeResult::INPUT_ERROR,
+      folly::coro::blockingWait(
+          client_->co_setPeerGroupsPolicy(groupPolicies)));
+  EXPECT_EQ(version, configManager_->getConfigVersion());
+}
 
 // Test ConfigManager::addPeersToConfig adds peer to config
 TEST_F(BgpServiceBaseTestFixture, AddPeersToConfigSuccessTest) {

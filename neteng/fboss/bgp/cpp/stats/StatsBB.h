@@ -20,6 +20,7 @@
 #include <folly/FixedString.h>
 
 #include "neteng/fboss/bgp/cpp/common/Consts.h"
+#include "neteng/fboss/bgp/cpp/stats/StatsBase.h"
 
 #include <fb303/ThreadCachedServiceData.h>
 #include <fb303/detail/QuantileStatWrappers.h>
@@ -28,16 +29,6 @@ namespace facebook::bgp {
 using folly::string_literals::operator""_fs;
 
 namespace BgpStatsBB {
-
-// Dynamic policy API success/failure counters
-constexpr auto kSetPeersPolicySuccess = "bgpd.setPeersPolicy.success"_fs;
-constexpr auto kSetPeersPolicyFailure = "bgpd.setPeersPolicy.failure"_fs;
-constexpr auto kSetPeerGroupsPolicySuccess =
-    "bgpd.setPeerGroupsPolicy.success"_fs;
-constexpr auto kSetPeerGroupsPolicyFailure =
-    "bgpd.setPeerGroupsPolicy.failure"_fs;
-constexpr auto kUnsetPeersPolicySuccess = "bgpd.unsetPeersPolicy.success"_fs;
-constexpr auto kUnsetPeersPolicyFailure = "bgpd.unsetPeersPolicy.failure"_fs;
 
 // addPeers thrift API counters
 constexpr auto kAddPeersSuccess = "bgpd.addPeers.success"_fs;
@@ -57,17 +48,11 @@ constexpr auto kNetlinkDampeningEnabled =
 
 void initCounters();
 
-// Increment dynamic policy API success/failure counters
+// Increment peer-management API counters
 void incrAddPeersSuccess();
 void incrAddPeersRejected();
 void incrDelPeersSuccess();
 void incrDelPeersRejected();
-void incrSetPeersPolicySuccess();
-void incrSetPeersPolicyFailure();
-void incrSetPeerGroupsPolicySuccess();
-void incrSetPeerGroupsPolicyFailure();
-void incrUnsetPeersPolicySuccess();
-void incrUnsetPeersPolicyFailure();
 
 } // namespace BgpStatsBB
 

@@ -1276,7 +1276,12 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    */
   MonitoredMPMCQueue<AdjRib::ObservableMessageT> fromAdjRibQ_;
 
-  // Each peer adjacency rib which is created based on configuration
+  /*
+   * Each peer adjacency rib which is created based on configuration
+   *
+   * TODO_PMTRIZED_VRF: Move into PeerManagerVrf. The key has no VRF, so peers
+   * in different VRFs with overlapping addresses (e.g. EVPN) would collide.
+   */
   folly::F14NodeMap<nettools::bgplib::BgpPeerId, std::shared_ptr<AdjRib>>
       adjRibs_;
 
@@ -1286,7 +1291,12 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    */
   std::unique_ptr<UpdateGroupManager> updateGroupManager_;
 
-  // Stores peerAddr to peerIds mapping
+  /*
+   * Stores peerAddr to peerIds mapping
+   *
+   * TODO_PMTRIZED_VRF: Move into PeerManagerVrf. The key has no VRF, so peers
+   * in different VRFs with overlapping addresses (e.g. EVPN) would merge.
+   */
   folly::F14NodeMap<
       folly::IPAddress /* peerAddr */,
       std::unordered_set<nettools::bgplib::BgpPeerId>>
@@ -1297,6 +1307,9 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    * processing loops have completed). Used to do sequential synchronization
    * between adjRib and peerManager. Latch semantics: passes through between
    * post() and reset(), ensuring rapid session flaps don't hang.
+   *
+   * TODO_PMTRIZED_VRF: Move into PeerManagerVrf. The key has no VRF, so peers
+   * in different VRFs with overlapping addresses (e.g. EVPN) would collide.
    */
   folly::F14NodeMap<
       nettools::bgplib::BgpPeerId,

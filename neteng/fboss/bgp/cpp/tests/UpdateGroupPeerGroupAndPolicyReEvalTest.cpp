@@ -2191,7 +2191,7 @@ TEST_F(
    */
   evb.runInEventBaseThreadAndWait([&]() {
     adjRib = ctx.peerMgr->adjRibs_.at(peer0);
-    ctx.peerMgr->pendingRibDumpAdjRibs_.insert(adjRib);
+    ctx.peerMgr->getDefaultVrf().getPendingRibDumpAdjRibs().insert(adjRib);
     group->asyncScope_.add(
         folly::coro::co_withExecutor(
             &evb, folly::coro::co_invoke([&]() -> folly::coro::Task<void> {
@@ -2199,17 +2199,20 @@ TEST_F(
               folly::CancellationCallback cb(
                   token, [&baton]() noexcept { baton.post(); });
               co_await baton;
-              bufferedDuringDrain =
-                  ctx.peerMgr->pendingRibDumpAdjRibs_.contains(adjRib);
+              bufferedDuringDrain = ctx.peerMgr->getDefaultVrf()
+                                        .getPendingRibDumpAdjRibs()
+                                        .contains(adjRib);
             })));
   });
   // Ensure the parked task has reached its baton wait before terminating.
   flushEventBase(ctx);
 
   // Precondition: the buffered dump is present before termination.
-  ASSERT_TRUE(folly::via(&evb, [&]() {
-                return ctx.peerMgr->pendingRibDumpAdjRibs_.contains(adjRib);
-              }).get());
+  ASSERT_TRUE(
+      folly::via(&evb, [&]() {
+        return ctx.peerMgr->getDefaultVrf().getPendingRibDumpAdjRibs().contains(
+            adjRib);
+      }).get());
 
   // Terminate the sole peer through the production event path.
   triggerPeerDownOnEvb(ctx, peer0);

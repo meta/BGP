@@ -45,6 +45,9 @@
       ScheduleRibDumpForAdjRib_PreservesRouteRefreshMetadata);                  \
   FRIEND_TEST(                                                                  \
       RibInitialAnnouncementTestFixture,                                        \
+      RouteRefreshReceived_TriggersAfiFilteredRibDump);                         \
+  FRIEND_TEST(                                                                  \
+      RibInitialAnnouncementTestFixture,                                        \
       ScheduleRibDumpForAdjRib_DeferredRequestPreservesMetadata);               \
   FRIEND_TEST(                                                                  \
       RibInitialAnnouncementTestFixture,                                        \
@@ -1211,7 +1214,7 @@ TEST_F(
 
     // Case 1: sendAddPath = true
     adjRib->sendAddPath_ = true;
-    peerMgr_->maybeBufferRibDumpReq(adjRib);
+    peerMgr_->getDefaultVrf().maybeBufferRibDumpReq(adjRib);
 
     EXPECT_EQ(1, messages.size());
     EXPECT_EQ(
@@ -1220,7 +1223,7 @@ TEST_F(
             "Not sending RibDumpReq for {}; Rib has not started initial announcement.",
             kPeerId1.str()));
 
-    EXPECT_TRUE(peerMgr_->pendingRibDumpReqs_.empty());
+    EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpReqs().empty());
     EXPECT_EQ(0, peerMgr_->asyncScope_.remaining());
   }
   {
@@ -1228,7 +1231,7 @@ TEST_F(
 
     // Case 2: sendAddPath = false
     adjRib->sendAddPath_ = false;
-    peerMgr_->maybeBufferRibDumpReq(adjRib);
+    peerMgr_->getDefaultVrf().maybeBufferRibDumpReq(adjRib);
 
     EXPECT_EQ(1, messages.size());
     EXPECT_EQ(
@@ -1237,7 +1240,7 @@ TEST_F(
             "Not sending RibDumpReq for {}; Rib has not started initial announcement.",
             kPeerId1.str()));
 
-    EXPECT_TRUE(peerMgr_->pendingRibDumpReqs_.empty());
+    EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpReqs().empty());
     EXPECT_EQ(0, peerMgr_->asyncScope_.remaining());
   }
 }
@@ -1268,7 +1271,7 @@ TEST_F(
 
     // Case 1: sendAddPath = true
     adjRib->sendAddPath_ = true;
-    peerMgr_->maybeBufferRibDumpReq(adjRib);
+    peerMgr_->getDefaultVrf().maybeBufferRibDumpReq(adjRib);
 
     EXPECT_EQ(1, messages.size());
     EXPECT_EQ(
@@ -1276,8 +1279,8 @@ TEST_F(
         fmt::format(
             "Insert RibDumpReq in pending list for {}", kPeerId1.str()));
 
-    EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
-    EXPECT_TRUE(peerMgr_->pendingRibDumpReqs_[kPeerId1]);
+    EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
+    EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpReqs()[kPeerId1]);
     EXPECT_EQ(1, peerMgr_->asyncScope_.remaining());
 
     /*
@@ -1291,7 +1294,7 @@ TEST_F(
 
     // Case 2: sendAddPath = false
     adjRib->sendAddPath_ = false;
-    peerMgr_->maybeBufferRibDumpReq(adjRib);
+    peerMgr_->getDefaultVrf().maybeBufferRibDumpReq(adjRib);
 
     EXPECT_EQ(1, messages.size());
     EXPECT_EQ(
@@ -1299,8 +1302,8 @@ TEST_F(
         fmt::format(
             "Insert RibDumpReq in pending list for {}", kPeerId1.str()));
 
-    EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
-    EXPECT_FALSE(peerMgr_->pendingRibDumpReqs_[kPeerId1]);
+    EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
+    EXPECT_FALSE(peerMgr_->getDefaultVrf().getPendingRibDumpReqs()[kPeerId1]);
     EXPECT_EQ(1, peerMgr_->asyncScope_.remaining());
 
     /*
@@ -1341,7 +1344,7 @@ TEST_F(
 
     // Case 1: sendAddPath = true
     adjRib->sendAddPath_ = true;
-    peerMgr_->maybeBufferRibDumpReq(adjRib);
+    peerMgr_->getDefaultVrf().maybeBufferRibDumpReq(adjRib);
 
     EXPECT_EQ(1, messages.size());
     EXPECT_EQ(
@@ -1349,8 +1352,8 @@ TEST_F(
         fmt::format(
             "Insert RibDumpReq in pending list for {}", kPeerId1.str()));
 
-    EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
-    EXPECT_TRUE(peerMgr_->pendingRibDumpReqs_[kPeerId1]);
+    EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
+    EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpReqs()[kPeerId1]);
     EXPECT_EQ(0, peerMgr_->asyncScope_.remaining());
 
     EXPECT_FALSE(adjRib->isRibDumpScheduled());
@@ -1360,7 +1363,7 @@ TEST_F(
 
     // Case 2: sendAddPath = false
     adjRib->sendAddPath_ = false;
-    peerMgr_->maybeBufferRibDumpReq(adjRib);
+    peerMgr_->getDefaultVrf().maybeBufferRibDumpReq(adjRib);
 
     EXPECT_EQ(1, messages.size());
     EXPECT_EQ(
@@ -1368,8 +1371,8 @@ TEST_F(
         fmt::format(
             "Insert RibDumpReq in pending list for {}", kPeerId1.str()));
 
-    EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
-    EXPECT_FALSE(peerMgr_->pendingRibDumpReqs_[kPeerId1]);
+    EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
+    EXPECT_FALSE(peerMgr_->getDefaultVrf().getPendingRibDumpReqs()[kPeerId1]);
     EXPECT_EQ(0, peerMgr_->asyncScope_.remaining());
 
     EXPECT_FALSE(adjRib->isRibDumpScheduled());
@@ -1402,12 +1405,13 @@ TEST_F(RibInitialAnnouncementTestFixture, HandleBufferedRibDumpReqsTest) {
         AsNum(kAsn1),
         sessionTerminateBaton_,
         config);
-    peerMgr_->pendingRibDumpReqs_.insert({peerId, i % 2});
+    peerMgr_->getDefaultVrf().getPendingRibDumpReqs().insert({peerId, i % 2});
   }
 
-  EXPECT_EQ(10, peerMgr_->pendingRibDumpReqs_.size());
+  EXPECT_EQ(10, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
 
-  folly::coro::blockingWait(peerMgr_->handleBufferedRibDumpReqs());
+  folly::coro::blockingWait(
+      peerMgr_->getDefaultVrf().handleBufferedRibDumpReqs());
   evb.loop();
   folly::coro::blockingWait(peerMgr_->asyncScope_.joinAsync());
 
@@ -1426,7 +1430,7 @@ TEST_F(RibInitialAnnouncementTestFixture, HandleBufferedRibDumpReqsTest) {
   }
   evb.loop();
   // The non-update-group buffered drain consumed all pending requests.
-  EXPECT_TRUE(peerMgr_->pendingRibDumpReqs_.empty());
+  EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpReqs().empty());
   SUCCEED();
 }
 
@@ -1635,16 +1639,18 @@ TEST_F(
       .WillOnce(testing::Return());
 
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
-  EXPECT_FALSE(peerMgr_->isRibDumpScheduledForAdjRib(mockAdjRib));
+  EXPECT_FALSE(
+      peerMgr_->getDefaultVrf().isRibDumpScheduledForAdjRib(mockAdjRib));
 
   // First request schedules exactly one dump coroutine.
-  peerMgr_->scheduleRibDumpForAdjRib(mockAdjRib);
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(mockAdjRib);
   EXPECT_TRUE(mockAdjRib->isRibDumpScheduled());
-  EXPECT_TRUE(peerMgr_->isRibDumpScheduledForAdjRib(mockAdjRib));
+  EXPECT_TRUE(
+      peerMgr_->getDefaultVrf().isRibDumpScheduledForAdjRib(mockAdjRib));
   EXPECT_EQ(1, peerMgr_->asyncScope_.remaining());
 
   // Second request for the same peer coalesces -> still exactly one coroutine.
-  peerMgr_->scheduleRibDumpForAdjRib(mockAdjRib);
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(mockAdjRib);
   EXPECT_TRUE(mockAdjRib->isRibDumpScheduled());
   EXPECT_EQ(1, peerMgr_->asyncScope_.remaining());
 
@@ -1689,13 +1695,59 @@ TEST_F(
         EXPECT_EQ(announcement.entries.front().prefix, kV4Prefix1);
       });
 
-  peerMgr_->scheduleRibDumpForAdjRib(
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(
       mockAdjRib,
       RibDumpReq(kPeerId1, false /* sendAddPath */, BgpUpdateAfi::AFI_IPv4));
 
   evb.loop();
   folly::coro::blockingWait(peerMgr_->asyncScope_.joinAsync());
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
+
+  mockAdjRib->resetChangeListConsumer();
+  evb.loop();
+  testing::Mock::VerifyAndClearExpectations(mockAdjRib.get());
+}
+
+/*
+ * A Route Refresh from a peer outside an update group goes to
+ * processAdjRibEvent, which dumps only the requested AFI (RFC 2918 §3) to the
+ * peer's AdjRib.
+ */
+TEST_F(
+    RibInitialAnnouncementTestFixture,
+    RouteRefreshReceived_TriggersAfiFilteredRibDump) {
+  auto& evb = peerMgr_->getEventBase();
+  auto mockAdjRib =
+      setupMockAdjRib(evb, kPeerId1, AsNum(kAsn1), sessionTerminateBaton_);
+  establishSessionForRibDump(mockAdjRib);
+  peerMgr_->adjRibs_[kPeerId1] = mockAdjRib;
+
+  auto v4Announcement = createRibSingleAnnounce(
+      kV4Prefix1, kV4Nexthop1, kLocalRouteAs, false, false);
+  auto v6Announcement = createRibSingleAnnounce(
+      kV6Prefix1, kV6Nexthop1, kLocalRouteAs, false, false);
+  auto& vrf = peerMgr_->getDefaultVrf();
+  vrf.handleShadowRibEntryAnnouncement(
+      std::get<RibOutAnnouncement>(v4Announcement));
+  vrf.handleShadowRibEntryAnnouncement(
+      std::get<RibOutAnnouncement>(v6Announcement));
+
+  EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_))
+      .WillOnce([](const RibOutPayload& message) {
+        ASSERT_TRUE(std::holds_alternative<RibOutAnnouncement>(message));
+        const auto& announcement = std::get<RibOutAnnouncement>(message);
+        EXPECT_EQ(announcement.routeRefreshAfi, BgpUpdateAfi::AFI_IPv4);
+        EXPECT_TRUE(announcement.sendWithEoR);
+        ASSERT_EQ(announcement.entries.size(), 1);
+        EXPECT_EQ(announcement.entries.front().prefix, kV4Prefix1);
+      });
+
+  AdjRib::ObservableMessageT routeRefresh{
+      fboss::kDefaultVrf,
+      kPeerId1,
+      AdjRib::RouteRefreshReceived{BgpUpdateAfi::AFI_IPv4}};
+  folly::coro::blockingWait(
+      peerMgr_->processAdjRibEvent(std::move(routeRefresh)));
 
   mockAdjRib->resetChangeListConsumer();
   evb.loop();
@@ -1735,7 +1787,7 @@ TEST_F(
       });
 
   mockAdjRib->testOnlyDeferInitDump = true;
-  peerMgr_->scheduleRibDumpForAdjRib(
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(
       mockAdjRib,
       RibDumpReq(kPeerId1, false /* sendAddPath */, BgpUpdateAfi::AFI_IPv6));
 
@@ -1790,7 +1842,7 @@ TEST_F(
         EXPECT_TRUE(sawV6);
       });
 
-  peerMgr_->scheduleRibDumpForAdjRib(mockAdjRib);
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(mockAdjRib);
 
   evb.loop();
   folly::coro::blockingWait(peerMgr_->asyncScope_.joinAsync());
@@ -1822,7 +1874,7 @@ TEST_F(
   adjRib->resetChangeListConsumer();
   ASSERT_EQ(adjRib->getChangeListConsumer(), nullptr);
 
-  peerMgr_->scheduleRibDumpForAdjRib(adjRib);
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(adjRib);
   evb.loop();
   folly::coro::blockingWait(peerMgr_->asyncScope_.joinAsync());
 
@@ -1866,13 +1918,20 @@ TEST_F(
       });
 
   const auto v4Afi = BgpUpdateAfi::AFI_IPv4;
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(mockAdjRib, v4Afi);
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(mockAdjRib, v4Afi);
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
+      mockAdjRib, v4Afi);
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
+      mockAdjRib, v4Afi);
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
       mockAdjRib, BgpUpdateAfi::AFI_IPv6);
 
-  ASSERT_EQ(peerMgr_->pendingRouteRefreshPeers_.size(), 1);
-  EXPECT_EQ(peerMgr_->pendingRouteRefreshPeers_.at(mockAdjRib).size(), 2);
+  ASSERT_EQ(peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().size(), 1);
+  EXPECT_EQ(
+      peerMgr_->getDefaultVrf()
+          .getPendingRouteRefreshPeers()
+          .at(mockAdjRib)
+          .size(),
+      2);
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
 
   mockAdjRib->setPeerState(PeerUpdateState::JOINED_RUNNING);
@@ -1880,9 +1939,10 @@ TEST_F(
   /* This in-sync peer transitions from JOINED_RUNNING to JOINED_BLOCKED. */
   group->markPeerBlocked(mockAdjRib);
   EXPECT_EQ(mockAdjRib->getPeerState(), PeerUpdateState::JOINED_BLOCKED);
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(mockAdjRib, v4Afi);
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
+      mockAdjRib, v4Afi);
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
-  peerMgr_->maybeSchedulePendingRouteRefresh(mockAdjRib);
+  peerMgr_->getDefaultVrf().maybeSchedulePendingRouteRefresh(mockAdjRib);
   ASSERT_EQ(mockAdjRib->getPeerState(), PeerUpdateState::DETACHED_BLOCKED);
   ASSERT_TRUE(mockAdjRib->isRibDumpScheduled());
 
@@ -1892,7 +1952,8 @@ TEST_F(
   EXPECT_THAT(
       replayedPrefixes, testing::UnorderedElementsAre(kV4Prefix1, kV6Prefix1));
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
-  EXPECT_FALSE(peerMgr_->pendingRouteRefreshPeers_.contains(mockAdjRib));
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().contains(
+      mockAdjRib));
 
   mockAdjRib->resetChangeListConsumer();
   group->unregisterPeer(mockAdjRib);
@@ -1913,13 +1974,15 @@ TEST_F(
   const auto v4Afi = BgpUpdateAfi::AFI_IPv4;
 
   /* The peer is still in INIT, so queue the refresh for later. */
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(mockAdjRib, v4Afi);
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
+      mockAdjRib, v4Afi);
 
   mockAdjRib->setPeerState(PeerUpdateState::DETACHED_READY_TO_JOIN);
   mockAdjRib->setAdjRibFlag(AdjRib::IS_DETACHED_FAST_PEER);
 
   /* A duplicate must not disturb the ready-to-join recovery state. */
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(mockAdjRib, v4Afi);
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
+      mockAdjRib, v4Afi);
 
   EXPECT_EQ(
       mockAdjRib->getPeerState(), PeerUpdateState::DETACHED_READY_TO_JOIN);
@@ -1927,13 +1990,13 @@ TEST_F(
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
 
   /* Resume the pending refresh as a detached private replay. */
-  peerMgr_->maybeSchedulePendingRouteRefresh(mockAdjRib);
+  peerMgr_->getDefaultVrf().maybeSchedulePendingRouteRefresh(mockAdjRib);
 
   EXPECT_EQ(mockAdjRib->getPeerState(), PeerUpdateState::DETACHED_RUNNING);
   EXPECT_FALSE(mockAdjRib->isAdjRibFlagSet(AdjRib::IS_DETACHED_FAST_PEER));
   EXPECT_TRUE(mockAdjRib->isRibDumpScheduled());
 
-  peerMgr_->cancelRibDumpForAdjRib(
+  peerMgr_->getDefaultVrf().cancelRibDumpForAdjRib(
       mockAdjRib, true /* discardRouteRefreshRequests */);
   group->unregisterPeer(mockAdjRib);
   evb.loop();
@@ -1951,24 +2014,24 @@ TEST_F(
   group->markPeerDetached(mockAdjRib);
   mockAdjRib->setPeerState(PeerUpdateState::DETACHED_RUNNING);
 
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
       mockAdjRib, BgpUpdateAfi::AFI_IPv4);
   ASSERT_TRUE(mockAdjRib->isRibDumpScheduled());
 
   mockAdjRib->setPeerState(PeerUpdateState::DETACHED_READY_TO_JOIN);
   mockAdjRib->setAdjRibFlag(AdjRib::IS_DETACHED_FAST_PEER);
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
       mockAdjRib, BgpUpdateAfi::AFI_IPv6);
 
   EXPECT_EQ(
       mockAdjRib->getPeerState(), PeerUpdateState::DETACHED_READY_TO_JOIN);
   EXPECT_TRUE(mockAdjRib->isAdjRibFlagSet(AdjRib::IS_DETACHED_FAST_PEER));
   EXPECT_THAT(
-      peerMgr_->pendingRouteRefreshPeers_.at(mockAdjRib),
+      peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().at(mockAdjRib),
       testing::UnorderedElementsAre(
           BgpUpdateAfi::AFI_IPv4, BgpUpdateAfi::AFI_IPv6));
 
-  peerMgr_->cancelRibDumpForAdjRib(
+  peerMgr_->getDefaultVrf().cancelRibDumpForAdjRib(
       mockAdjRib, true /* discardRouteRefreshRequests */);
   group->unregisterPeer(mockAdjRib);
   evb.loop();
@@ -1988,9 +2051,10 @@ TEST_F(
   mockAdjRib->setPeerState(PeerUpdateState::DETACHED_INIT_DUMP);
 
   /* A refresh received during the detached initial dump stays pending. */
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
       mockAdjRib, BgpUpdateAfi::AFI_IPv4);
-  ASSERT_TRUE(peerMgr_->pendingRouteRefreshPeers_.contains(mockAdjRib));
+  ASSERT_TRUE(peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().contains(
+      mockAdjRib));
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
 
   /*
@@ -2017,10 +2081,10 @@ TEST_F(
   EXPECT_EQ(mockAdjRib->getPeerState(), PeerUpdateState::DETACHED_RUNNING);
   EXPECT_FALSE(mockAdjRib->isAdjRibFlagSet(AdjRib::IS_DETACHED_FAST_PEER));
   EXPECT_THAT(
-      peerMgr_->pendingRouteRefreshPeers_.at(mockAdjRib),
+      peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().at(mockAdjRib),
       testing::ElementsAre(BgpUpdateAfi::AFI_IPv4));
 
-  peerMgr_->cancelRibDumpForAdjRib(
+  peerMgr_->getDefaultVrf().cancelRibDumpForAdjRib(
       mockAdjRib, true /* discardRouteRefreshRequests */);
   group->unregisterPeer(mockAdjRib);
   group->unregisterPeer(sibling);
@@ -2041,20 +2105,21 @@ TEST_F(
   mockAdjRib->setUpdateGroup(
       std::make_shared<AdjRibOutGroup>(
           evb, "route-refresh-test", 1, true, UpdateGroupKey{}));
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
       mockAdjRib, BgpUpdateAfi::AFI_IPv4);
 
   mockAdjRib->setPeerState(PeerUpdateState::DETACHED_RUNNING);
   mockAdjRib->setUpdateGroup(nullptr);
-  peerMgr_->maybeSchedulePendingRouteRefresh(mockAdjRib);
+  peerMgr_->getDefaultVrf().maybeSchedulePendingRouteRefresh(mockAdjRib);
 
-  ASSERT_TRUE(peerMgr_->pendingRouteRefreshPeers_.contains(mockAdjRib));
+  ASSERT_TRUE(peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().contains(
+      mockAdjRib));
   EXPECT_THAT(
-      peerMgr_->pendingRouteRefreshPeers_.at(mockAdjRib),
+      peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().at(mockAdjRib),
       testing::ElementsAre(BgpUpdateAfi::AFI_IPv4));
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
 
-  peerMgr_->cancelRibDumpForAdjRib(
+  peerMgr_->getDefaultVrf().cancelRibDumpForAdjRib(
       mockAdjRib, true /* discardRouteRefreshRequests */);
 }
 
@@ -2070,23 +2135,31 @@ TEST_F(
   mockAdjRib->setPeerState(PeerUpdateState::DETACHED_BLOCKED);
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_)).Times(0);
 
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
       mockAdjRib, BgpUpdateAfi::AFI_IPv4);
-  peerMgr_->scheduleRouteRefreshForUpdateGroupPeer(
+  peerMgr_->getDefaultVrf().scheduleRouteRefreshForUpdateGroupPeer(
       mockAdjRib, BgpUpdateAfi::AFI_IPv6);
-  ASSERT_TRUE(peerMgr_->pendingRouteRefreshPeers_.contains(mockAdjRib));
+  ASSERT_TRUE(peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().contains(
+      mockAdjRib));
   EXPECT_TRUE(mockAdjRib->isRibDumpScheduled());
-  EXPECT_EQ(peerMgr_->pendingRouteRefreshPeers_.at(mockAdjRib).size(), 2);
+  EXPECT_EQ(
+      peerMgr_->getDefaultVrf()
+          .getPendingRouteRefreshPeers()
+          .at(mockAdjRib)
+          .size(),
+      2);
 
-  peerMgr_->cancelRibDumpForAdjRib(
+  peerMgr_->getDefaultVrf().cancelRibDumpForAdjRib(
       mockAdjRib, true /* discardRouteRefreshRequests */);
 
-  EXPECT_FALSE(peerMgr_->pendingRouteRefreshPeers_.contains(mockAdjRib));
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().contains(
+      mockAdjRib));
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
 
-  peerMgr_->pendingRouteRefreshPeers_[mockAdjRib];
-  peerMgr_->cancelRibDumpForAdjRib(mockAdjRib);
-  EXPECT_FALSE(peerMgr_->pendingRouteRefreshPeers_.contains(mockAdjRib));
+  peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers()[mockAdjRib];
+  peerMgr_->getDefaultVrf().cancelRibDumpForAdjRib(mockAdjRib);
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().getPendingRouteRefreshPeers().contains(
+      mockAdjRib));
 
   group->unregisterPeer(mockAdjRib);
   evb.loop();
@@ -2123,7 +2196,7 @@ TEST_F(
       });
 
   // Schedule an RR dump -> one coroutine.
-  peerMgr_->scheduleRibDumpForAdjRib(
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(
       mockAdjRib,
       RibDumpReq(kPeerId1, false /* sendAddPath */, BgpUpdateAfi::AFI_IPv4));
   EXPECT_TRUE(mockAdjRib->isRibDumpScheduled());
@@ -2138,7 +2211,7 @@ TEST_F(
   EXPECT_EQ(1, peerMgr_->asyncScope_.remaining());
 
   // Reschedule an ordinary dump -> two tasks are now pending.
-  peerMgr_->scheduleRibDumpForAdjRib(mockAdjRib);
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(mockAdjRib);
   EXPECT_TRUE(mockAdjRib->isRibDumpScheduled());
   EXPECT_EQ(2, peerMgr_->asyncScope_.remaining());
 
@@ -2188,27 +2261,29 @@ TEST_F(
    * Two consecutive buffers -> the F14 set dedups to a single buffered request,
    * and a single drain task is scheduled on asyncScope_.
    */
-  peerMgr_->maybeBufferRibDumpForDetachedPeer(mockAdjRib);
-  peerMgr_->maybeBufferRibDumpForDetachedPeer(mockAdjRib);
-  EXPECT_EQ(1, peerMgr_->pendingRibDumpAdjRibs_.size());
+  peerMgr_->getDefaultVrf().maybeBufferRibDumpForDetachedPeer(mockAdjRib);
+  peerMgr_->getDefaultVrf().maybeBufferRibDumpForDetachedPeer(mockAdjRib);
+  EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().size());
   EXPECT_EQ(1, peerMgr_->asyncScope_.remaining());
   // Buffering does not arm the AdjRib's own cancellation source.
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
   // A buffered request already counts as scheduled for the peer.
-  EXPECT_TRUE(peerMgr_->isRibDumpScheduledForAdjRib(mockAdjRib));
+  EXPECT_TRUE(
+      peerMgr_->getDefaultVrf().isRibDumpScheduledForAdjRib(mockAdjRib));
 
   /*
    * Two consecutive schedules -> both coalesce against the buffered request
    * (isRibDumpScheduledForAdjRib is already true), so no additional asyncScope_
    * task is created and the peer stays buffered.
    */
-  peerMgr_->scheduleRibDumpForAdjRib(mockAdjRib);
-  peerMgr_->scheduleRibDumpForAdjRib(mockAdjRib);
-  EXPECT_EQ(1, peerMgr_->pendingRibDumpAdjRibs_.size());
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(mockAdjRib);
+  peerMgr_->getDefaultVrf().scheduleRibDumpForAdjRib(mockAdjRib);
+  EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().size());
   EXPECT_EQ(1, peerMgr_->asyncScope_.remaining());
   // The coalesced schedules short-circuited, so the source is still unarmed.
   EXPECT_FALSE(mockAdjRib->isRibDumpScheduled());
-  EXPECT_TRUE(peerMgr_->isRibDumpScheduledForAdjRib(mockAdjRib));
+  EXPECT_TRUE(
+      peerMgr_->getDefaultVrf().isRibDumpScheduledForAdjRib(mockAdjRib));
 
   /*
    * Run the scheduled drain -> it delivers to the AdjRib exactly once
@@ -2216,8 +2291,9 @@ TEST_F(
    */
   evb.loop();
   folly::coro::blockingWait(peerMgr_->asyncScope_.joinAsync());
-  EXPECT_TRUE(peerMgr_->pendingRibDumpAdjRibs_.empty());
-  EXPECT_FALSE(peerMgr_->isRibDumpScheduledForAdjRib(mockAdjRib));
+  EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().empty());
+  EXPECT_FALSE(
+      peerMgr_->getDefaultVrf().isRibDumpScheduledForAdjRib(mockAdjRib));
 
   // Cleanup.
   mockAdjRib->resetChangeListConsumer();
@@ -2250,14 +2326,16 @@ TEST_F(
   EXPECT_CALL(*mockAdjRib, processRibMessage(testing::_)).Times(0);
 
   // Buffer the request (also schedules the drain on asyncScope_).
-  peerMgr_->maybeBufferRibDumpForDetachedPeer(mockAdjRib);
-  EXPECT_EQ(1, peerMgr_->pendingRibDumpAdjRibs_.size());
-  EXPECT_TRUE(peerMgr_->isRibDumpScheduledForAdjRib(mockAdjRib));
+  peerMgr_->getDefaultVrf().maybeBufferRibDumpForDetachedPeer(mockAdjRib);
+  EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().size());
+  EXPECT_TRUE(
+      peerMgr_->getDefaultVrf().isRibDumpScheduledForAdjRib(mockAdjRib));
 
   // Cancel -> the buffered request is removed.
-  peerMgr_->cancelRibDumpForAdjRib(mockAdjRib);
-  EXPECT_TRUE(peerMgr_->pendingRibDumpAdjRibs_.empty());
-  EXPECT_FALSE(peerMgr_->isRibDumpScheduledForAdjRib(mockAdjRib));
+  peerMgr_->getDefaultVrf().cancelRibDumpForAdjRib(mockAdjRib);
+  EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().empty());
+  EXPECT_FALSE(
+      peerMgr_->getDefaultVrf().isRibDumpScheduledForAdjRib(mockAdjRib));
 
   /*
    * The scheduled drain now finds an empty set and delivers nothing
@@ -2265,7 +2343,7 @@ TEST_F(
    */
   evb.loop();
   folly::coro::blockingWait(peerMgr_->asyncScope_.joinAsync());
-  EXPECT_TRUE(peerMgr_->pendingRibDumpAdjRibs_.empty());
+  EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().empty());
 
   // Cleanup.
   mockAdjRib->resetChangeListConsumer();
@@ -2302,7 +2380,7 @@ TEST_F(
   auto& messages = subscribeToLogMessages("");
   messages.clear();
 
-  peerMgr_->maybeBufferRibDumpForDetachedPeer(adjRib);
+  peerMgr_->getDefaultVrf().maybeBufferRibDumpForDetachedPeer(adjRib);
 
   EXPECT_EQ(1, messages.size());
   EXPECT_EQ(
@@ -2314,10 +2392,11 @@ TEST_F(
    * pendingRibDumpAdjRibs_ and a single handleBufferedRibDumpsForDetachedPeers
    * task is scheduled on asyncScope_.
    */
-  EXPECT_EQ(1, peerMgr_->pendingRibDumpAdjRibs_.size());
-  EXPECT_TRUE(peerMgr_->pendingRibDumpAdjRibs_.count(adjRib));
+  EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().size());
+  EXPECT_TRUE(
+      peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().count(adjRib));
   EXPECT_EQ(1, peerMgr_->asyncScope_.remaining());
-  EXPECT_TRUE(peerMgr_->isRibDumpScheduledForAdjRib(adjRib));
+  EXPECT_TRUE(peerMgr_->getDefaultVrf().isRibDumpScheduledForAdjRib(adjRib));
 
   // Test cleanup.
   evb.loop();
@@ -2354,7 +2433,7 @@ TEST_F(
   auto& messages = subscribeToLogMessages("");
   messages.clear();
 
-  peerMgr_->maybeBufferRibDumpForDetachedPeer(adjRib);
+  peerMgr_->getDefaultVrf().maybeBufferRibDumpForDetachedPeer(adjRib);
 
   EXPECT_EQ(1, messages.size());
   EXPECT_EQ(
@@ -2368,7 +2447,7 @@ TEST_F(
    * is scheduled, the peer waits for its update group's initial shadow-RIB
    * walk.
    */
-  EXPECT_EQ(0, peerMgr_->pendingRibDumpAdjRibs_.size());
+  EXPECT_EQ(0, peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().size());
   EXPECT_EQ(0, peerMgr_->asyncScope_.remaining());
 }
 
@@ -2401,14 +2480,17 @@ TEST_F(
         AsNum(kAsn1),
         sessionTerminateBaton_,
         config);
-    peerMgr_->pendingRibDumpAdjRibs_.insert(peerMgr_->adjRibs_[peerId]);
+    peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().insert(
+        peerMgr_->adjRibs_[peerId]);
   }
 
-  EXPECT_EQ(numPeers, peerMgr_->pendingRibDumpAdjRibs_.size());
-  folly::coro::blockingWait(peerMgr_->handleBufferedRibDumpsForDetachedPeers());
+  EXPECT_EQ(
+      numPeers, peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().size());
+  folly::coro::blockingWait(
+      peerMgr_->getDefaultVrf().handleBufferedRibDumpsForDetachedPeers());
 
   // All buffered detached dumps are drained.
-  EXPECT_TRUE(peerMgr_->pendingRibDumpAdjRibs_.empty());
+  EXPECT_TRUE(peerMgr_->getDefaultVrf().getPendingRibDumpAdjRibs().empty());
 
   /*
    * Test cleanup: reset change list consumers to break circular shared_ptr
@@ -2440,7 +2522,7 @@ TEST_F(
   peerMgr_->ribInitialAnnouncementDone_ = false;
 
   fm.addTask([&] {
-    EXPECT_EQ(0, peerMgr_->pendingRibDumpReqs_.size());
+    EXPECT_EQ(0, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
     folly::coro::blockingWait(peerMgr_->sessionEstablished(stateEvent));
     /**
      * Rib has not started initial announcement.
@@ -2449,7 +2531,7 @@ TEST_F(
      */
     EXPECT_FALSE(peerMgr_->adjRibs_[kPeerId3]->inInitialAnnouncement());
 
-    EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
+    EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
     /*
      * No dump is scheduled because ribInitialAnnouncementDone_ is false, so
      * handleBufferedRibDumpReqs is not yet scheduled.
@@ -2463,7 +2545,7 @@ TEST_F(
 
     folly::coro::blockingWait(peerMgr_->sessionTerminated(stateEvent));
 
-    EXPECT_EQ(0, peerMgr_->pendingRibDumpReqs_.size());
+    EXPECT_EQ(0, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
 
     // Verify ODS counter decremented after sessionTerminated
     tcData->publishStats();
@@ -2495,21 +2577,24 @@ TEST_F(
   BgpPeerId peerId;
   for (int i = 0; i < numPeers; ++i) {
     peerId = BgpPeerId(folly::IPAddressV4::fromLongHBO(i), i);
-    peerMgr_->pendingRibDumpReqs_.insert({peerId, i % 2});
+    peerMgr_->getDefaultVrf().getPendingRibDumpReqs().insert({peerId, i % 2});
   }
 
   fm.addTask([&] {
-    EXPECT_EQ(numPeers, peerMgr_->pendingRibDumpReqs_.size());
+    EXPECT_EQ(
+        numPeers, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
 
     // One more pending ribDumpReq added
     folly::coro::blockingWait(peerMgr_->sessionEstablished(stateEvent));
     numPeers++;
-    EXPECT_EQ(numPeers, peerMgr_->pendingRibDumpReqs_.size());
+    EXPECT_EQ(
+        numPeers, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
 
     // One pending ribDumpReq should be removed
     folly::coro::blockingWait(peerMgr_->sessionTerminated(stateEvent));
     numPeers--;
-    EXPECT_EQ(numPeers, peerMgr_->pendingRibDumpReqs_.size());
+    EXPECT_EQ(
+        numPeers, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
 
     cleanUp();
   });
@@ -2728,7 +2813,7 @@ CO_TEST_F(
   auto adjRib = peerMgr_->findAdjRib(kPeerId3);
   EXPECT_FALSE(adjRib->inInitialAnnouncement());
   // There should be ONE pending rib dump req for this peer.
-  EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
+  EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
 
   ribOutQ_.push(
       RibOutMessage{
@@ -2762,7 +2847,7 @@ CO_TEST_F(
   EXPECT_FALSE(adjRib->inInitialAnnouncement());
   EXPECT_FALSE(adjRib->isStateEstablished());
   // There should be 0 pending rib dump reqs for this peer.
-  EXPECT_EQ(0, peerMgr_->pendingRibDumpReqs_.size());
+  EXPECT_EQ(0, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
   /*
    * Restore closed adjRibOutQueue_ queue which was closed
    * during sessionTerminated.
@@ -2781,7 +2866,7 @@ CO_TEST_F(
    */
   EXPECT_FALSE(adjRib->inInitialAnnouncement());
   // There should be 1 pending rib dump req for this peer.
-  EXPECT_EQ(1, peerMgr_->pendingRibDumpReqs_.size());
+  EXPECT_EQ(1, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
 
   ribOutQ_.push(
       RibOutMessage{

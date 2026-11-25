@@ -16,6 +16,10 @@
 
 #include "neteng/fboss/bgp/cpp/peer/PeerManagerVrf.h"
 
+#include <folly/ScopeGuard.h>
+#include <folly/coro/CurrentExecutor.h>
+#include <folly/coro/Sleep.h>
+
 #include "fboss/agent/Constants.h"
 #include "neteng/fboss/bgp/cpp/BgpProfiler.h"
 #include "neteng/fboss/bgp/cpp/adjrib/AdjRib.h"
@@ -549,6 +553,533 @@ void PeerManagerVrf::processRibDumpReq(
       adjRib->getPeerName(),
       ribVersionBeforeWalk,
       adjRib->getLastSeenRibVersion());
+}
+
+/*
+ * Cancellable variant of processRibDumpReqCoro used by scheduleRibDumpForAdjRib
+ * for update-group peers. The rib dump is tracked by the AdjRib's cancellation
+ * source so it can be superseded by a newer dump or cancelled on session
+ * teardown.
+ *
+ * This coroutine is ONLY executed when update group is enabled.
+ */
+folly::coro::Task<void> PeerManagerVrf::processRibDumpReqWithCancellationCoro(
+    std::shared_ptr<AdjRib> adjRib,
+    RibDumpReq ribDumpReq) {
+  auto cancelToken = co_await folly::coro::co_current_cancellation_token;
+
+  /*
+   * If this dump was cancelled -- superseded by a newer dump for the same peer,
+   * or cancelled on session teardown -- skip it entirely. Whoever cancelled us
+   * now owns the cancellation source, so we must neither deliver a stale dump
+   * nor touch the source.
+   */
+  if (cancelToken.isCancellationRequested()) {
+    co_return;
+  }
+
+  if (adjRib->testOnlyDeferInitDump) [[unlikely]] {
+    /*
+     * The dump is deferred, not completed. Retire this coro's cancellation
+     * source and schedule a fresh dump so the peer stays "scheduled" (a dump is
+     * always in flight) until the defer condition clears. We must reset before
+     * rescheduling so scheduleRibDumpForAdjRib does not coalesce against our
+     * own existing source, and we keep this above the SCOPE_EXIT below so the
+     * reset does not discard the new source.
+     */
+    XLOGF(
+        INFO,
+        "testOnlyDeferInitDump: re-scheduling RibDumpReq for peer {}",
+        adjRib->getRemotePeerId().str());
+    adjRib->resetRibDumpCancellationSource();
+    scheduleRibDumpForAdjRib(adjRib, std::move(ribDumpReq));
+    co_return;
+  }
+
+  /*
+   * On NORMAL completion, clear the AdjRib's rib-dump tracking so a subsequent
+   * dump can be scheduled. Guard on our own token: if cancellation was
+   * requested (superseded by a newer dump or session teardown), the source has
+   * already been retired/replaced, so we must not overwrite it.
+   *
+   * The dump re-applies the AdjRib's current egress policy to the full RIB, so
+   * also clear any pending egress policy update here (no-op when none is
+   * pending). If we were cancelled, a superseding dump will clear it instead.
+   */
+  SCOPE_EXIT {
+    if (!cancelToken.isCancellationRequested()) {
+      adjRib->resetRibDumpCancellationSource();
+      adjRib->clearPendingEgressPolicyUpdate();
+      onRibDumpCompleted(adjRib, ribDumpReq);
+    }
+  };
+
+  processRibDumpReq(adjRib, ribDumpReq, /*sendWithEoR=*/true);
+
+  /*
+   * With update group enabled, register and activate the detached peer's
+   * changelist consumer after its dump completes. registerDetachedConsumer uses
+   * bounded consumption up until the group's position (unlike
+   * activateChangeListConsumer, which consumes to the end of the changelist and
+   * carries out-delay logic that does not apply under update groups).
+   */
+  if (adjRib->isDetachedPeer()) {
+    if (!adjRib->getChangeListConsumer()) {
+      adjRib->registerDetachedConsumer(
+          changeListTracker_,
+          addPathConsumerBitmap_,
+          nonAddPathConsumerBitmap_);
+    }
+    /*
+     * A peer blocked on a group push must wait for markPeerUnblocked(). A peer
+     * transiently blocked in its private sender already has a sender that will
+     * resume when its queue drains.
+     */
+    if (adjRib->getPeerState() != PeerUpdateState::DETACHED_BLOCKED) {
+      adjRib->activateDetachedModeProcessing();
+    }
+  }
+  co_return;
+}
+
+bool PeerManagerVrf::isRibDumpScheduledForAdjRib(
+    const std::shared_ptr<AdjRib>& adjRib) const {
+  /*
+   * A dump is pending for this detached peer if it is either buffered (in
+   * pendingRibDumpAdjRibs_, waiting for the drain) or already scheduled / in
+   * flight on asyncScope_ (its cancellation source is armed). Pure predicate,
+   * no side effects. Update-group only.
+   */
+  return adjRib->isRibDumpScheduled() ||
+      pendingRibDumpAdjRibs_.contains(adjRib);
+}
+
+void PeerManagerVrf::cancelRibDumpForAdjRib(
+    const std::shared_ptr<AdjRib>& adjRib) {
+  cancelRibDumpForAdjRib(adjRib, false /* discardRouteRefreshRequests */);
+}
+
+void PeerManagerVrf::cancelRibDumpForAdjRib(
+    const std::shared_ptr<AdjRib>& adjRib,
+    bool discardRouteRefreshRequests) {
+  /*
+   * Cancel a detached peer's pending rib dump. Invokes the cancellation from
+   * AdjRib, but should also unconditionally remove a buffered request so that
+   * the AdjRib isn't serviced in handleBufferedRibDumpsForDetachedPeers.
+   * Update-group only.
+   */
+  if (pendingRibDumpAdjRibs_.erase(adjRib) > 0) {
+    BgpStats::decrPendingRibDumpReqsCount(1);
+  }
+  if (auto pendingIt = pendingRouteRefreshPeers_.find(adjRib);
+      pendingIt != pendingRouteRefreshPeers_.end()) {
+    if (discardRouteRefreshRequests) {
+      XLOGF(
+          DBG1,
+          "Peer {}: discarding update-group Route Refresh work on teardown "
+          "(pending={})",
+          adjRib->getPeerName(),
+          pendingIt->second.size());
+      pendingRouteRefreshPeers_.erase(pendingIt);
+    } else if (pendingIt->second.empty()) {
+      pendingRouteRefreshPeers_.erase(pendingIt);
+    }
+  }
+  adjRib->cancelRibDump();
+}
+
+void PeerManagerVrf::scheduleRibDumpForAdjRib(
+    const std::shared_ptr<AdjRib>& adjRib) {
+  scheduleRibDumpForAdjRib(
+      adjRib, RibDumpReq(adjRib->getRemotePeerId(), adjRib->sendAddPath()));
+}
+
+void PeerManagerVrf::scheduleRibDumpForAdjRib(
+    const std::shared_ptr<AdjRib>& adjRib,
+    RibDumpReq ribDumpReq) {
+  /*
+   * Coalesce: if a rib dump is already pending for this detached peer --
+   * buffered in pendingRibDumpAdjRibs_ (the drain will serve it) or scheduled /
+   * in flight on asyncScope_ -- do not schedule another. The in-flight/buffered
+   * walk serves the latest ShadowRib state. Update-group only.
+   */
+  if (isRibDumpScheduledForAdjRib(adjRib)) {
+    return;
+  }
+  asyncScope_.add(
+      co_withExecutor(
+          &owner_.getEventBase(),
+          processRibDumpReqWithCancellationCoro(adjRib, std::move(ribDumpReq))),
+      adjRib->getCancellationTokenForNewRibDump());
+}
+
+void PeerManagerVrf::scheduleRouteRefreshForUpdateGroupPeer(
+    const std::shared_ptr<AdjRib>& adjRib,
+    nettools::bgplib::BgpUpdateAfi requestedAfi) {
+  auto& pendingAfis = pendingRouteRefreshPeers_[adjRib];
+  if (!pendingAfis.insert(requestedAfi).second) {
+    XLOGF(
+        DBG1,
+        "Peer {}: coalescing update-group Route Refresh AFI={}",
+        adjRib->getPeerName(),
+        static_cast<int>(requestedAfi));
+    return;
+  }
+  maybeSchedulePendingRouteRefresh(adjRib);
+}
+
+void PeerManagerVrf::maybeSchedulePendingRouteRefresh(
+    const std::shared_ptr<AdjRib>& adjRib) {
+  auto pendingIt = pendingRouteRefreshPeers_.find(adjRib);
+  if (pendingIt == pendingRouteRefreshPeers_.end() ||
+      pendingIt->second.empty()) {
+    return;
+  }
+
+  const auto peerState = adjRib->getPeerState();
+  // Drop a Route Refresh event queued before teardown but delivered afterward.
+  if (peerState == PeerUpdateState::DOWN) {
+    pendingRouteRefreshPeers_.erase(pendingIt);
+    return;
+  }
+  if (isRibDumpScheduledForAdjRib(adjRib)) {
+    XLOGF(
+        DBG1,
+        "Peer {}: retaining {} update-group Route Refresh AFI(s) behind "
+        "active dump",
+        adjRib->getPeerName(),
+        pendingIt->second.size());
+    return;
+  }
+  if (peerState == PeerUpdateState::INIT ||
+      peerState == PeerUpdateState::DETACHED_INIT_DUMP) {
+    XLOGF(
+        DBG1,
+        "Peer {}: retaining {} update-group Route Refresh AFI(s) in state {}",
+        adjRib->getPeerName(),
+        pendingIt->second.size(),
+        peerState);
+    return;
+  }
+
+  auto updateGroup = adjRib->getUpdateGroup();
+  if (!updateGroup) {
+    XLOGF(
+        WARN,
+        "Peer {}: retaining pending update-group Route Refresh work until "
+        "the peer has a group",
+        adjRib->getPeerName());
+    return;
+  }
+
+  /* Keep exhaustive so new peer states require explicit handling. */
+  switch (peerState) {
+    case PeerUpdateState::JOINED_RUNNING:
+    case PeerUpdateState::JOINED_BLOCKED:
+      updateGroup->detachPeer(
+          adjRib, AdjRibOutGroup::DetachReason::RouteRefresh);
+      updateGroup->recoverIfNoSyncPeers();
+      break;
+    case PeerUpdateState::DETACHED_RUNNING:
+    case PeerUpdateState::DETACHED_BLOCKED:
+      break;
+    case PeerUpdateState::DETACHED_READY_TO_JOIN:
+      adjRib->clearAdjRibFlag(AdjRib::IS_DETACHED_FAST_PEER);
+      adjRib->setPeerState(PeerUpdateState::DETACHED_RUNNING);
+      break;
+    case PeerUpdateState::INIT:
+    case PeerUpdateState::DETACHED_INIT_DUMP:
+    case PeerUpdateState::DOWN:
+      return;
+  }
+
+  /* AFI replay order is intentionally unspecified. */
+  const auto requestedAfi = *pendingIt->second.begin();
+  XLOGF(
+      DBG1,
+      "Peer {}: scheduling private update-group Route Refresh AFI={} from "
+      "state {}",
+      adjRib->getPeerName(),
+      static_cast<int>(requestedAfi),
+      peerState);
+  scheduleRibDumpForAdjRib(
+      adjRib,
+      RibDumpReq(
+          adjRib->getRemotePeerId(), adjRib->sendAddPath(), requestedAfi));
+}
+
+void PeerManagerVrf::processDetachedPeerEgressPolicyReEvaluation(
+    const std::shared_ptr<AdjRib>& adjRib) {
+  /*
+   * Cancel any rib dump already scheduled for the peer and run the
+   * re-evaluation dump inline so it completes within this event-loop turn -- a
+   * deferred walk leaves a window where the peer could rejoin with stale
+   * (old-policy) entries and surface discrepancies during the collapse.
+   */
+  if (isRibDumpScheduledForAdjRib(adjRib)) {
+    XLOGF(
+        INFO,
+        "Peer {}: cancelling scheduled rib dump to run egress policy "
+        "re-evaluation inline",
+        adjRib->getPeerName());
+    cancelRibDumpForAdjRib(adjRib);
+  }
+  /*
+   * Gate on egressEoRsSent() rather than egressEoRsPending(): the latter only
+   * reports a debt the dump path already booked, and the dump cancelled above
+   * is what would have booked it, so absorbing the initial dump of a peer that
+   * has never dumped would silently drop its EoR. A peer that has not been
+   * sent an EoR for this session still owes one; passing sendWithEoR marks the
+   * pending flags in turn, via processRibOutAnnouncement.
+   */
+  processRibDumpReq(
+      adjRib,
+      RibDumpReq(adjRib->getRemotePeerId(), adjRib->sendAddPath()),
+      !adjRib->egressEoRsSent() /* sendWithEoR */);
+  maybeSchedulePendingRouteRefresh(adjRib);
+
+  if (!adjRib->getChangeListConsumer()) {
+    adjRib->registerDetachedConsumer(
+        changeListTracker_, addPathConsumerBitmap_, nonAddPathConsumerBitmap_);
+  }
+
+  /*
+   * Consume the peer's change list to the tail so its RIB-OUT reflects the full
+   * shadow RIB plus every pending change, completing the re-evaluation in this
+   * turn rather than leaving items for the async consume timer.
+   */
+  if (adjRib->getChangeListConsumer()) {
+    adjRib->tryIterateChangesToEnd(
+        adjRib->sendAddPath() /* processFullMultipaths */);
+  }
+}
+
+void PeerManagerVrf::onRibDumpCompleted(
+    const std::shared_ptr<AdjRib>& adjRib,
+    const RibDumpReq& ribDumpReq) {
+  auto pendingIt = pendingRouteRefreshPeers_.find(adjRib);
+  if (pendingIt == pendingRouteRefreshPeers_.end()) {
+    return;
+  }
+  if (ribDumpReq.filterAfi &&
+      pendingIt->second.erase(*ribDumpReq.filterAfi) > 0) {
+    XLOGF(
+        DBG1,
+        "Peer {}: completed private update-group Route Refresh AFI={} "
+        "(pending={})",
+        adjRib->getPeerName(),
+        static_cast<int>(*ribDumpReq.filterAfi),
+        pendingIt->second.size());
+  }
+  if (pendingIt->second.empty()) {
+    pendingRouteRefreshPeers_.erase(pendingIt);
+    return;
+  }
+  maybeSchedulePendingRouteRefresh(adjRib);
+}
+
+void PeerManagerVrf::maybeBufferRibDumpReq(
+    const std::shared_ptr<AdjRib>& adjRib) {
+  /**
+   *    Start     Rib is announcing...    Done
+   *      | [A1, A2,    ....,          AN] |
+   * -----|--------------------------------|--------------> PeerMgr timeline
+   *      |                                |
+   */
+  const auto& peerId = adjRib->getRemotePeerId();
+  if (!owner_.isRibInitialAnnouncementStart()) {
+    /*
+     * For peers that come up before Start
+     * (i.e. ribInitialAnnouncementStart_ = false),
+     * they can rely on PeerMgr to send [A1, ..., AN] regularly through
+     * processRibOutMsgLoop. No need to entertain RibDumpReq
+     */
+    XLOGF(
+        DBG1,
+        "Not sending RibDumpReq for {}; Rib has not started initial announcement.",
+        peerId.str());
+    return;
+  }
+
+  /*
+   * For peers that come up after ribInitialAnnouncementStart_, buffer
+   * them in the pending list to be served
+   */
+  XLOGF(INFO, "Insert RibDumpReq in pending list for {}", peerId.str());
+
+  auto [it, inserted] =
+      pendingRibDumpReqs_.insert_or_assign(peerId, adjRib->sendAddPath());
+  if (inserted) {
+    BgpStats::incrPendingRibDumpReqsCount();
+  }
+  if (owner_.isRibInitialAnnouncementDone()) {
+    scheduleHandleBufferedRibDumpReqs();
+  }
+}
+
+void PeerManagerVrf::scheduleHandleBufferedRibDumpReqs() {
+  if (handleRibDumpsScheduled_) {
+    return;
+  }
+  asyncScope_.add(
+      co_withExecutor(&owner_.getEventBase(), handleBufferedRibDumpReqs()));
+  handleRibDumpsScheduled_ = true;
+}
+
+folly::coro::Task<void> PeerManagerVrf::handleBufferedRibDumpReqs() {
+  /*
+   * This coroutine is only scheduled when ribInitialAnnouncementDone_ is true
+   * (callers check before scheduling). ribInitialAnnouncementStarted_ is
+   * always set before ribInitialAnnouncementDone_, so
+   * isRibInitialAnnouncementStart() is guaranteed true here.
+   */
+  XLOG(INFO, "Handling all buffered RibDumpReqs");
+
+  /*
+   * Clear the scheduled flag however this coroutine leaves, unless it hands
+   * off to a follow-up drain below. processRibDumpReq is not noexcept and the
+   * sleep throws on cancellation; a flag left set stops
+   * scheduleHandleBufferedRibDumpReqs from ever scheduling another drain.
+   */
+  auto clearScheduledGuard =
+      folly::makeGuard([this]() noexcept { handleRibDumpsScheduled_ = false; });
+
+  folly::F14NodeMap<nettools::bgplib::BgpPeerId, bool /* sendAddPath */>
+      curPendingRibDumpReqs_ = folly::copy(pendingRibDumpReqs_);
+  BgpStats::decrPendingRibDumpReqsCount(pendingRibDumpReqs_.size());
+  pendingRibDumpReqs_.clear();
+
+  /**
+   * Iterate over the buffered RibDumpReqs and schedule processRibDumpReq.
+   * Here we do not need synchronization or lock because only one fiber
+   * or coro is running at once on PeerManagerBase event base. This
+   * can change in the future if we make PeerManagerBase multi-threaded.
+   */
+  for (auto& req : curPendingRibDumpReqs_) {
+    auto& peerId = req.first;
+    auto& sendAddPath = req.second;
+
+    XLOGF(INFO, "Processing pending RibDumpReq for peer {}", peerId.str());
+
+    const auto& adjRibs = owner_.getAdjRibs();
+    if (auto adjRibIt = adjRibs.find(peerId); adjRibIt != adjRibs.cend()) {
+      processRibDumpReq(
+          adjRibIt->second,
+          RibDumpReq(peerId, sendAddPath),
+          true /* sendWithEoR */);
+    } else {
+      XLOGF(
+          ERR,
+          "Skip sending announcement since adjRib {} does not exist.",
+          peerId.str());
+    }
+    co_await folly::coro::sleep(std::chrono::milliseconds(1));
+  }
+
+  if (!pendingRibDumpReqs_.empty()) {
+    XLOG(INFO, "pending RibDumps non-empty, schedule another task");
+    asyncScope_.add(
+        co_withExecutor(&owner_.getEventBase(), handleBufferedRibDumpReqs()));
+    clearScheduledGuard.dismiss();
+  }
+
+  co_return;
+}
+
+void PeerManagerVrf::maybeBufferRibDumpForDetachedPeer(
+    const std::shared_ptr<AdjRib>& adjRib) {
+  /**
+   *    Start  Shadow Rib is populating  Done
+   *      | [A1, A2,    ....,          AN] |
+   * -----|--------------------------------|--------------> PeerMgr timeline
+   *      |                                |
+   */
+  const auto& peerId = adjRib->getRemotePeerId();
+  if (!owner_.isRibInitialAnnouncementDone()) {
+    /*
+     * For peers that come up before DONE
+     * (i.e. ribInitialAnnouncementDone_ = false),
+     * they should wait with the update group that they have joined;
+     * on markRibInitialAnnouncementDone_ = true, all the groups will
+     * begin to walk the shadow RIB. No need to entertain RibDumpReq
+     * for independent peer.
+     *
+     * We must also not buffer one here: a pre-DONE entry would linger in
+     * pendingRibDumpAdjRibs_ and later get drained by
+     * handleBufferedRibDumpsForDetachedPeers() when the next peer comes up
+     * after DONE (the drain serves the whole set), giving this peer a spurious
+     * independent RIB dump on top of the group's initial shadow-RIB walk.
+     */
+    XLOGF(
+        DBG1,
+        "Waiting for group RIB walk for {}; Rib has not finished initial announcement.",
+        peerId.str());
+    return;
+  }
+
+  /*
+   * For peers that come up after ribInitialAnnouncementDone_, buffer
+   * them in the pending list to be served
+   */
+  XLOGF(INFO, "Insert RibDumpReq in pending list for {}", peerId.str());
+
+  auto [it, inserted] = pendingRibDumpAdjRibs_.insert(adjRib);
+  if (inserted) {
+    BgpStats::incrPendingRibDumpReqsCount();
+  }
+
+  if (!handleRibDumpsScheduled_) {
+    asyncScope_.add(co_withExecutor(
+        &owner_.getEventBase(), handleBufferedRibDumpsForDetachedPeers()));
+    handleRibDumpsScheduled_ = true;
+  }
+}
+
+folly::coro::Task<void>
+PeerManagerVrf::handleBufferedRibDumpsForDetachedPeers() {
+  /*
+   * This coroutine is only scheduled when ribInitialAnnouncementDone_ is true
+   * (callers check before scheduling). ribInitialAnnouncementStarted_ is
+   * always set before ribInitialAnnouncementDone_, so
+   * isRibInitialAnnouncementStart() is guaranteed true here.
+   */
+  XLOG(INFO, "Handling all buffered RibDumpReqs for detached peers");
+
+  /*
+   * Clear the scheduled flag however this coroutine leaves, not just on the
+   * normal path. maybeBufferRibDumpReq only schedules a drain when the flag is
+   * false, so if the loop below unwinds --
+   * processRibDumpReqWithCancellationCoro is not noexcept and runs a full
+   * ShadowRib walk with policy evaluation -- a flag left set means no drain is
+   * ever scheduled again and every peer that comes up afterwards is buffered
+   * and never served. Peers still buffered when that happens are picked up by
+   * the next maybeBufferRibDumpReq.
+   *
+   */
+  auto clearScheduledGuard =
+      folly::makeGuard([this]() noexcept { handleRibDumpsScheduled_ = false; });
+
+  /**
+   * Drain the buffered RibDumpReqs one at a time, co_awaiting each per-peer
+   * dump inline so they run sequentially. The sleep between dumps paces the
+   * ShadowRib walks so a large batch does not monopolize the event base. Always
+   * take begin(): requests buffered during a sleep are picked up by a later
+   * iteration, so no copy or self-reschedule is needed. No lock is needed
+   * because only one fiber or coro runs at once on the PeerManagerBase event
+   * base.
+   */
+  while (!pendingRibDumpAdjRibs_.empty()) {
+    auto adjRib = *pendingRibDumpAdjRibs_.begin();
+    pendingRibDumpAdjRibs_.erase(pendingRibDumpAdjRibs_.begin());
+    BgpStats::decrPendingRibDumpReqsCount(1);
+
+    co_await processRibDumpReqWithCancellationCoro(
+        adjRib, RibDumpReq(adjRib->getRemotePeerId(), adjRib->sendAddPath()));
+    co_await folly::coro::sleepReturnEarlyOnCancel(
+        std::chrono::milliseconds(1));
+  }
+
+  co_return;
 }
 
 /**

@@ -386,8 +386,9 @@ TEST_F(
    * true when re-eval runs.
    */
   ctx.adjRib3->testOnlyDeferInitDump = true;
-  evb.runInEventBaseThreadAndWait(
-      [&]() { ctx.peerMgr->scheduleRibDumpForAdjRib(ctx.adjRib3); });
+  evb.runInEventBaseThreadAndWait([&]() {
+    ctx.peerMgr->getDefaultVrf().scheduleRibDumpForAdjRib(ctx.adjRib3);
+  });
 
   // Change egress policy on all peers so re-evaluation sees the new policy
   evb.runInEventBaseThreadAndWait([&]() {

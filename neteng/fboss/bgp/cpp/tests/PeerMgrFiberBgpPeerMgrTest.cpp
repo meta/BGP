@@ -583,7 +583,8 @@ TEST_F(PeerManagerTestFixture, CleanupPeerState_GenerationCheck) {
     BgpStats::incrPeerAddrToIdsCount();
     peerMgr->establishedGrPeers_.insert(kPeerId3);
     BgpStats::incrEstablishedGrPeersCount();
-    peerMgr->pendingRibDumpReqs_[kPeerId3] = false /* sendAddPath */;
+    peerMgr->getDefaultVrf().getPendingRibDumpReqs()[kPeerId3] =
+        false /* sendAddPath */;
     BgpStats::incrPendingRibDumpReqsCount();
     oldBaton->post();
   };
@@ -613,7 +614,8 @@ TEST_F(PeerManagerTestFixture, CleanupPeerState_GenerationCheck) {
   EXPECT_EQ(newBaton, peerMgr->sessionTerminateBatons_[kPeerId3]);
   EXPECT_EQ(1, peerMgr->peerAddrToIds_[kPeerAddr3].count(kPeerId3));
   EXPECT_EQ(1, peerMgr->establishedGrPeers_.count(kPeerId3));
-  EXPECT_EQ(1, peerMgr->pendingRibDumpReqs_.count(kPeerId3));
+  EXPECT_EQ(
+      1, peerMgr->getDefaultVrf().getPendingRibDumpReqs().count(kPeerId3));
   EXPECT_EQ(baseAdjRibs + 1, tcData->getCounter(RibStats::kTotalAdjRibs));
   EXPECT_EQ(
       basePeerAddrToIds + 1, tcData->getCounter(BgpStats::kPeerAddrToIdsCount));
@@ -729,7 +731,8 @@ CO_TEST_F(PeerManagerTestFixture, CleanupPeerState_NormalErase) {
   peerMgr->staticPeerEoRReceived_[kPeerAddr3] = {false, false};
   peerMgr->establishedGrPeers_.insert(kPeerId3);
   BgpStats::incrEstablishedGrPeersCount();
-  peerMgr->pendingRibDumpReqs_[kPeerId3] = false /* sendAddPath */;
+  peerMgr->getDefaultVrf().getPendingRibDumpReqs()[kPeerId3] =
+      false /* sendAddPath */;
   BgpStats::incrPendingRibDumpReqsCount();
 
   /*
@@ -767,7 +770,8 @@ CO_TEST_F(PeerManagerTestFixture, CleanupPeerState_NormalErase) {
   EXPECT_EQ(0, peerMgr->sessionTerminateBatons_.count(kPeerId3));
   EXPECT_EQ(0, peerMgr->staticPeerEoRReceived_.count(kPeerAddr3));
   EXPECT_EQ(0, peerMgr->establishedGrPeers_.count(kPeerId3));
-  EXPECT_EQ(0, peerMgr->pendingRibDumpReqs_.count(kPeerId3));
+  EXPECT_EQ(
+      0, peerMgr->getDefaultVrf().getPendingRibDumpReqs().count(kPeerId3));
   EXPECT_EQ(baseAdjRibs, tcData->getCounter(RibStats::kTotalAdjRibs));
   EXPECT_EQ(
       basePeerAddrToIds, tcData->getCounter(BgpStats::kPeerAddrToIdsCount));

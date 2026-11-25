@@ -1339,7 +1339,8 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
       const std::shared_ptr<AdjRib>& adjRib) {
     auto& evb = ctx.peerMgr->getEventBase();
     evb.runInEventBaseThreadAndWait([&]() {
-      ctx.peerMgr->processDetachedPeerEgressPolicyReEvaluation(adjRib);
+      ctx.peerMgr->getDefaultVrf().processDetachedPeerEgressPolicyReEvaluation(
+          adjRib);
     });
   }
 

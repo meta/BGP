@@ -123,7 +123,7 @@ TEST_F(PeerManagerUpdateGroupTestFixture, UpdateGroupConstructionTest) {
   peerMgr_->ribInitialAnnouncementDone_ = true;
 
   fm.addTask([&] {
-    EXPECT_EQ(0, peerMgr_->pendingRibDumpReqs_.size());
+    EXPECT_EQ(0, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
     folly::coro::blockingWait(peerMgr_->sessionEstablished(stateEvent));
 
     // Validation of update-group creation

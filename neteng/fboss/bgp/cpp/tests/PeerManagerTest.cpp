@@ -83,9 +83,6 @@
   FRIEND_TEST(PeerManagerTestFixture, TriggerRouteRefreshRequestTest);         \
   FRIEND_TEST(PeerManagerTestFixture, TriggerRouteRefreshRequestRrOnlyTest);   \
   FRIEND_TEST(                                                                 \
-      PeerManagerTestFixture,                                                  \
-      RouteRefreshReceived_TriggersAfiFilteredRibDump);                        \
-  FRIEND_TEST(                                                                 \
       PeerManagerDynamicPolicyEvaluationFixture,                               \
       UpdateIngressEgressPolicyNamesForIPAddressTest);                         \
   FRIEND_TEST(                                                                 \
@@ -212,9 +209,6 @@
   FRIEND_TEST(PeerManagerTestFixture, TriggerRouteRefreshRequestNegativeTest); \
   FRIEND_TEST(PeerManagerTestFixture, TriggerRouteRefreshRequestTest);         \
   FRIEND_TEST(PeerManagerTestFixture, TriggerRouteRefreshRequestRrOnlyTest);   \
-  FRIEND_TEST(                                                                 \
-      PeerManagerTestFixture,                                                  \
-      RouteRefreshReceived_TriggersAfiFilteredRibDump);                        \
   FRIEND_TEST(PeerManagerTestFixture, SessionFlapRaceConditionTest);           \
   FRIEND_TEST(                                                                 \
       PeerManagerTestFixture, MarkDaemonShutdownClearsAdjRibTreesTest);        \
@@ -2180,13 +2174,13 @@ TEST_F(PeerManagerTestFixture, MultipleFlapTest) {
     EXPECT_NE(nullptr, adjRib);
 
     /*
-     * Subscribe to the PeerManagerBase category, not the root category.
+     * Subscribe to the PeerManagerVrf category, not the root category.
      * TestLogHandler is not thread-safe, and with a root handler at DBG1 the
      * thrift and configerator client threads also log into it while this
-     * thread does. The expected message comes from PeerManagerBase, which runs
+     * thread does. The expected message comes from PeerManagerVrf, which runs
      * on this thread only.
      */
-    const std::string logCategory{"neteng.fboss.bgp.cpp.peer.PeerManagerBase"};
+    const std::string logCategory{"neteng.fboss.bgp.cpp.peer.PeerManagerVrf"};
     auto& messages = subscribeToLogMessages(logCategory, folly::LogLevel::DBG1);
     folly::coro::blockingWait(mockPeerMgr->sessionEstablished(stateEvent));
     fiberSleepFor(10ms);
@@ -7772,78 +7766,6 @@ TEST_F(PeerManagerTestFixture, GetEffectivePostOutPrefixCountTest) {
   peerMgrThread.join();
   sessionMgrThread.join();
   SUCCEED();
-}
-
-/**
- * Verify the AdjRib::RouteRefreshReceived dispatcher in processAdjRibEvent
- * forwards the message to processRibDumpReq with filterAfi populated from the
- * requested AFI (RFC 2918 §3 dispatch contract).
- *
- * Full re-dump semantics are exercised end-to-end by E2ERouteRefreshTest;
- * this is a unit-level regression guard for the dispatcher lambda in
- * PeerManager::processAdjRibEvent.
- */
-TEST_F(
-    PeerManagerTestFixture,
-    RouteRefreshReceived_TriggersAfiFilteredRibDump) {
-  auto mockPeerMgr = setupMockPeerManager(
-      true /* includeStaticPeer */,
-      true /* includeDynamicShivPeer */,
-      false /* includeDynamicMonitorPeer */);
-  auto sessionMgr = setupMockSessionManager(mockPeerMgr);
-  uint64_t version = 0x100;
-  auto versionNumber = std::make_shared<VersionNumber>(version);
-
-  auto sessionMgrThread = sessionMgr->runInThread();
-
-  auto& fm =
-      folly::fibers::getFiberManager(mockPeerMgr->getEventBase(), options_);
-
-  mockInfo1_.negotiatedCapabilities.routeRefresh() = true;
-
-  fm.addTask([&] {
-    auto sessionInfo = FiberBgpPeer::getObservableSessionInfo(
-        mockInfo1_,
-        nullptr /* unbounded input queue, unused */,
-        sessionMgr->boundedIqueue_,
-        sessionMgr->oQueue_,
-        versionNumber);
-
-    FiberBgpPeer::ObservableStateT stateEvent{
-        .peerId = kPeerId3,
-        .versionNumber = version,
-        .sessionInfo = sessionInfo};
-
-    /*
-     * sessionEstablished populates adjRibs_, which the RouteRefresh dispatcher
-     * in processAdjRibEvent looks up before forwarding to processRibDumpReq.
-     */
-    folly::coro::blockingWait(mockPeerMgr->sessionEstablished(stateEvent));
-
-    AdjRib::ObservableMessageT rrFromPeer{
-        fboss::kDefaultVrf,
-        kPeerId3,
-        AdjRib::RouteRefreshReceived{nettools::bgplib::BgpUpdateAfi::AFI_IPv4}};
-    folly::coro::blockingWait(
-        mockPeerMgr->processAdjRibEvent(std::move(rrFromPeer)));
-
-    sessionMgr->oQueue_->fiberPush(
-        FiberBgpPeer::BgpSessionStop{GracefulRestartFlag{false}});
-    stateEvent.versionNumber = ++version;
-    folly::coro::blockingWait(mockPeerMgr->sessionTerminated(stateEvent));
-
-    mockPeerMgr->stop();
-    sessionMgr->stop();
-  });
-
-  mockPeerMgr->getEventBase().loop();
-  sessionMgrThread.join();
-
-  ASSERT_EQ(mockPeerMgr->capturedRibDumpReqs.size(), 1u);
-  const auto& req = mockPeerMgr->capturedRibDumpReqs.front();
-  EXPECT_EQ(req.peerId, kPeerId3);
-  ASSERT_TRUE(req.filterAfi.has_value());
-  EXPECT_EQ(*req.filterAfi, nettools::bgplib::BgpUpdateAfi::AFI_IPv4);
 }
 
 /**

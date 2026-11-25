@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include <folly/IPAddress.h>
@@ -332,6 +333,11 @@ class PeerManagerVrf final {
     eorTimerExpired_ = expired;
   }
 
+  std::unordered_set<nettools::bgplib::BgpPeerId>&
+  getEstablishedGrPeers() noexcept {
+    return establishedGrPeers_;
+  }
+
   // Process EoR received from this peer and notify RIB if we received all EoRs
   void processPeerEoR(const nettools::bgplib::BgpPeerId& peerId) noexcept;
 
@@ -619,6 +625,9 @@ class PeerManagerVrf final {
    * measured convergence doesn't indicate true convergence but timeout value.
    */
   bool eorTimerExpired_{false};
+
+  // Peers in established state with GR capability
+  std::unordered_set<nettools::bgplib::BgpPeerId> establishedGrPeers_;
 
   /*
    * EoR wait timer: bounds the wait for peers' End-of-RIB before forcing

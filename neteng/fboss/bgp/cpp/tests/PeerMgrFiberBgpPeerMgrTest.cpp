@@ -583,7 +583,7 @@ TEST_F(PeerManagerTestFixture, CleanupPeerState_GenerationCheck) {
     peerMgr->sessionTerminateBatons_[kPeerId3] = newBaton;
     peerMgr->peerAddrToIds_[kPeerAddr3].insert(kPeerId3);
     BgpStats::incrPeerAddrToIdsCount();
-    peerMgr->establishedGrPeers_.insert(kPeerId3);
+    peerMgr->getDefaultVrf().getEstablishedGrPeers().insert(kPeerId3);
     BgpStats::incrEstablishedGrPeersCount();
     peerMgr->getDefaultVrf().getPendingRibDumpReqs()[kPeerId3] =
         false /* sendAddPath */;
@@ -615,7 +615,8 @@ TEST_F(PeerManagerTestFixture, CleanupPeerState_GenerationCheck) {
   EXPECT_EQ(newAdjRib, peerMgr->adjRibs_[kPeerId3]);
   EXPECT_EQ(newBaton, peerMgr->sessionTerminateBatons_[kPeerId3]);
   EXPECT_EQ(1, peerMgr->peerAddrToIds_[kPeerAddr3].count(kPeerId3));
-  EXPECT_EQ(1, peerMgr->establishedGrPeers_.count(kPeerId3));
+  EXPECT_EQ(
+      1, peerMgr->getDefaultVrf().getEstablishedGrPeers().count(kPeerId3));
   EXPECT_EQ(
       1, peerMgr->getDefaultVrf().getPendingRibDumpReqs().count(kPeerId3));
   EXPECT_EQ(baseAdjRibs + 1, tcData->getCounter(RibStats::kTotalAdjRibs));
@@ -732,7 +733,7 @@ CO_TEST_F(PeerManagerTestFixture, CleanupPeerState_NormalErase) {
   BgpStats::incrPeerAddrToIdsCount();
   peerMgr->getDefaultVrf().getStaticPeerEoRReceived()[kPeerAddr3] = {
       false, false};
-  peerMgr->establishedGrPeers_.insert(kPeerId3);
+  peerMgr->getDefaultVrf().getEstablishedGrPeers().insert(kPeerId3);
   BgpStats::incrEstablishedGrPeersCount();
   peerMgr->getDefaultVrf().getPendingRibDumpReqs()[kPeerId3] =
       false /* sendAddPath */;
@@ -773,7 +774,8 @@ CO_TEST_F(PeerManagerTestFixture, CleanupPeerState_NormalErase) {
   EXPECT_EQ(0, peerMgr->sessionTerminateBatons_.count(kPeerId3));
   EXPECT_EQ(
       0, peerMgr->getDefaultVrf().getStaticPeerEoRReceived().count(kPeerAddr3));
-  EXPECT_EQ(0, peerMgr->establishedGrPeers_.count(kPeerId3));
+  EXPECT_EQ(
+      0, peerMgr->getDefaultVrf().getEstablishedGrPeers().count(kPeerId3));
   EXPECT_EQ(
       0, peerMgr->getDefaultVrf().getPendingRibDumpReqs().count(kPeerId3));
   EXPECT_EQ(baseAdjRibs, tcData->getCounter(RibStats::kTotalAdjRibs));
@@ -1111,7 +1113,7 @@ CO_TEST_F(PeerManagerTestFixture, SessionTerminated_ShutdownSkipsProcessing) {
   RibStats::incrAdjRibCount();
   peerMgr->sessionTerminateBatons_[kDynamicPeerId4] = terminateBaton;
   peerMgr->peerAddrToIds_[kDynamicPeerAddr4].insert(kDynamicPeerId4);
-  peerMgr->establishedGrPeers_.insert(kDynamicPeerId4);
+  peerMgr->getDefaultVrf().getEstablishedGrPeers().insert(kDynamicPeerId4);
   EXPECT_CALL(*mockAdjRib, stop()).Times(0);
 
   FiberBgpPeer::ObservableStateT evt{
@@ -1127,7 +1129,9 @@ CO_TEST_F(PeerManagerTestFixture, SessionTerminated_ShutdownSkipsProcessing) {
   EXPECT_TRUE(mockAdjRib->isStateEstablished());
   EXPECT_EQ(1, peerMgr->runningSessions_);
   EXPECT_EQ(1, peerMgr->runningVipSessions_);
-  EXPECT_EQ(1, peerMgr->establishedGrPeers_.count(kDynamicPeerId4));
+  EXPECT_EQ(
+      1,
+      peerMgr->getDefaultVrf().getEstablishedGrPeers().count(kDynamicPeerId4));
   EXPECT_EQ(1, peerMgr->sessionTerminateBatons_.count(kDynamicPeerId4));
 
   sessionMgr->allPeers_.erase(kDynamicPeerAddr4);

@@ -323,7 +323,8 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    * @brief Save GR state information to a file before restarting.
    *
    * @details Must be called before SessionManager::stop() triggers
-   * sessionTerminated() which clears establishedGrPeers_.
+   * sessionTerminated() which clears
+   * PeerManagerVrf::establishedGrPeers_.
    */
   void saveGrState();
 
@@ -1315,9 +1316,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   // Running Bgp sessions
   uint32_t runningSessions_{0};
   uint32_t runningVipSessions_{0};
-
-  // Peers in established state with GR capability
-  std::unordered_set<nettools::bgplib::BgpPeerId> establishedGrPeers_;
 
   /*
    * Peer groups that currently have at least one Established session,

@@ -455,7 +455,7 @@ TEST_F(PeerManagerTestFixture, SharedAdjRibOutGroupNameTest) {
       auto [grPeersSize, peerAddrToIdsSize] =
           folly::via(&peerMgr->getEventBase(), [&] {
             return std::make_pair(
-                peerMgr->establishedGrPeers_.size(),
+                peerMgr->getDefaultVrf().getEstablishedGrPeers().size(),
                 peerMgr->peerAddrToIds_.size());
           }).get();
       auto tcData = fb303::ThreadCachedServiceData::get();
@@ -503,7 +503,7 @@ TEST_F(PeerManagerTestFixture, SharedAdjRibOutGroupNameTest) {
        */
       tcData->publishStats();
       EXPECT_EQ(
-          peerMgr->establishedGrPeers_.size(),
+          peerMgr->getDefaultVrf().getEstablishedGrPeers().size(),
           tcData->getCounter(BgpStats::kEstablishedGrPeersCount));
 
       auto sessionDownFuture1 =

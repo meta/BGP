@@ -1753,9 +1753,6 @@ folly::coro::Task<void> PeerManagerBase::cleanupPeerState(
       }
     }
     sessionTerminateBatons_.erase(peerId);
-    if (establishedGrPeers_.erase(peerId) > 0) {
-      BgpStats::decrEstablishedGrPeersCount();
-    }
     auto* vrf = findVrf(adjRib->getVrfId());
     if (!vrf) {
       XLOGF(
@@ -1764,6 +1761,9 @@ folly::coro::Task<void> PeerManagerBase::cleanupPeerState(
           peerId.str(),
           adjRib->getVrfId());
     } else {
+      if (vrf->getEstablishedGrPeers().erase(peerId) > 0) {
+        BgpStats::decrEstablishedGrPeersCount();
+      }
       vrf->getDynamicPeerEoRReceived().erase(peerId);
       vrf->getStaticPeerEoRReceived().erase(peerAddr);
       if (enableUpdateGroup_) {
@@ -2090,7 +2090,7 @@ folly::coro::Task<void> PeerManagerBase::sessionEstablished(
 
   // Track peers which have negotiated graceful restart for stateful GR
   if (*peerInfo->negotiatedCapabilities.gracefulRestart()) {
-    if (establishedGrPeers_.insert(peerId).second) {
+    if (vrf->getEstablishedGrPeers().insert(peerId).second) {
       BgpStats::incrEstablishedGrPeersCount();
     }
   } else {
@@ -2261,8 +2261,7 @@ folly::coro::Task<void> PeerManagerBase::sessionTerminated(
     removeLivePeerGroup(*peerGroupName);
   }
 
-  if (establishedGrPeers_.find(peerId) != establishedGrPeers_.end()) {
-    establishedGrPeers_.erase(peerId);
+  if (vrf && vrf->getEstablishedGrPeers().erase(peerId) > 0) {
     BgpStats::decrEstablishedGrPeersCount();
   } else {
     updateNonGracefulCounters(peerAddr, true /* isTerminated */);
@@ -3122,8 +3121,8 @@ void PeerManagerBase::saveGrState() {
     // Start with epoch time
     grFile << nowInSec << "\n";
 
-    // All the established GR peers
-    for (const auto& peerId : establishedGrPeers_) {
+    // All the established GR peers of the default VRF
+    for (const auto& peerId : defaultVrf_.getEstablishedGrPeers()) {
       grFile << peerId.peerAddr.str() << " " << peerId.remoteBgpId << "\n";
     }
 

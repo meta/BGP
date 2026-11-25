@@ -420,6 +420,11 @@ folly::coro::Task<void> RibBase::processFibProgrammingMsgLoop() noexcept {
        * accidentally reset that request to false.
        */
       vrf.setFullSync(false);
+      /*
+       * TODO_FIB_VRF: FibFboss::program() still calls the VRF-0 agent APIs
+       * (syncFib, addUnicastRoutes, deleteUnicastRoutes); vrfId only tags the
+       * completion message. Program each VRF through the vrf-aware agent APIs.
+       */
       co_await fib_->program(fullSync, vrf.vrfId());
     }
   }

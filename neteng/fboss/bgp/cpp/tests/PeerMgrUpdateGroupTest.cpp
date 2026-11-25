@@ -18,6 +18,9 @@
   FRIEND_TEST(PeerManagerUpdateGroupTestFixture, UpdateGroupConstructionTest); \
   FRIEND_TEST(                                                                 \
       PeerManagerUpdateGroupTestFixture,                                       \
+      NonDefaultVrfGroupInitialDumpOnAnnouncementDone);                        \
+  FRIEND_TEST(                                                                 \
+      PeerManagerUpdateGroupTestFixture,                                       \
       GetUpdateGroupInfoSurfacesGroupStats);                                   \
   FRIEND_TEST(                                                                 \
       PeerManagerUpdateGroupTestFixture, GetAdjRibStatsReturnsTypedSnapshots);
@@ -119,8 +122,8 @@ TEST_F(PeerManagerUpdateGroupTestFixture, UpdateGroupConstructionTest) {
       .remoteAs = mockInfo1_.peeringParams.remoteAs,
       .sessionInfo = sessionInfo_};
 
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   fm.addTask([&] {
     EXPECT_EQ(0, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
@@ -136,6 +139,59 @@ TEST_F(PeerManagerUpdateGroupTestFixture, UpdateGroupConstructionTest) {
     auto updateGroup = peerMgr_->updateGroupManager_->findOrCreateGroup(
         updateGroupKey, peerMgr_->getDefaultVrf().getShadowRibView());
     EXPECT_NE(adjRibOutGroup, updateGroup);
+
+    // trigger stop of task
+    cleanUp();
+  });
+  evb.loop();
+  SUCCEED();
+}
+
+/*
+ * A peer in a VRF other than the default joins its update group before that
+ * VRF's initial RIB announcement is done, so the group's initial dump is
+ * deferred. markRibInitialAnnouncementDone for that VRF must schedule it.
+ */
+TEST_F(
+    PeerManagerUpdateGroupTestFixture,
+    NonDefaultVrfGroupInitialDumpOnAnnouncementDone) {
+  auto& evb = peerMgr_->getEventBase();
+  auto& fm = folly::fibers::getFiberManager(peerMgr_->getEventBase(), options_);
+
+  const VrfId vrfId{5};
+  auto& vrf = peerMgr_->createVrf(vrfId, /*publishStats=*/false);
+  auto mockInfo = mockInfo1_;
+  mockInfo.negotiatedCapabilities.mpExtV4Unicast() = true;
+  mockInfo.peeringParams.vrfId = vrfId;
+  auto versionNumber = std::make_shared<VersionNumber>(version_);
+  auto sessionInfo = FiberBgpPeer::getObservableSessionInfo(
+      mockInfo,
+      nullptr /* unbounded input queue, unused */,
+      boundedAdjRibOutQ_,
+      adjRibInQ_,
+      versionNumber);
+  FiberBgpPeer::ObservableStateT stateEvent{
+      .vrfId = vrfId,
+      .peerId = kPeerId3,
+      .versionNumber = version_,
+      .remoteAs = mockInfo.peeringParams.remoteAs,
+      .sessionInfo = sessionInfo};
+
+  vrf.setRibInitialAnnouncementStarted(true);
+
+  fm.addTask([&] {
+    folly::coro::blockingWait(peerMgr_->sessionEstablished(stateEvent));
+
+    auto adjRib = peerMgr_->adjRibs_.at(kPeerId3);
+    EXPECT_EQ(1, peerMgr_->updateGroupManager_->getGroupCount(vrfId));
+    auto updateGroup = peerMgr_->updateGroupManager_->findOrCreateGroup(
+        adjRib->getUpdateGroupKey(), vrf.getShadowRibView());
+    EXPECT_EQ(UpdateGroupState::UNINITIALIZED, updateGroup->getState());
+    EXPECT_FALSE(updateGroup->isRibDumpScheduled());
+
+    peerMgr_->markRibInitialAnnouncementDone(vrf);
+    EXPECT_TRUE(vrf.isRibInitialAnnouncementDone());
+    EXPECT_TRUE(updateGroup->isRibDumpScheduled());
 
     // trigger stop of task
     cleanUp();
@@ -164,8 +220,8 @@ TEST_F(
       .remoteAs = mockInfo1_.peeringParams.remoteAs,
       .sessionInfo = sessionInfo_};
 
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   fm.addTask([&] {
     folly::coro::blockingWait(peerMgr_->sessionEstablished(stateEvent));
@@ -249,8 +305,8 @@ TEST_F(PeerManagerUpdateGroupTestFixture, GetAdjRibStatsReturnsTypedSnapshots) {
       .remoteAs = mockInfo1_.peeringParams.remoteAs,
       .sessionInfo = sessionInfo_};
 
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   fm.addTask([&] {
     folly::coro::blockingWait(peerMgr_->sessionEstablished(stateEvent));

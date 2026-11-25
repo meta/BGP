@@ -870,10 +870,10 @@ TEST_F(PeerManagerTestFixture, ThriftStreamSubscribePreInitializationTest) {
   peerMgr->setSessionManager(sessionMgr);
 
   // Simulate that EOR is sent out due to all sessions sent EOR in time.
-  peerMgr->eorTimerExpired_ = false;
-  peerMgr->initialized_ = true;
-  peerMgr->ribInitialAnnouncementStarted_ = false;
-  peerMgr->ribInitialAnnouncementDone_ = false;
+  peerMgr->getDefaultVrf().setEorTimerExpired(false);
+  peerMgr->getDefaultVrf().setInitialized(true);
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(false);
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementDone(false);
 
   // create peer manager thread
   auto peerMgrThread = peerMgr->runInThread();
@@ -1194,7 +1194,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrKeptOnRestartBeforeRib) {
       true /* includeStaticPeer */, false /* includeDynamicShivPeer */);
   firstPeerMgr->addPeersToSessionMgr();
   auto firstThread = firstPeerMgr->runInThread();
-  ASSERT_FALSE(firstPeerMgr->ribInitPathComputationNotified_);
+  ASSERT_FALSE(
+      firstPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
   firstPeerMgr->markDaemonShutdown();
   firstPeerMgr->saveGrState();
   firstPeerMgr->stop();
@@ -1334,9 +1335,10 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest1) {
     for (const auto& peerId :
          {kPeerId3, kDynamicPeerId1, kPeerId4, kDynamicPeerId2}) {
       // Verify EoR won't be sent when only subset of EORs are received
-      EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+      EXPECT_FALSE(
+          mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
       // Verify that EOR timer has not yet expired
-      EXPECT_FALSE(mockPeerMgr->eorTimerExpired_);
+      EXPECT_FALSE(mockPeerMgr->getDefaultVrf().isEorTimerExpired());
       AdjRib::ObservableMessageT EoRFromPeer{
           fboss::kDefaultVrf, peerId, AdjRib::EoR()};
       folly::coro::blockingWait(
@@ -1347,14 +1349,15 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest1) {
      * make sure EoR will be sent without any delay once
      * all static and dynamic peers EORs received
      */
-    EXPECT_TRUE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_TRUE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
     // Removed once RIB was notified.
     EXPECT_FALSE(isGrStateExists());
     /*
      * Ensure that RIB was notified about EOR without timer needing to be
      * fired
      */
-    EXPECT_FALSE(mockPeerMgr->eorTimerExpired_);
+    EXPECT_FALSE(mockPeerMgr->getDefaultVrf().isEorTimerExpired());
   });
   taskFutures.emplace_back(std::move(fiber));
 
@@ -1401,7 +1404,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest2) {
   auto fiber = fm.addTaskFuture([&] {
     fiberSleepFor(10ms);
 
-    EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
     AdjRib::ObservableMessageT EoRFromStaticPeer1{
         fboss::kDefaultVrf, kPeerId3, AdjRib::EoR()};
@@ -1413,7 +1417,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest2) {
      * Stale info had only kPeerAddr3 but we shouldn't send EOR just
      * by seeing kPeerAddr3
      */
-    EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
     AdjRib::ObservableMessageT EoRFromStaticPeer2{
         fboss::kDefaultVrf, kPeerId4, AdjRib::EoR()};
@@ -1424,7 +1429,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest2) {
      * make sure EoR will be sent without any delay once
      * all static peers EORs received (we ignored stale saved info)
      */
-    EXPECT_TRUE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_TRUE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
     // Removed once RIB was notified.
     EXPECT_FALSE(isGrStateExists());
   });
@@ -1476,7 +1482,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest3) {
 
     for (const auto& peerId : {kPeerId3, kDynamicPeerId1}) {
       // Verify EoR won't be sent when only subset of EORs are received
-      EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+      EXPECT_FALSE(
+          mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
       AdjRib::ObservableMessageT EoRFromPeer{
           fboss::kDefaultVrf, peerId, AdjRib::EoR()};
@@ -1489,7 +1496,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest3) {
      * re-establish. RIB EOR is sent out when we receive peer EoRs
      * from the previous Established and GR capable peers.
      */
-    EXPECT_TRUE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_TRUE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
   });
   taskFutures.emplace_back(std::move(fiber));
 
@@ -1538,15 +1546,17 @@ TEST_F(PeerManagerTestFixture, StatefulGrTest4) {
      * We are sending a extra dynamic peer, which was not present in
      * previous incarnation. No rib EoR should be notified.
      */
-    mockPeerMgr->processPeerEoR(kDynamicPeerId2);
-    EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+    mockPeerMgr->getDefaultVrf().processPeerEoR(kDynamicPeerId2);
+    EXPECT_FALSE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
     /*
      * make sure EoR will be sent without any delay once
      * all dynamic peers EORs received
      */
-    mockPeerMgr->processPeerEoR(kDynamicPeerId1);
-    EXPECT_TRUE(mockPeerMgr->ribInitPathComputationNotified_);
+    mockPeerMgr->getDefaultVrf().processPeerEoR(kDynamicPeerId1);
+    EXPECT_TRUE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
     // Removed once RIB was notified.
     EXPECT_FALSE(isGrStateExists());
   });
@@ -1605,7 +1615,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTest) {
     auto sessionMgrThread = sessionMgr->runInThread();
 
     // Verify RIB is not notified yet
-    EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
     // Create an adjRib for this peer
     auto adjRib = setupAdjRib(
@@ -1625,7 +1635,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTest) {
     EXPECT_TRUE(isGrStateExists());
 
     // Verify we have 1 peer in static EOR waiting list
-    EXPECT_EQ(1, peerMgr->staticPeerEoRReceived_.size());
+    EXPECT_EQ(1, peerMgr->getDefaultVrf().getStaticPeerEoRReceived().size());
 
     {
       // Create an entry in AdjRibIn
@@ -1654,10 +1664,10 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTest) {
           nbrDownSentBaton, "nbrDownSentBaton");
 
       // Verify peer is removed from static EOR waiting list
-      EXPECT_EQ(0, peerMgr->staticPeerEoRReceived_.size());
+      EXPECT_EQ(0, peerMgr->getDefaultVrf().getStaticPeerEoRReceived().size());
 
       // Ensure RIB is notified immediately without any delay
-      EXPECT_TRUE(peerMgr->ribInitPathComputationNotified_);
+      EXPECT_TRUE(peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
       // Removed once RIB was notified.
       EXPECT_FALSE(isGrStateExists());
 
@@ -1739,7 +1749,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor) {
     auto sessionMgrThread = sessionMgr->runInThread();
 
     // Verify RIB is not notified yet
-    EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
     // Create an adjRib for a new Peer
     auto adjRib = setupAdjRib(
@@ -1759,8 +1769,8 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor) {
     EXPECT_TRUE(isGrStateExists());
 
     // Verify we have 1 peer each in static/dynamic EOR waiting list
-    EXPECT_EQ(1, peerMgr->staticPeerEoRReceived_.size());
-    EXPECT_EQ(1, peerMgr->dynamicPeerEoRReceived_.size());
+    EXPECT_EQ(1, peerMgr->getDefaultVrf().getStaticPeerEoRReceived().size());
+    EXPECT_EQ(1, peerMgr->getDefaultVrf().getDynamicPeerEoRReceived().size());
 
     {
       XLOG(INFO, "Posting adjRibReady baton");
@@ -1770,17 +1780,18 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor) {
           nbrDownSentBaton, "nbrDownSentBaton");
 
       // one static peer is removed
-      EXPECT_EQ(0, peerMgr->staticPeerEoRReceived_.size());
-      EXPECT_EQ(1, peerMgr->dynamicPeerEoRReceived_.size());
+      EXPECT_EQ(0, peerMgr->getDefaultVrf().getStaticPeerEoRReceived().size());
+      EXPECT_EQ(1, peerMgr->getDefaultVrf().getDynamicPeerEoRReceived().size());
 
       // Ensure RIB is not notified yet
-      EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
+      EXPECT_FALSE(peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
       for (const auto& peerId : {kPeerId3, kDynamicPeerId1}) {
         // Verify EoR won't be sent when only subset of EORs are received
-        EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
+        EXPECT_FALSE(
+            peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
         // Verify that EOR timer has not yet expired
-        EXPECT_FALSE(peerMgr->eorTimerExpired_);
+        EXPECT_FALSE(peerMgr->getDefaultVrf().isEorTimerExpired());
         AdjRib::ObservableMessageT EoRFromPeer{
             fboss::kDefaultVrf, peerId, AdjRib::EoR()};
         folly::coro::blockingWait(
@@ -1790,14 +1801,14 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor) {
        * make sure EoR will be sent without any delay once
        * all static and dynamic peers EORs received
        */
-      EXPECT_TRUE(peerMgr->ribInitPathComputationNotified_);
+      EXPECT_TRUE(peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
       // Removed once RIB was notified.
       EXPECT_FALSE(isGrStateExists());
       /*
        * Ensure that RIB was notified about EOR without timer needing to be
        * fired
        */
-      EXPECT_FALSE(peerMgr->eorTimerExpired_);
+      EXPECT_FALSE(peerMgr->getDefaultVrf().isEorTimerExpired());
     }
 
     /*
@@ -1882,7 +1893,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
     peerMgr->addPeersToSessionMgr();
 
     // Verify RIB is not notified yet
-    EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
     // Create an adjRib for a new Peer
     auto adjRib = setupAdjRib(
@@ -1902,18 +1913,19 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
     EXPECT_TRUE(isGrStateExists());
 
     // Verify we have 1 peer each in static/dynamic EOR waiting list
-    EXPECT_EQ(1, peerMgr->staticPeerEoRReceived_.size());
-    EXPECT_EQ(1, peerMgr->dynamicPeerEoRReceived_.size());
+    EXPECT_EQ(1, peerMgr->getDefaultVrf().getStaticPeerEoRReceived().size());
+    EXPECT_EQ(1, peerMgr->getDefaultVrf().getDynamicPeerEoRReceived().size());
 
     {
       // Ensure RIB is not notified yet
-      EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
+      EXPECT_FALSE(peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
       for (const auto& peerId : {kPeerId3}) {
         // Verify EoR won't be sent when only subset of EORs are received
-        EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
+        EXPECT_FALSE(
+            peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
         // Verify that EOR timer has not yet expired
-        EXPECT_FALSE(peerMgr->eorTimerExpired_);
+        EXPECT_FALSE(peerMgr->getDefaultVrf().isEorTimerExpired());
         AdjRib::ObservableMessageT EoRFromPeer{
             fboss::kDefaultVrf, peerId, AdjRib::EoR()};
         folly::coro::blockingWait(
@@ -1923,10 +1935,11 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
        * make sure EoR will be sent without any delay once
        * all static and dynamic peers EORs received
        */
-      EXPECT_FALSE(peerMgr->ribInitPathComputationNotified_);
+      EXPECT_FALSE(peerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
       // Mock EOR_TIMER_EXPIRED
-      peerMgr->notifyRibInitialPathComputation(/*timerFired=*/true);
+      peerMgr->getDefaultVrf().notifyRibInitialPathComputation(
+          /*timerFired=*/true);
 
       /*
        * Initiate neighbor down event for a peer that was not present in
@@ -1948,7 +1961,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
     XLOG(INFO, "Waiting for nbrDownSent baton");
     facebook::bgp::test::boundedBatonWait(nbrDownSentBaton, "nbrDownSentBaton");
 
-    peerMgr->ribInitialAnnouncementStarted_ = true;
+    peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
     for (const auto& peerId : {kPeerId3}) {
       AdjRib::ObservableMessageT peerEgressEoR{
           fboss::kDefaultVrf, peerId, AdjRib::EgressEoR()};
@@ -1956,7 +1969,7 @@ TEST_F(PeerManagerTestFixture, StatefulGrConvergenceTestWithNoGrNeighbor2) {
           peerMgr->processAdjRibEvent(std::move(peerEgressEoR)));
     }
 
-    EXPECT_TRUE(peerMgr->initialized_);
+    EXPECT_TRUE(peerMgr->getIsInitialized());
 
     /*
      * Stop PeerManagerBase — cancel local coroutines before stop() since
@@ -2068,7 +2081,7 @@ TEST_F(PeerManagerTestFixture, MultipleFlapTest) {
   auto& fm =
       folly::fibers::getFiberManager(mockPeerMgr->getEventBase(), options_);
   fm.addTask([&] {
-    mockPeerMgr->ribInitPathComputationNotified_ = false;
+    mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(false);
     /*
      * Step 0: Simulate that FiberBgpPeer has the same version
      */
@@ -2243,7 +2256,7 @@ TEST_F(PeerManagerTestFixture, MultipleFlapMultiplePeersTest) {
   auto& fm =
       folly::fibers::getFiberManager(mockPeerMgr->getEventBase(), options_);
   fm.addTask([&] {
-    mockPeerMgr->ribInitPathComputationNotified_ = false;
+    mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(false);
 
     /*
      * Step 1:
@@ -2324,11 +2337,11 @@ TEST_F(PeerManagerTestFixture, MultipleFlapMultiplePeersTest) {
      * Step 3:
      * Set all the state to mimic RIB convergence and EOR_SENT
      */
-    mockPeerMgr->ribInitPathComputationNotified_ = true;
-    mockPeerMgr->eorTimerExpired_ = false;
-    mockPeerMgr->initialized_ = true;
-    mockPeerMgr->ribInitialAnnouncementStarted_ = true;
-    mockPeerMgr->ribInitialAnnouncementDone_ = true;
+    mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(true);
+    mockPeerMgr->getDefaultVrf().setEorTimerExpired(false);
+    mockPeerMgr->getDefaultVrf().setInitialized(true);
+    mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+    mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
     /*
      * Step 4:
@@ -5136,7 +5149,7 @@ TEST_F(PeerManagerTestFixture, SafeModeOnAllSessionsTest) {
   auto& fm =
       folly::fibers::getFiberManager(mockPeerMgr->getEventBase(), options_);
   fm.addTask([&] {
-    mockPeerMgr->ribInitPathComputationNotified_ = false;
+    mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(false);
 
     EXPECT_FALSE(mockPeerMgr->getIsSafeModeOn());
     /*
@@ -5428,7 +5441,7 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestNegativeTest) {
       folly::fibers::getFiberManager(mockPeerMgr->getEventBase(), options_);
 
   fm.addTask([&] {
-    mockPeerMgr->initialized_ = false;
+    mockPeerMgr->getDefaultVrf().setInitialized(false);
 
     /*
      * Case 1: Trigger a route refresh request for a peer when BGP is not
@@ -5443,11 +5456,11 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestNegativeTest) {
      * Case 2: Trigger a route refresh request for a peer when peer is not in
      * established state
      */
-    mockPeerMgr->ribInitPathComputationNotified_ = true;
-    mockPeerMgr->eorTimerExpired_ = false;
-    mockPeerMgr->initialized_ = true;
-    mockPeerMgr->ribInitialAnnouncementStarted_ = true;
-    mockPeerMgr->ribInitialAnnouncementDone_ = true;
+    mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(true);
+    mockPeerMgr->getDefaultVrf().setEorTimerExpired(false);
+    mockPeerMgr->getDefaultVrf().setInitialized(true);
+    mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+    mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
     failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers({kPeerId3});
 
@@ -5533,11 +5546,11 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestTest) {
     EXPECT_TRUE(adjRib3->isRouteRefreshNegotiated());
     EXPECT_FALSE(adjRib3->isEnhancedRouteRefreshNegotiated());
 
-    mockPeerMgr->ribInitPathComputationNotified_ = true;
-    mockPeerMgr->eorTimerExpired_ = false;
-    mockPeerMgr->initialized_ = true;
-    mockPeerMgr->ribInitialAnnouncementStarted_ = true;
-    mockPeerMgr->ribInitialAnnouncementDone_ = true;
+    mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(true);
+    mockPeerMgr->getDefaultVrf().setEorTimerExpired(false);
+    mockPeerMgr->getDefaultVrf().setInitialized(true);
+    mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+    mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
     /*
      * No sleep needed: every gate input is set synchronously on this fiber,
@@ -7391,7 +7404,7 @@ TEST_F(PeerManagerTestFixture, SessionFlapRaceConditionTest) {
   auto& evb = mockPeerMgr->getEventBase();
   auto& fm = folly::fibers::getFiberManager(evb, options_);
   fm.addTask([&] {
-    mockPeerMgr->ribInitPathComputationNotified_ = false;
+    mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(false);
 
     auto sessionInfo = FiberBgpPeer::getObservableSessionInfo(
         mockInfo1_,
@@ -7847,7 +7860,7 @@ TEST_F(PeerManagerTestFixture, LivePeerGroupsSessionLifecycleTest) {
   auto& fm =
       folly::fibers::getFiberManager(mockPeerMgr->getEventBase(), options_);
   fm.addTask([&] {
-    mockPeerMgr->ribInitPathComputationNotified_ = false;
+    mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(false);
 
     auto liveGroups = []() {
       auto tcData = fb303::ThreadCachedServiceData::get();

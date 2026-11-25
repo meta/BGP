@@ -1269,14 +1269,15 @@ void StreamSubscriberFixture::SetUp(
   peerMgr->setSessionManager(sessionMgr);
 
   // Simulate the peerManager flags.
-  peerMgr->eorTimerExpired_ = false;
-  peerMgr->initialized_ = true;
+  peerMgr->getDefaultVrf().setEorTimerExpired(false);
+  peerMgr->getDefaultVrf().setInitialized(true);
   /*
    * If both flags below are true, this indicates that the EOR is sent out
    * after initial Fib sync.
    */
-  peerMgr->ribInitialAnnouncementStarted_ = true;
-  peerMgr->ribInitialAnnouncementDone_ = initialAnnouncementDone;
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementDone(
+      initialAnnouncementDone);
 
   // create peer manager thread
   peerMgrThread = std::make_shared<std::thread>(peerMgr->runInThread());

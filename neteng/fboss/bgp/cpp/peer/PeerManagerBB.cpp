@@ -29,20 +29,23 @@ void PeerManagerBB::createRibComputationMaxWaitTimer() noexcept {
    * if no peer session ever comes up. Made on the evb thread; callback runs
    * there too.
    */
+  // TODO_PMTRIZED_VRF: Run a RIB-computation max-wait timer for every VRF.
   ribComputationMaxWaitTimer_ = folly::AsyncTimeout::make(
-      getEventBase(), [this]() noexcept { onEorConvergenceTimeout(); });
+      getEventBase(),
+      [this]() noexcept { getDefaultVrf().onEorConvergenceTimeout(); });
 }
 
 void PeerManagerBB::createAndScheduleTimers() noexcept {
   /*
    * BB cold-start policy: do NOT create/arm eorTimer_ at boot. Create the
-   * shared initialized max-wait timer, then create + arm only the boot-relative
-   * RIB-computation max wait (the no-session / very-slow-first-session safety
-   * net). The real eor_time_s EoR wait (eorTimer_) is created and armed from
-   * the first established session in onSessionEstablishedEorHook(), so a slow
-   * cold boot does not burn the eor_time_s budget before peering begins.
+   * default VRF's initialized max-wait timer, then create + arm only the
+   * boot-relative RIB-computation max wait (the no-session /
+   * very-slow-first-session safety net). The real eor_time_s EoR wait
+   * (eorTimer_) is created and armed from the first established session in
+   * onSessionEstablishedEorHook(), so a slow cold boot does not burn the
+   * eor_time_s budget before peering begins.
    */
-  createInitializedMaxWaitTimer();
+  getDefaultVrf().createInitializedMaxWaitTimer();
   createRibComputationMaxWaitTimer();
   scheduleTimer(
       ribComputationMaxWaitTimer_,
@@ -61,8 +64,9 @@ void PeerManagerBB::onSessionEstablishedEorHook() noexcept {
    * now, then cancel the boot-relative ribComputationMaxWaitTimer_ — its
    * no-session safety-net job is done now that a session has established.
    */
-  createEorTimer();
-  if (scheduleTimer(eorTimer_, "EoR timer", eorWaitDuration_)) {
+  getDefaultVrf().createEorTimer();
+  if (scheduleTimer(
+          getDefaultVrf().getEorTimer(), "EoR timer", eorWaitDuration_)) {
     XLOG(DBG1, "First session established; started the real EoR wait.");
   }
 

@@ -23,6 +23,7 @@
 #include <folly/IPAddress.h>
 #include <folly/Portability.h>
 #include <folly/container/F14Map.h>
+#include <folly/container/F14Set.h>
 #include <folly/coro/AsyncGenerator.h>
 #include <folly/coro/AsyncScope.h>
 #include <folly/coro/Baton.h>
@@ -608,8 +609,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   StreamSubscriber* FOLLY_NULLABLE
   getStreamSubscriber(const std::string& subscriberName);
 
-  void logEoRPeers(const bool isIngressEoR) noexcept;
-
   void setRouteFilterPolicy(
       std::unique_ptr<RouteFilterPolicy> policy,
       bool forceUpdate = false) noexcept;
@@ -619,6 +618,7 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   void updateIngressEgressPolicyNames(
       std::unique_ptr<PeerToPolicyMap> peerToPolicyNames) noexcept;
 
+  // TODO_PMTRIZED_VRF: Take a VRF ID, defaulting to the default VRF.
   bool getIsInitialized() const;
   bool isRibAllocatedPathIdEnabled() const noexcept {
     return enableRibAllocatedPathId_;
@@ -627,8 +627,13 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
     return enableUpdateGroup_;
   }
 
-  // Creates the context for @vrfId if it does not exist, and returns it.
-  PeerManagerVrf& createVrf(VrfId vrfId);
+  /*
+   * Creates the context for @vrfId if it does not exist, and returns it.
+   * @publishStats: whether the VRF publishes its stats and initialization
+   * events to fb303. Only one VRF should publish, since these counters are
+   * process-wide.
+   */
+  PeerManagerVrf& createVrf(VrfId vrfId, bool publishStats);
 
   // Returns the context for @vrfId, or nullptr if it does not exist.
   PeerManagerVrf* FOLLY_NULLABLE findVrf(VrfId vrfId) noexcept;
@@ -642,15 +647,46 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
     return adjRibs_;
   }
 
-  /*
-   * Util function to check initial Fib sync is done and Rib is
-   * finished with initial announcement.
-   */
-  bool isRibInitialAnnouncementStart();
-
-  bool isRibInitialAnnouncementDone() const noexcept {
-    return ribInitialAnnouncementDone_;
+  const folly::F14NodeMap<
+      folly::IPAddress /* peerAddr */,
+      std::unordered_set<nettools::bgplib::BgpPeerId>>&
+  getPeerAddrToIds() const noexcept {
+    return peerAddrToIds_;
   }
+
+  bool isGrStateLoaded() const noexcept {
+    return grStateLoaded_;
+  }
+
+  /*
+   * Process-wide follow-up to PeerManagerVrf::notifyRibInitialPathComputation
+   * for @vrfId. Once the default VRF has notified RIB, removes the GR state
+   * file and leaves the GR restarting state.
+   */
+  void maybeFinishRibInitialPathComputation(VrfId vrfId) noexcept;
+
+  std::chrono::seconds getEorWaitDuration() const noexcept {
+    return eorWaitDuration_;
+  }
+
+  bool isNexthopResolutionRequired() const noexcept {
+    return requireNexthopResolution_;
+  }
+
+  nettools::bgplib::MonitoredBackPressuredQueue<RibInMessage>&
+  getRibInQ() noexcept {
+    return ribInQ_;
+  }
+
+  /*
+   * Shared arm helper: schedules `timer` for `duration` (no-op if null, e.g.
+   * reset after convergence-notify / stop(), or not yet created without run()),
+   * logging `name` and the duration. Returns true iff the timer was (re-)armed.
+   */
+  bool scheduleTimer(
+      std::unique_ptr<folly::AsyncTimeout>& timer,
+      std::string_view name,
+      std::chrono::seconds duration) noexcept;
 
   bool getIsSafeModeOn() const;
   void removeSafeModeFile();
@@ -720,56 +756,20 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   /*
    * EoR-convergence timer policy seam. createAndScheduleTimers() CREATES the
    * timers (on the evb thread, from run()) and installs the startup policy: the
-   * base creates eorTimer_ + initializedMaxWaitTimer_ and arms eorTimer_ for
-   * the configured eor_time_s (DC/OSS), treating session establishment as a
-   * no-op (onSessionEstablishedEorHook). Platform subclasses (e.g.
-   * PeerManagerBB) override these to instead create + arm their own
-   * boot-relative safety-net timer and defer the eor_time_s wait to the first
-   * established session. createEorTimer()/createInitializedMaxWaitTimer() are
-   * the shared make helpers (single source of the AsyncTimeout wiring);
-   * scheduleTimer() is the shared, guarded arm helper (no-op if the timer is
-   * null) that also logs the timer name + duration, used directly to arm
-   * eorTimer_ (protected), initializedMaxWaitTimer_, and the BB timer.
+   * base creates every VRF's eorTimer_ + initializedMaxWaitTimer_ and
+   * arms each eorTimer_ for the configured eor_time_s (DC/OSS), treating
+   * session establishment as a no-op (onSessionEstablishedEorHook). Platform
+   * subclasses (e.g. PeerManagerBB) override these to instead create + arm
+   * their own boot-relative safety-net timer and defer the eor_time_s wait to
+   * the first established session. PeerManagerVrf::createEorTimer() and
+   * PeerManagerVrf::createInitializedMaxWaitTimer() are the shared make helpers
+   * (single source of the AsyncTimeout wiring); scheduleTimer() is the shared,
+   * guarded arm helper (no-op if the timer is null) that also logs the timer
+   * name + duration, used directly to arm the VRF's eorTimer_ and
+   * initializedMaxWaitTimer_, and the BB timer.
    */
   virtual void createAndScheduleTimers() noexcept;
   virtual void onSessionEstablishedEorHook() noexcept {}
-  void createEorTimer() noexcept;
-  void createInitializedMaxWaitTimer() noexcept;
-
-  /*
-   * Shared arm helper: schedules `timer` for `duration` (no-op if null, e.g.
-   * reset after convergence-notify / stop(), or not yet created without run()),
-   * logging `name` and the duration. Returns true iff the timer was (re-)armed.
-   */
-  bool scheduleTimer(
-      std::unique_ptr<folly::AsyncTimeout>& timer,
-      std::string_view name,
-      std::chrono::seconds duration) noexcept;
-
-  /*
-   * Shared EoR-convergence timeout handler: force initial RIB path computation
-   * (once) and log the peers whose EoR was still outstanding. Invoked by the
-   * base eorTimer_, and by platform max-wait timers (e.g. PeerManagerBB's
-   * boot-relative RIB-computation timer) so all paths drive the same one-shot
-   * convergence kick-off.
-   */
-  void onEorConvergenceTimeout() noexcept;
-
-  /*
-   * initializedMaxWaitTimer_ callback: publishes the INITIALIZED signal (the
-   * last line of defense) and latches initialized_. Runs when that timer fires.
-   */
-  void onInitializedMaxWaitTimeout() noexcept;
-
-  /*
-   * EoR wait timer: bounds the wait for peers' End-of-RIB before forcing
-   * initial RIB path computation. Protected (not private) because a platform
-   * subclass arms it — PeerManagerBB creates + arms it on the first established
-   * session via createEorTimer() + scheduleTimer(). Created in
-   * createAndScheduleTimers() on the evb thread; callback is
-   * onEorConvergenceTimeout().
-   */
-  std::unique_ptr<folly::AsyncTimeout> eorTimer_;
 
   /*
    * Cached EoR wait (eor_time_s) as a duration, read once from config at
@@ -916,6 +916,7 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
 
   /* Helper method to distribute RibOutAnnouncement to all adjRibs */
   void distributeRibOutAnnouncementToAdjRibs(
+      const PeerManagerVrf& vrf,
       const RibOutAnnouncement& announcement);
 
   /*
@@ -1013,15 +1014,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
       const NeighborEventMsg& msg) noexcept;
   virtual folly::coro::Task<void> handleNeighborReachabilityMsg() noexcept;
 
-  /**
-   * @brief Process neighbor route change event for peerAddr during
-   * initialization to improve GR convergence time
-   *
-   * @param peerId peerId of the peer
-   */
-  void processNeighborRouteChangeDuringInitialization(
-      const nettools::bgplib::BgpPeerId& peerId) noexcept;
-
   // Coroutine to process peer events from session manager's notify queue
   folly::coro::Task<void> processPeerEventLoop() noexcept;
 
@@ -1113,12 +1105,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    * mode when total path scale or unique prefix limit is reached.
    */
 
-  // Process EoR received from this peer and notify RIB if we received all EoRs
-  void processPeerEoR(const nettools::bgplib::BgpPeerId& peerId) noexcept;
-
-  // Process EgressEoR to mark successful sending EgressEoR towards this peer
-  void processEgressEoR(const nettools::bgplib::BgpPeerId& peerId) noexcept;
-
   /*
    * Process TriggerSafeMode generated internally from AdjRib when total
    * path scale or unique prefix limit is reached.
@@ -1126,37 +1112,11 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   void processTriggerSafeMode() noexcept;
 
   /*
-   * Util function to check if all EoR received from expected peers
-   * and notify RIB if not already notified
-   */
-  void checkAndNotifyAllEoRReceived() noexcept;
-
-  /*
-   * Triggers RIB initial path computation once all peer EORs are received. The
-   * eorTimer_ callback bypasses this helper and calls
-   * notifyRibInitialPathComputation directly with timerFired=true as the
-   * unconditional max-cap.
-   */
-  void maybeNotifyRibInitialPathComputation() noexcept;
-
-  // Util function to check if all EoR sent to expected peers
-  bool checkAllEoRSent();
-
-  /*
    * Move peer-manager state to ribInitialAnnouncementDone_
    * and handle certain work as a result of reaching to this
    * state
    */
   void markRibInitialAnnouncementDone(PeerManagerVrf& vrf) noexcept;
-
-  // One-time signal to notify RIB to start best-path computation.
-  void notifyRibInitialPathComputation(bool timerFired) noexcept;
-
-  /*
-   * We are possibly at the stage where we can declare all the
-   * initialization complete
-   */
-  void maybeMarkInitialized() noexcept;
 
   // Update non-graceful peer counters (state changed for peerAddr)
   void updateNonGracefulCounters(
@@ -1328,23 +1288,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    */
   MonitoredMPMCQueue<AdjRib::ObservableMessageT> fromAdjRibQ_;
 
-  // [Static Peer]: tracking INGRESS + EGRESS EoR status
-  folly::F14NodeMap<
-      folly::IPAddress,
-      std::pair<bool /* ingress EoR */, bool /* egress EoR */>>
-      staticPeerEoRReceived_{};
-
-  /*
-   * [Dynamic Peer]: tracking INGRESS + EGRESS EoR status
-   *
-   * NOTE: Dynamic peers can have multiple peerings with the same ip address
-   * but different remote bgp peerId.
-   */
-  folly::F14NodeMap<
-      nettools::bgplib::BgpPeerId,
-      std::pair<bool /* ingress EoR */, bool /* egress EoR */>>
-      dynamicPeerEoRReceived_{};
-
   // Each peer adjacency rib which is created based on configuration
   folly::F14NodeMap<nettools::bgplib::BgpPeerId, std::shared_ptr<AdjRib>>
       adjRibs_;
@@ -1379,34 +1322,11 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
       sessionTerminateBatons_;
 
   /*
-   * Timers
-   */
-
-  // max cap count-down to publish initialized signal
-  std::unique_ptr<folly::AsyncTimeout> initializedMaxWaitTimer_;
-
-  // One-time flag, best-path start signal should only be sent once
-  bool ribInitPathComputationNotified_{false};
-  // One-time flag, maintain state of Rib's flag initialEorSent_
-  bool ribInitialAnnouncementStarted_{false};
-  // One-time flag, all egress EoRs should only be sent once
-  bool allEgressEoRSent_{false};
-  // One-time flag, mark BGP++ initialized after restart
-  std::atomic<bool> initialized_{false};
-  /*
    * Flag indicating daemon shutdown is in progress. Set by
    * markDaemonShutdown() before SessionManager::stop() to prevent
    * cross-module coroutine calls to a stopped SessionManager evb.
    */
   std::atomic<bool> daemonShutdown_{false};
-  /*
-   * One-time flag, mark true when all initial announcements are done
-   *
-   * TODO_PMTRIZED_VRF: Track the initial announcement per VRF. This flag is
-   * process-wide, so only the first VRF to finish drains its buffered
-   * RibDumpReqs in markRibInitialAnnouncementDone.
-   */
-  bool ribInitialAnnouncementDone_{false};
   /*
    * Stats
    */
@@ -1438,20 +1358,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   const std::chrono::milliseconds maxSessionDampenDur_;
 
   /*
-   * This is used to eliminate false alarms in convergence time measurement.
-   * In case EOR timeout fired, it indicates some peer went down and so
-   * measured convergence doesn't indicate true convergence but timeout value.
-   */
-  bool eorTimerExpired_{false};
-
-  /*
-   * Flipped inside checkAndNotifyAllEoRReceived after all expected static +
-   * dynamic peers have sent EOR. Gates the trigger to RIB for initial path
-   * computation (notifyRibInitialPathComputation).
-   */
-  bool allPeerEorsReceived_{false};
-
-  /*
    * When true (DC with nexthop tracking / conditional routes), the initial
    * path computation trigger sent to RIB carries a non-zero
    * nexthopResolutionTimeout (the remaining eor_time_s budget), so RIB defers
@@ -1461,13 +1367,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
    * routes), the trigger carries a zero timeout and RIB computes immediately.
    */
   const bool requireNexthopResolution_{false};
-
-  /*
-   * steady_clock time at which eorTimer_ was armed (PEER_INFO_LOADED). Used to
-   * compute the remaining eor_time_s budget handed to RIB as
-   * nexthopResolutionTimeout when all peer EoRs are received.
-   */
-  std::chrono::steady_clock::time_point eorTimerArmedAt_{};
 
   // One-time flag, marked when safe mode is triggered
   folly::not_null_shared_ptr<std::atomic<bool>> isSafeModeOn_ =

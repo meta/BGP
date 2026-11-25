@@ -120,7 +120,8 @@ TEST_F(PeerManagerInitializationTestFixture, DuplicateRibEoRNotificationTest) {
          * explicitly issue duplicate notifyEoR with no expiration. Make sure
          * it is a no-op.
          */
-        peerMgr->notifyRibInitialPathComputation(/*timerFired=*/false);
+        peerMgr->getDefaultVrf().notifyRibInitialPathComputation(
+            /*timerFired=*/false);
 
         // dump counters to check
         facebook::fb303::ThreadCachedServiceData::getShared()->getCounters(
@@ -137,6 +138,59 @@ TEST_F(PeerManagerInitializationTestFixture, DuplicateRibEoRNotificationTest) {
   peerMgrThread.join();
   sessionMgrThread.join();
   SUCCEED();
+}
+
+/*
+ * A VRF other than the default gets its own EoR timer. A static peer in that
+ * VRF that never sends EoR must not hold back the VRF's initial RIB path
+ * computation past eor_time_s, and the VRF's initialized max-wait timer must
+ * start then.
+ */
+TEST_F(PeerManagerInitializationTestFixture, NonDefaultVrfEorTimerTest) {
+  folly::EventBase testEvb;
+  const auto eorTimeS{1};
+  auto config = getConfig(
+      true /* includeStaticPeer */,
+      true /* includeDynamicShivPeer */,
+      false /* includeDynamicMonitorPeer */,
+      false /* includeDynamicVipInjectorPeer */,
+      false /* enableStatefulHa */,
+      false /* enableVipServer */,
+      eorTimeS);
+  auto configManager = std::make_shared<ConfigManager>(config);
+  auto peerMgr = std::make_shared<PeerManagerBase>(
+      configManager, nullptr, ribInQ_, ribOutQ_, nbrRouteChangeQ_);
+
+  const VrfId vrfId{5};
+  auto& vrf = peerMgr->createVrf(vrfId, /*publishStats=*/false);
+  vrf.getStaticPeerEoRReceived().emplace(
+      folly::IPAddress("10.5.0.1"), std::make_pair(false, false));
+
+  auto sessionMgr =
+      std::make_shared<SessionManager>(*config->getBgpGlobalConfig(), false);
+  peerMgr->setSessionManager(sessionMgr);
+
+  auto peerMgrThread = peerMgr->runInThread();
+  auto sessionMgrThread = sessionMgr->runInThread();
+
+  testEvb.scheduleAt(
+      [&]() noexcept {
+        peerMgr->getEventBase().runInEventBaseThreadAndWait([&]() {
+          EXPECT_TRUE(vrf.isRibInitPathComputationNotified());
+          EXPECT_TRUE(vrf.isEorTimerExpired());
+          EXPECT_FALSE(vrf.isInitialized());
+          ASSERT_NE(nullptr, vrf.getInitializedMaxWaitTimer());
+          EXPECT_TRUE(vrf.getInitializedMaxWaitTimer()->isScheduled());
+        });
+      },
+      std::chrono::steady_clock::now() + std::chrono::seconds(2 * eorTimeS));
+
+  testEvb.loop();
+
+  peerMgr->stop();
+  sessionMgr->stop();
+  peerMgrThread.join();
+  sessionMgrThread.join();
 }
 
 /*
@@ -212,7 +266,7 @@ TEST_F(PeerManagerInitializationTestFixture, InitializedSignalTimeoutTest) {
                     BgpInitializationEvent::INITIALIZED))));
 
         // initialized_ flag is set
-        EXPECT_TRUE(peerMgr->initialized_);
+        EXPECT_TRUE(peerMgr->getIsInitialized());
 
         // no adjRib spawn, hence no prefix sent
         EXPECT_TRUE(counters.contains(facebook::bgp::BgpStats::kNoPrefixSent));
@@ -265,9 +319,10 @@ TEST_F(
       folly::fibers::getFiberManager(mockPeerMgr->getEventBase(), options_);
   auto fiber = fm.addTaskFuture([&] {
     // make sure EoR won't be sent
-    EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
-    mockPeerMgr->ribInitialAnnouncementStarted_ = true;
+    mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
     // Send egressEoR from one static peer without ingressEoR sent
     AdjRib::ObservableMessageT eoRToStaticPeer1{
         fboss::kDefaultVrf, kPeerId3, AdjRib::EgressEoR{}};
@@ -275,7 +330,8 @@ TEST_F(
         mockPeerMgr->processAdjRibEvent(std::move(eoRToStaticPeer1)));
 
     // No ribEoRNotified since ingress EoR was not received
-    EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
 
     // INITIALIZED signal should be published by ignoring those peers
     facebook::fb303::ThreadCachedServiceData::getShared()->getCounters(
@@ -413,7 +469,8 @@ TEST_F(PeerManagerInitializationTestFixture, InitializedSignalPublicationTest) {
     facebook::fb303::ThreadCachedServiceData::getShared()->getCounters(
         counters);
 
-    EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
     EXPECT_FALSE(counters.contains(
         fmt::format(
             kInitEventCounterFormat,
@@ -428,7 +485,8 @@ TEST_F(PeerManagerInitializationTestFixture, InitializedSignalPublicationTest) {
     // make sure EoR won't be sent if does not receive all EoRs
     facebook::fb303::ThreadCachedServiceData::getShared()->getCounters(
         counters);
-    EXPECT_FALSE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_FALSE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
     EXPECT_FALSE(counters.contains(
         fmt::format(
             kInitEventCounterFormat,
@@ -448,7 +506,8 @@ TEST_F(PeerManagerInitializationTestFixture, InitializedSignalPublicationTest) {
      */
     facebook::fb303::ThreadCachedServiceData::getShared()->getCounters(
         counters);
-    EXPECT_TRUE(mockPeerMgr->ribInitPathComputationNotified_);
+    EXPECT_TRUE(
+        mockPeerMgr->getDefaultVrf().isRibInitPathComputationNotified());
     EXPECT_TRUE(counters.contains(
         fmt::format(
             kInitEventCounterFormat,
@@ -460,7 +519,7 @@ TEST_F(PeerManagerInitializationTestFixture, InitializedSignalPublicationTest) {
             apache::thrift::util::enumNameSafe(
                 BgpInitializationEvent::EOR_TIMER_EXPIRED))));
 
-    mockPeerMgr->ribInitialAnnouncementStarted_ = true;
+    mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
     // Send egressEoR from one static peer
     AdjRib::ObservableMessageT eoRToStaticPeer1{
         fboss::kDefaultVrf, kPeerId3, AdjRib::EgressEoR{}};

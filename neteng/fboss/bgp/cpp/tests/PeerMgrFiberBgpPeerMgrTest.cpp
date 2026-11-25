@@ -145,11 +145,13 @@ TEST_F(PeerManagerTestFixture, AddPeersToSessionMgrTest) {
     facebook::fb303::ThreadCachedServiceData::getShared()->getCounters(
         counters);
 
-    EXPECT_EQ(2, mockPeerMgr->staticPeerEoRReceived_.size());
+    EXPECT_EQ(
+        2, mockPeerMgr->getDefaultVrf().getStaticPeerEoRReceived().size());
 
     // dynamicPeerEoR size will be empty since there is no GR subnet reloaded
     EXPECT_EQ(0, counters.at(BgpStats::kStatefulGR));
-    EXPECT_EQ(0, mockPeerMgr->dynamicPeerEoRReceived_.size());
+    EXPECT_EQ(
+        0, mockPeerMgr->getDefaultVrf().getDynamicPeerEoRReceived().size());
 
     // Verify ODS counter for allPeers_
     auto tcData = fb303::ThreadCachedServiceData::get();
@@ -728,7 +730,8 @@ CO_TEST_F(PeerManagerTestFixture, CleanupPeerState_NormalErase) {
   peerMgr->sessionTerminateBatons_[kPeerId3] = terminateBaton;
   peerMgr->peerAddrToIds_[kPeerAddr3].insert(kPeerId3);
   BgpStats::incrPeerAddrToIdsCount();
-  peerMgr->staticPeerEoRReceived_[kPeerAddr3] = {false, false};
+  peerMgr->getDefaultVrf().getStaticPeerEoRReceived()[kPeerAddr3] = {
+      false, false};
   peerMgr->establishedGrPeers_.insert(kPeerId3);
   BgpStats::incrEstablishedGrPeersCount();
   peerMgr->getDefaultVrf().getPendingRibDumpReqs()[kPeerId3] =
@@ -768,7 +771,8 @@ CO_TEST_F(PeerManagerTestFixture, CleanupPeerState_NormalErase) {
   EXPECT_EQ(0, peerMgr->adjRibs_.count(kPeerId3));
   EXPECT_EQ(0, peerMgr->peerAddrToIds_.count(kPeerAddr3));
   EXPECT_EQ(0, peerMgr->sessionTerminateBatons_.count(kPeerId3));
-  EXPECT_EQ(0, peerMgr->staticPeerEoRReceived_.count(kPeerAddr3));
+  EXPECT_EQ(
+      0, peerMgr->getDefaultVrf().getStaticPeerEoRReceived().count(kPeerAddr3));
   EXPECT_EQ(0, peerMgr->establishedGrPeers_.count(kPeerId3));
   EXPECT_EQ(
       0, peerMgr->getDefaultVrf().getPendingRibDumpReqs().count(kPeerId3));
@@ -975,12 +979,13 @@ CO_TEST_F(PeerManagerTestFixture, SessionTerminated_VipErasesDynamicEorState) {
           kEgressQueueLowWatermark));
   mockAdjRib->markStateEstablished();
 
-  peerMgr->initialized_ = true;
+  peerMgr->getDefaultVrf().setInitialized(true);
   peerMgr->adjRibs_[kDynamicPeerId4] = mockAdjRib;
   RibStats::incrAdjRibCount();
   peerMgr->sessionTerminateBatons_[kDynamicPeerId4] = terminateBaton;
   peerMgr->peerAddrToIds_[kDynamicPeerAddr4].insert(kDynamicPeerId4);
-  peerMgr->dynamicPeerEoRReceived_[kDynamicPeerId4] = {true, true};
+  peerMgr->getDefaultVrf().getDynamicPeerEoRReceived()[kDynamicPeerId4] = {
+      true, true};
   terminateBaton->post();
 
   EXPECT_CALL(*mockAdjRib, stop())
@@ -999,7 +1004,10 @@ CO_TEST_F(PeerManagerTestFixture, SessionTerminated_VipErasesDynamicEorState) {
   sessionMgrThread.join();
 
   EXPECT_EQ(0, peerMgr->adjRibs_.count(kDynamicPeerId4));
-  EXPECT_EQ(0, peerMgr->dynamicPeerEoRReceived_.count(kDynamicPeerId4));
+  EXPECT_EQ(
+      0,
+      peerMgr->getDefaultVrf().getDynamicPeerEoRReceived().count(
+          kDynamicPeerId4));
 }
 
 /*
@@ -1032,7 +1040,7 @@ CO_TEST_F(
           kEgressQueueLowWatermark));
   mockAdjRib->markStateEstablished();
 
-  peerMgr->initialized_ = true;
+  peerMgr->getDefaultVrf().setInitialized(true);
   peerMgr->runningSessions_ = 1;
   peerMgr->runningVipSessions_ = 1;
   peerMgr->adjRibs_[kDynamicPeerId4] = mockAdjRib;
@@ -1095,7 +1103,7 @@ CO_TEST_F(PeerManagerTestFixture, SessionTerminated_ShutdownSkipsProcessing) {
           kEgressQueueLowWatermark));
   mockAdjRib->markStateEstablished();
 
-  peerMgr->initialized_ = true;
+  peerMgr->getDefaultVrf().setInitialized(true);
   peerMgr->daemonShutdown_ = true;
   peerMgr->runningSessions_ = 1;
   peerMgr->runningVipSessions_ = 1;

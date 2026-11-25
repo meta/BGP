@@ -16,14 +16,19 @@
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
+#include <folly/IPAddress.h>
 #include <folly/container/F14Map.h>
 #include <folly/container/F14Set.h>
 #include <folly/coro/AsyncScope.h>
 #include <folly/coro/Task.h>
+#include <folly/io/async/AsyncTimeout.h>
 
 #include "neteng/fboss/bgp/cpp/adjrib/ShadowRibTypes.h"
 #include "neteng/fboss/bgp/cpp/changeTracker/ChangeTracker.h"
@@ -47,10 +52,15 @@ class PeerManagerVrf final {
   using PendingRouteRefreshAfis =
       folly::F14FastSet<nettools::bgplib::BgpUpdateAfi>;
 
+  /*
+   * @publishStats: whether this VRF publishes its stats and initialization
+   * events to fb303. See PeerManagerBase::createVrf().
+   */
   PeerManagerVrf(
       VrfId vrfId,
       PeerManagerBase& owner,
-      folly::coro::CancellableAsyncScope& asyncScope);
+      folly::coro::CancellableAsyncScope& asyncScope,
+      bool publishStats);
 
   PeerManagerVrf(const PeerManagerVrf&) = delete;
   PeerManagerVrf& operator=(const PeerManagerVrf&) = delete;
@@ -257,6 +267,140 @@ class PeerManagerVrf final {
    */
   folly::coro::Task<void> handleBufferedRibDumpsForDetachedPeers();
 
+  // ======================= EOR AND INITIALIZATION STATE ======================
+
+  folly::F14NodeMap<folly::IPAddress, std::pair<bool, bool>>&
+  getStaticPeerEoRReceived() noexcept {
+    return staticPeerEoRReceived_;
+  }
+
+  folly::F14NodeMap<nettools::bgplib::BgpPeerId, std::pair<bool, bool>>&
+  getDynamicPeerEoRReceived() noexcept {
+    return dynamicPeerEoRReceived_;
+  }
+
+  /*
+   * RibDumpReq is successful only when RIB has a confirmed state that
+   * conveys fib sync is done. This state in RIB is initialEorSent_.
+   * When RIB has finished enqueuing the last announcement from the
+   * initial Fib sync, PeerManagerBase will eventually dequeue it and set
+   * ribInitialAnnouncementDone_ to true.
+   */
+  bool isRibInitialAnnouncementStarted() const noexcept {
+    return ribInitialAnnouncementStarted_;
+  }
+
+  void setRibInitialAnnouncementStarted(bool started) noexcept {
+    ribInitialAnnouncementStarted_ = started;
+  }
+
+  bool isRibInitialAnnouncementDone() const noexcept {
+    return ribInitialAnnouncementDone_;
+  }
+
+  void setRibInitialAnnouncementDone(bool done) noexcept {
+    ribInitialAnnouncementDone_ = done;
+  }
+
+  bool isRibInitPathComputationNotified() const noexcept {
+    return ribInitPathComputationNotified_;
+  }
+
+  void setRibInitPathComputationNotified(bool notified) noexcept {
+    ribInitPathComputationNotified_ = notified;
+  }
+
+  bool isAllEgressEoRSent() const noexcept {
+    return allEgressEoRSent_;
+  }
+
+  // Thread-safe; PeerManagerBase::getIsInitialized() reads it off the evb.
+  bool isInitialized() const noexcept {
+    return initialized_;
+  }
+
+  void setInitialized(bool initialized) noexcept {
+    initialized_ = initialized;
+  }
+
+  bool isEorTimerExpired() const noexcept {
+    return eorTimerExpired_;
+  }
+
+  void setEorTimerExpired(bool expired) noexcept {
+    eorTimerExpired_ = expired;
+  }
+
+  // Process EoR received from this peer and notify RIB if we received all EoRs
+  void processPeerEoR(const nettools::bgplib::BgpPeerId& peerId) noexcept;
+
+  // Process EgressEoR to mark successful sending EgressEoR towards this peer
+  void processEgressEoR(const nettools::bgplib::BgpPeerId& peerId) noexcept;
+
+  /**
+   * @brief Process neighbor route change event for peerAddr during
+   * initialization to improve GR convergence time
+   *
+   * @param peerId peerId of the peer
+   */
+  void processNeighborRouteChangeDuringInitialization(
+      const nettools::bgplib::BgpPeerId& peerId) noexcept;
+
+  /*
+   * We are possibly at the stage where we can declare this table's
+   * initialization complete.
+   */
+  void maybeMarkInitialized() noexcept;
+
+  void logEoRPeers(const bool isIngressEoR) noexcept;
+
+  /*
+   * Bounds the wait for peers' End-of-RIB before forcing initial RIB path
+   * computation of this table. Makes @eorTimer_ on the owner's EventBase; must
+   * run on that thread.
+   */
+  void createEorTimer() noexcept;
+
+  std::unique_ptr<folly::AsyncTimeout>& getEorTimer() noexcept {
+    return eorTimer_;
+  }
+
+  std::chrono::steady_clock::time_point getEorTimerArmedAt() const noexcept {
+    return eorTimerArmedAt_;
+  }
+
+  void setEorTimerArmedAt(std::chrono::steady_clock::time_point at) noexcept {
+    eorTimerArmedAt_ = at;
+  }
+
+  /*
+   * EoR-convergence timeout handler: force initial RIB path computation of
+   * this table (once) and log the peers whose EoR was still outstanding.
+   * Invoked by @eorTimer_, and by platform max-wait timers (e.g.
+   * PeerManagerBB's boot-relative RIB-computation timer) so all paths drive
+   * the same one-shot convergence kick-off.
+   */
+  void onEorConvergenceTimeout() noexcept;
+
+  /*
+   * One-time signal to notify RIB to start best-path computation for this
+   * table. Also resets @eorTimer_, starts @initializedMaxWaitTimer_, and then
+   * lets the owner run the process-wide follow-up
+   * (PeerManagerBase::maybeFinishRibInitialPathComputation).
+   */
+  void notifyRibInitialPathComputation(bool timerFired) noexcept;
+
+  /*
+   * Last-resort timer that declares this table initialized even if some peers
+   * never send egress EoR. Makes @initializedMaxWaitTimer_ on the owner's
+   * EventBase; must run on that thread.
+   */
+  void createInitializedMaxWaitTimer() noexcept;
+
+  std::unique_ptr<folly::AsyncTimeout>& getInitializedMaxWaitTimer() noexcept {
+    return initializedMaxWaitTimer_;
+  }
+
   // ============================== ADJ-RIB STATE ==============================
 
   static std::string buildAdjRibOutGroupName(
@@ -300,12 +444,53 @@ class PeerManagerVrf final {
       const std::shared_ptr<AdjRib>& adjRib,
       const RibDumpReq& ribDumpReq);
 
+  // ======================= EOR AND INITIALIZATION STATE ======================
+
+  /*
+   * Util function to check if all EoR received from expected peers
+   * and notify RIB if not already notified
+   */
+  void checkAndNotifyAllEoRReceived() noexcept;
+
+  /*
+   * Triggers RIB initial path computation once all peer EORs are received.
+   * onEorConvergenceTimeout bypasses this helper and calls
+   * notifyRibInitialPathComputation directly with timerFired=true as the
+   * unconditional max-cap.
+   */
+  void maybeNotifyRibInitialPathComputation() noexcept;
+
+  // Util function to check if all EoR sent to expected peers
+  bool checkAllEoRSent();
+
+  /*
+   * Declares this table initialized and stops @initializedMaxWaitTimer_.
+   * Publishes the INITIALIZED event and convergence stats if @publishStats_.
+   */
+  void markInitialized() noexcept;
+
+  /*
+   * @initializedMaxWaitTimer_ callback: declares this table initialized (the
+   * last line of defense) and logs the peers still pending egress EoR.
+   * Publishes the INITIALIZED event if @publishStats_.
+   */
+  void onInitializedMaxWaitTimeout() noexcept;
+
   // Identifies the routing table owned by this context.
   const VrfId vrfId_;
   PeerManagerBase& owner_;
 
   // The owner's scope, for coroutines scheduled on behalf of this table.
   folly::coro::CancellableAsyncScope& asyncScope_;
+
+  /*
+   * Whether this VRF publishes its stats and initialization events to fb303.
+   * Only one VRF publishes, since these counters are process-wide.
+   *
+   * TODO_CTR_VRF: Publish per-VRF counters and initialization events, and
+   * remove this flag.
+   */
+  const bool publishStats_;
 
   // ============================ SHADOW RIB STATE =============================
 
@@ -378,6 +563,72 @@ class PeerManagerVrf final {
 
   folly::F14FastMap<std::shared_ptr<AdjRib>, PendingRouteRefreshAfis>
       pendingRouteRefreshPeers_;
+
+  // ======================= EOR AND INITIALIZATION STATE ======================
+
+  // [Static Peer]: tracking INGRESS + EGRESS EoR status
+  folly::F14NodeMap<
+      folly::IPAddress,
+      std::pair<bool /* ingress EoR */, bool /* egress EoR */>>
+      staticPeerEoRReceived_{};
+
+  /*
+   * [Dynamic Peer]: tracking INGRESS + EGRESS EoR status
+   *
+   * NOTE: Dynamic peers can have multiple peerings with the same ip address
+   * but different remote bgp peerId.
+   */
+  folly::F14NodeMap<
+      nettools::bgplib::BgpPeerId,
+      std::pair<bool /* ingress EoR */, bool /* egress EoR */>>
+      dynamicPeerEoRReceived_{};
+
+  // One-time flag, best-path start signal should only be sent once
+  bool ribInitPathComputationNotified_{false};
+  // One-time flag, maintain state of Rib's flag initialEorSent_
+  bool ribInitialAnnouncementStarted_{false};
+  // One-time flag, all egress EoRs should only be sent once
+  bool allEgressEoRSent_{false};
+  // One-time flag, mark true when all initial announcements are done
+  bool ribInitialAnnouncementDone_{false};
+
+  /*
+   * Flipped inside checkAndNotifyAllEoRReceived after all expected static +
+   * dynamic peers have sent EOR. Gates the trigger to RIB for initial path
+   * computation (notifyRibInitialPathComputation).
+   */
+  bool allPeerEorsReceived_{false};
+
+  /*
+   * This is used to eliminate false alarms in convergence time measurement.
+   * In case EOR timeout fired, it indicates some peer went down and so
+   * measured convergence doesn't indicate true convergence but timeout value.
+   */
+  bool eorTimerExpired_{false};
+
+  /*
+   * EoR wait timer: bounds the wait for peers' End-of-RIB before forcing
+   * initial RIB path computation of this table. Created on the owner's
+   * EventBase by createEorTimer(); callback is onEorConvergenceTimeout().
+   */
+  std::unique_ptr<folly::AsyncTimeout> eorTimer_;
+
+  /*
+   * steady_clock time at which eorTimer_ was armed (PEER_INFO_LOADED). Used to
+   * compute the remaining eor_time_s budget handed to RIB as
+   * nexthopResolutionTimeout when all peer EoRs are received.
+   */
+  std::chrono::steady_clock::time_point eorTimerArmedAt_{};
+
+  // One-time flag, mark this table initialized after restart
+  std::atomic<bool> initialized_{false};
+
+  /*
+   * Max-cap countdown to declare this table initialized. Created by
+   * createInitializedMaxWaitTimer(), started in
+   * notifyRibInitialPathComputation; callback is onInitializedMaxWaitTimeout().
+   */
+  std::unique_ptr<folly::AsyncTimeout> initializedMaxWaitTimer_;
 };
 
 } // namespace facebook::bgp

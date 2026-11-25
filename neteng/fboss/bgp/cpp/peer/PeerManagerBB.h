@@ -51,11 +51,12 @@ class PeerManagerBB : public PeerManagerBase {
  protected:
   /*
    * BB EoR-timer policy (see the PeerManagerBase seam for the contract). At
-   * startup, create the shared initializedMaxWaitTimer_ and create + arm ONLY
-   * the boot-relative ribComputationMaxWaitTimer_ (the no-session safety net) —
-   * no eorTimer_ yet. eorTimer_ (the real EoR wait) is created and armed from
-   * the first established session in onSessionEstablishedEorHook(), which also
-   * cancels ribComputationMaxWaitTimer_.
+   * startup, create the default VRF's initializedMaxWaitTimer_ and create +
+   * arm ONLY the boot-relative ribComputationMaxWaitTimer_ (the no-session
+   * safety net) — no eorTimer_ yet. eorTimer_ (the real EoR wait) is created
+   * and armed from the first established session in
+   * onSessionEstablishedEorHook(), which also cancels
+   * ribComputationMaxWaitTimer_.
    */
   void createAndScheduleTimers() noexcept override;
   void onSessionEstablishedEorHook() noexcept override;

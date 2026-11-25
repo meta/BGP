@@ -537,7 +537,7 @@ TEST_P(
   auto mockPeerMgr = setupMockPeerManager(true, true, false);
   auto& evb = mockPeerMgr->getEventBase();
 
-  mockPeerMgr->ribInitPathComputationNotified_ = false;
+  mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(false);
   auto sessionMgr = setupMockSessionManager(mockPeerMgr);
   auto adjRibInQueue = sessionMgr->oQueue_;
   auto sessionMgrThread = sessionMgr->runInThread();

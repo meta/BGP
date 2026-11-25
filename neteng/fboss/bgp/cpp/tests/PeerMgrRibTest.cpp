@@ -787,7 +787,7 @@ TEST_F(PeerManagerTestFixture, RibDumpReqNegativeTest) {
     /*
      * Test 1: request RibDumpReq and expect skip due to no adjrib found.
      */
-    peerMgr->ribInitialAnnouncementStarted_ = true;
+    peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
 
     messages.clear();
 
@@ -861,8 +861,8 @@ CO_TEST_F(PeerManagerTestFixture, ShadowRibEntryMultiUpdateTest) {
       vrf->getAddPathConsumerBitmap(),
       vrf->getNonAddPathConsumerBitmap());
 
-  peerMgr->ribInitialAnnouncementStarted_ = true;
-  peerMgr->ribInitialAnnouncementDone_ = true;
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   // create mapping of adjRibs
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
@@ -994,8 +994,8 @@ CO_TEST_F(PeerManagerTestFixture, RibDumpReqPositiveTest) {
    * mark EoR ready to simulate initial Fib sync done and initial
    * Rib announcements are queued
    */
-  peerMgr->ribInitialAnnouncementStarted_ = true;
-  peerMgr->ribInitialAnnouncementDone_ = true;
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   // create mapping of adjRibs
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
@@ -1134,8 +1134,8 @@ CO_TEST_F(PeerManagerTestFixture, RibDumpReqPositiveTest) {
  * RibInitialAnnouncementStart msg.
  */
 CO_TEST_F(RibInitialAnnouncementTestFixture, RibInitialAnnouncementStartTest) {
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementStarted_);
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementDone_);
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementStarted());
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementDone());
 
   auto& messages = subscribeToLogMessages("");
 
@@ -1161,8 +1161,8 @@ CO_TEST_F(RibInitialAnnouncementTestFixture, RibInitialAnnouncementStartTest) {
   }
   evb.runInEventBaseThreadAndWait([]() {});
 
-  EXPECT_TRUE(peerMgr_->ribInitialAnnouncementStarted_);
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementDone_);
+  EXPECT_TRUE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementStarted());
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementDone());
 
   cleanUp();
 
@@ -1191,8 +1191,8 @@ TEST_F(
     RibInitialAnnouncementTestFixture,
     MaybeBufferRibDumpReqTest_SessionUpBeforeRibInitialAnnouncementStart) {
   EXPECT_TRUE(ribOutQ_.empty());
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementStarted_);
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementDone_);
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementStarted());
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementDone());
 
   auto& evb = peerMgr_->getEventBase();
   auto config = getConfig(
@@ -1249,8 +1249,8 @@ TEST_F(
     RibInitialAnnouncementTestFixture,
     MaybeBufferRibDumpReqTest_SessionUpAfterRibInitialAnnouncementDone) {
   auto& evb = peerMgr_->getEventBase();
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
@@ -1322,8 +1322,8 @@ TEST_F(
     RibInitialAnnouncementTestFixture,
     MaybeBufferRibDumpReqTest_SessionUpDuringRibInitialAnnouncement) {
   auto& evb = peerMgr_->getEventBase();
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = false;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(false);
 
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
@@ -1385,8 +1385,8 @@ TEST_F(
  */
 TEST_F(RibInitialAnnouncementTestFixture, HandleBufferedRibDumpReqsTest) {
   auto& evb = peerMgr_->getEventBase();
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   int numPeers = 10;
 
@@ -2249,8 +2249,8 @@ TEST_F(
    * Done: maybeBufferRibDumpForDetachedPeer buffers the request and schedules a
    * single handleBufferedRibDumpsForDetachedPeers drain on asyncScope_.
    */
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   auto mockAdjRib =
       setupMockAdjRib(evb, kPeerId1, AsNum(kAsn1), sessionTerminateBaton_);
@@ -2319,8 +2319,8 @@ TEST_F(
    * Done: maybeBufferRibDumpForDetachedPeer buffers the request and schedules a
    * handleBufferedRibDumpsForDetachedPeers drain on asyncScope_.
    */
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   auto mockAdjRib =
       setupMockAdjRib(evb, kPeerId1, AsNum(kAsn1), sessionTerminateBaton_);
@@ -2366,8 +2366,8 @@ TEST_F(
     RibInitialAnnouncementTestFixture,
     MaybeBufferRibDumpForDetachedPeerTest_SessionUpAfterRibAnnouncementDone) {
   auto& evb = peerMgr_->getEventBase();
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
@@ -2419,8 +2419,8 @@ TEST_F(
     RibInitialAnnouncementTestFixture,
     MaybeBufferRibDumpForDetachedPeerTest_SessionUpDuringRibAnnouncement) {
   auto& evb = peerMgr_->getEventBase();
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = false;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(false);
 
   auto config = getConfig(
       true /* includeStaticPeer */, true /* includeDynamicShivPeer */);
@@ -2465,8 +2465,8 @@ TEST_F(
     RibInitialAnnouncementTestFixture,
     HandleBufferedRibDumpsForDetachedPeersTest) {
   auto& evb = peerMgr_->getEventBase();
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   int numPeers = 10;
 
@@ -2523,8 +2523,8 @@ TEST_F(
       .sessionInfo = sessionInfo_};
 
   // Indicate that RIB initial announcement is in progress.
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = false;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(false);
 
   fm.addTask([&] {
     EXPECT_EQ(0, peerMgr_->getDefaultVrf().getPendingRibDumpReqs().size());
@@ -2574,8 +2574,8 @@ TEST_F(
       .remoteAs = mockInfo1_.peeringParams.remoteAs,
       .sessionInfo = sessionInfo_};
 
-  peerMgr_->ribInitialAnnouncementStarted_ = true;
-  peerMgr_->ribInitialAnnouncementDone_ = true;
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr_->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   // Add some fake entries into pendingRibDumpReqs_.
   int numPeers = 5;
@@ -2618,8 +2618,8 @@ CO_TEST_F(
   /**
    * Initial checks that Rib initial announcement hasn't started.
    */
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementStarted_);
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementDone_);
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementStarted());
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementDone());
 
   auto& evb = peerMgr_->getEventBase();
   auto keepAlive = folly::Executor::getKeepAliveToken(evb);
@@ -2691,8 +2691,8 @@ CO_TEST_F(
   /**
    * Initial checks that Rib initial announcement hasn't started.
    */
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementStarted_);
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementDone_);
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementStarted());
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementDone());
 
   auto& evb = peerMgr_->getEventBase();
   auto keepAlive = folly::Executor::getKeepAliveToken(evb);
@@ -2782,8 +2782,8 @@ CO_TEST_F(
   /**
    * Initial checks that Rib initial announcement hasn't started.
    */
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementStarted_);
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementDone_);
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementStarted());
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementDone());
 
   auto& evb = peerMgr_->getEventBase();
   auto keepAlive = folly::Executor::getKeepAliveToken(evb);
@@ -2911,8 +2911,8 @@ CO_TEST_F(
   /**
    * Initial checks that Rib initial announcement hasn't started.
    */
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementStarted_);
-  EXPECT_FALSE(peerMgr_->ribInitialAnnouncementDone_);
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementStarted());
+  EXPECT_FALSE(peerMgr_->getDefaultVrf().isRibInitialAnnouncementDone());
 
   auto& evb = peerMgr_->getEventBase();
   auto keepAlive = folly::Executor::getKeepAliveToken(evb);
@@ -3150,8 +3150,8 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationBestpathTest) {
       vrf->getAddPathConsumerBitmap(),
       vrf->getNonAddPathConsumerBitmap());
 
-  peerMgr->ribInitialAnnouncementStarted_ = true;
-  peerMgr->ribInitialAnnouncementDone_ = true;
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
   peerMgr->adjRibs_[kPeerId2] = adjRib2;
@@ -3473,8 +3473,8 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationAddPathTest) {
       vrf->getAddPathConsumerBitmap(),
       vrf->getNonAddPathConsumerBitmap());
 
-  peerMgr->ribInitialAnnouncementStarted_ = true;
-  peerMgr->ribInitialAnnouncementDone_ = true;
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
   peerMgr->adjRibs_[kPeerId2] = adjRib2;
@@ -3568,8 +3568,8 @@ CO_TEST_F(PeerManagerTestFixture, SelectiveMultipathNotificationMixTest) {
       vrf->getAddPathConsumerBitmap(),
       vrf->getNonAddPathConsumerBitmap());
 
-  peerMgr->ribInitialAnnouncementStarted_ = true;
-  peerMgr->ribInitialAnnouncementDone_ = true;
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+  peerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
   peerMgr->adjRibs_[kPeerId1] = adjRib1;
   peerMgr->adjRibs_[kPeerId2] = adjRib2;

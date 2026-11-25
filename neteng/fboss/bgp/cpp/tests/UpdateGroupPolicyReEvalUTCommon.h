@@ -1801,10 +1801,10 @@ class UpdateGroupPolicyReEvalUTBase : public PeerManagerTestFixture {
           vrf->getNonAddPathConsumerBitmap());
     }
 
-    peerMgr->ribInitialAnnouncementStarted_ = true;
-    peerMgr->ribInitialAnnouncementDone_ = true;
-    peerMgr->ribInitPathComputationNotified_ = true;
-    peerMgr->initialized_ = true;
+    peerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
+    peerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
+    peerMgr->getDefaultVrf().setRibInitPathComputationNotified(true);
+    peerMgr->getDefaultVrf().setInitialized(true);
 
     auto peerMgrThread = peerMgr->runInThread();
     auto sessionMgrThread = sessionMgr->runInThread();

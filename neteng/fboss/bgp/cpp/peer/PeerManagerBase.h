@@ -816,9 +816,9 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
 
   /*
    * Test-only: defer DRJ acceptance for a specific peer.
-   * Delegates to the update group manager's shared groups (not per-peer
-   * adjRibOutGroups_). maybeAcceptDSPPeer runs on the shared update
-   * group, so the deferred flag must be set there.
+   * Delegates to the update group manager's shared groups (not
+   * PeerManagerVrf::adjRibOutGroups_). maybeAcceptDSPPeer runs on the shared
+   * update group, so the deferred flag must be set there.
    */
   void testOnlySetDeferDrjAcceptance(
       const folly::IPAddress& peerAddr,
@@ -1038,19 +1038,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   folly::coro::Task<void> sessionTerminated(
       const nettools::bgplib::FiberBgpPeer::ObservableStateT&
           stateEvt) noexcept;
-
-  /**
-   * Create adjRibOutGroup
-   */
-  std::shared_ptr<AdjRibOutGroup> createAdjRibOutGroup(
-      PeerManagerVrf& vrf,
-      const std::string& groupName) noexcept;
-
-  /**
-   * Find adjRibOutGroup
-   */
-  std::shared_ptr<AdjRibOutGroup> findAdjRibOutGroup(
-      const std::string& groupName) noexcept;
 
   // Create adjRib
   std::shared_ptr<AdjRib> createAdjRib(
@@ -1291,12 +1278,6 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   // Each peer adjacency rib which is created based on configuration
   folly::F14NodeMap<nettools::bgplib::BgpPeerId, std::shared_ptr<AdjRib>>
       adjRibs_;
-
-  /**
-   * Collection of Adjacency Groups created for to be advertised routes
-   */
-  folly::F14NodeMap<std::string, std::shared_ptr<AdjRibOutGroup>>
-      adjRibOutGroups_;
 
   /**
    * Update group manager for dynamic peer grouping based on egress policies.

@@ -40,6 +40,7 @@
 namespace facebook::bgp {
 
 class AdjRib;
+class AdjRibOutGroup;
 class PeerManagerBase;
 struct PeeringParams;
 
@@ -407,6 +408,19 @@ class PeerManagerVrf final {
       const nettools::bgplib::BgpPeerId& peerId,
       const PeeringParams& peeringParams) noexcept;
 
+  // Returns the group named @groupName in @adjRibOutGroups_, or nullptr.
+  std::shared_ptr<AdjRibOutGroup> findAdjRibOutGroup(
+      const std::string& groupName) noexcept;
+
+  // Creates the group named @groupName in @adjRibOutGroups_.
+  std::shared_ptr<AdjRibOutGroup> createAdjRibOutGroup(
+      const std::string& groupName) noexcept;
+
+  folly::F14NodeMap<std::string, std::shared_ptr<AdjRibOutGroup>>&
+  getAdjRibOutGroups() noexcept {
+    return adjRibOutGroups_;
+  }
+
  private:
   // ============================ SHADOW RIB STATE =============================
 
@@ -629,6 +643,23 @@ class PeerManagerVrf final {
    * notifyRibInitialPathComputation; callback is onInitializedMaxWaitTimeout().
    */
   std::unique_ptr<folly::AsyncTimeout> initializedMaxWaitTimer_;
+
+  // ============================== ADJ-RIB STATE ==============================
+
+  /*
+   * Collection of Adjacency Groups created for to be advertised routes, keyed
+   * by peer group name or peer address.
+   *
+   * NOTE: Update groups do NOT use these groups; UpdateGroupManager owns the
+   * update groups. With update groups enabled, a peer holds its group from
+   * here only until its session establishes and it joins an update group.
+   * Stream subscribers always use these groups, since their AdjRibs never
+   * join an update group.
+   * TODO: Deprecate and remove once update groups are enabled globally. That
+   * first needs a home for the stream subscriber group.
+   */
+  folly::F14NodeMap<std::string, std::shared_ptr<AdjRibOutGroup>>
+      adjRibOutGroups_;
 };
 
 } // namespace facebook::bgp

@@ -1657,4 +1657,51 @@ std::string PeerManagerVrf::buildAdjRibOutGroupName(
   return peerId.peerAddr.str();
 }
 
+/**
+ * @brief  Find AdjRibOutGroup given a group name
+ *
+ * @params groupName  Name of the group to be looked up
+ *
+ * @return std::shared_ptr<AdjRibOutGroup>
+ */
+std::shared_ptr<AdjRibOutGroup> PeerManagerVrf::findAdjRibOutGroup(
+    const std::string& groupName) noexcept {
+  auto match = adjRibOutGroups_.find(groupName);
+  if (match == adjRibOutGroups_.cend()) {
+    return nullptr;
+  }
+
+  return match->second;
+}
+
+/**
+ * @brief  Create AdjRibOutGroup given a group name
+ *
+ * @params groupName  Name of the group to be created
+ *
+ * @return std::shared_ptr<AdjRibOutGroup>
+ */
+std::shared_ptr<AdjRibOutGroup> PeerManagerVrf::createAdjRibOutGroup(
+    const std::string& groupName) noexcept {
+  std::shared_ptr<AdjRibOutGroup> adjRibOutGroup;
+
+  XLOGF(INFO, "Create Adjacency Out Group: {} in VRF {}", groupName, vrfId_);
+  /*
+   * Wire the shadow RIB view so peers on this group (the update-group-disabled
+   * path) can read maxRibVersion after consuming to the end of the change
+   * list, the same way UpdateGroupManager-created groups do.
+   */
+  adjRibOutGroup = std::make_shared<AdjRibOutGroup>(
+      owner_.getEventBase(),
+      vrfId_,
+      groupName,
+      0 /* groupId */,
+      false /* enableUpdateGroup */,
+      UpdateGroupKey{.vrfId = vrfId_},
+      getShadowRibView());
+  adjRibOutGroups_.emplace(groupName, adjRibOutGroup);
+  BgpStats::incrAdjRibOutGroupsCount();
+  return adjRibOutGroup;
+}
+
 } // namespace facebook::bgp

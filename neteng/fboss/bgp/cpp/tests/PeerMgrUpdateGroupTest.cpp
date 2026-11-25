@@ -135,7 +135,8 @@ TEST_F(PeerManagerUpdateGroupTestFixture, UpdateGroupConstructionTest) {
     EXPECT_EQ(
         1, peerMgr_->updateGroupManager_->getGroupCount(fboss::kDefaultVrf));
     EXPECT_TRUE(peerMgr_->updateGroupManager_->hasGroup(updateGroupKey));
-    auto adjRibOutGroup = peerMgr_->adjRibOutGroups_.begin()->second;
+    auto adjRibOutGroup =
+        peerMgr_->getDefaultVrf().getAdjRibOutGroups().begin()->second;
     auto updateGroup = peerMgr_->updateGroupManager_->findOrCreateGroup(
         updateGroupKey, peerMgr_->getDefaultVrf().getShadowRibView());
     EXPECT_NE(adjRibOutGroup, updateGroup);

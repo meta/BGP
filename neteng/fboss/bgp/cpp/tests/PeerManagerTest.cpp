@@ -329,6 +329,29 @@ TEST_F(PeerManagerTestFixture, buildGroupNameWithPeerGroupNameTest) {
 }
 
 /**
+ * @brief  The same group name in two VRFs creates a separate AdjRibOutGroup
+ *         in each VRF
+ */
+TEST_F(PeerManagerTestFixture, SameAdjRibOutGroupNameInTwoVrfsTest) {
+  auto mockPeerMgr = setupMockPeerManager(
+      true /* includeStaticPeer */, false /* includeDynamicShivPeer */);
+  auto& defaultVrf = mockPeerMgr->getDefaultVrf();
+  auto& otherVrf =
+      mockPeerMgr->createVrf(fboss::kQuarantineVrfId, /*publishStats=*/false);
+  const std::string groupName = "Test";
+
+  auto defaultGroup = defaultVrf.createAdjRibOutGroup(groupName);
+  EXPECT_EQ(nullptr, otherVrf.findAdjRibOutGroup(groupName));
+
+  auto otherGroup = otherVrf.createAdjRibOutGroup(groupName);
+  EXPECT_NE(defaultGroup, otherGroup);
+  EXPECT_EQ(fboss::kDefaultVrf, defaultGroup->getVrfId());
+  EXPECT_EQ(fboss::kQuarantineVrfId, otherGroup->getVrfId());
+  EXPECT_EQ(defaultGroup, defaultVrf.findAdjRibOutGroup(groupName));
+  EXPECT_EQ(otherGroup, otherVrf.findAdjRibOutGroup(groupName));
+}
+
+/**
  * @brief  Test creation of one AdjRibOutGroup shared by 2 different
  *         adjRibs that share same peer-group
  *         And 3rd different adjRib associated with different
@@ -460,15 +483,17 @@ TEST_F(PeerManagerTestFixture, SharedAdjRibOutGroupNameTest) {
       /*
        * Verify adjRibOutGroups were created as expected
        */
-      EXPECT_TRUE(peerMgr->adjRibOutGroups_.contains(kPeerGroupName1));
-      EXPECT_TRUE(peerMgr->adjRibOutGroups_.contains(kPeerGroupName2));
-      EXPECT_EQ(peerMgr->adjRibOutGroups_.size(), 2);
+      EXPECT_TRUE(peerMgr->getDefaultVrf().getAdjRibOutGroups().contains(
+          kPeerGroupName1));
+      EXPECT_TRUE(peerMgr->getDefaultVrf().getAdjRibOutGroups().contains(
+          kPeerGroupName2));
+      EXPECT_EQ(peerMgr->getDefaultVrf().getAdjRibOutGroups().size(), 2);
 
       // Verify ODS counter matches adjRibOutGroups_ size
       auto tcData = fb303::ThreadCachedServiceData::get();
       tcData->publishStats();
       EXPECT_EQ(
-          peerMgr->adjRibOutGroups_.size(),
+          peerMgr->getDefaultVrf().getAdjRibOutGroups().size(),
           tcData->getCounter(BgpStats::kAdjRibOutGroupsCount));
 
       /*
@@ -2114,8 +2139,8 @@ TEST_F(PeerManagerTestFixture, MultipleFlapTest) {
      * kPeerId3, in absence of peer-group configuration for this peer
      */
     EXPECT_EQ(kPeerId3.peerAddr.str(), adjRib->getAdjRibOutGroupName());
-    EXPECT_TRUE(
-        mockPeerMgr->adjRibOutGroups_.contains(kPeerId3.peerAddr.str()));
+    EXPECT_TRUE(mockPeerMgr->getDefaultVrf().getAdjRibOutGroups().contains(
+        kPeerId3.peerAddr.str()));
 
     fiberSleepFor(20ms);
 
@@ -2136,8 +2161,8 @@ TEST_F(PeerManagerTestFixture, MultipleFlapTest) {
      * Verify Group name adjRib associated to remains same
      */
     EXPECT_EQ(kPeerId3.peerAddr.str(), adjRib->getAdjRibOutGroupName());
-    EXPECT_TRUE(
-        mockPeerMgr->adjRibOutGroups_.contains(kPeerId3.peerAddr.str()));
+    EXPECT_TRUE(mockPeerMgr->getDefaultVrf().getAdjRibOutGroups().contains(
+        kPeerId3.peerAddr.str()));
 
     /*
      * Post baton to simulate message loops exiting. In production,
@@ -2292,8 +2317,8 @@ TEST_F(PeerManagerTestFixture, MultipleFlapMultiplePeersTest) {
      * kPeerId3, in absence of peer-group configuration for this peer
      */
     EXPECT_EQ(kPeerId3.peerAddr.str(), adjRib3->getAdjRibOutGroupName());
-    EXPECT_TRUE(
-        mockPeerMgr->adjRibOutGroups_.contains(kPeerId3.peerAddr.str()));
+    EXPECT_TRUE(mockPeerMgr->getDefaultVrf().getAdjRibOutGroups().contains(
+        kPeerId3.peerAddr.str()));
 
     fiberSleepFor(20ms);
 
@@ -2310,8 +2335,8 @@ TEST_F(PeerManagerTestFixture, MultipleFlapMultiplePeersTest) {
      * kPeerId3, in absence of peer-group configuration for this peer
      */
     EXPECT_EQ(kPeerId4.peerAddr.str(), adjRib4->getAdjRibOutGroupName());
-    EXPECT_TRUE(
-        mockPeerMgr->adjRibOutGroups_.contains(kPeerId4.peerAddr.str()));
+    EXPECT_TRUE(mockPeerMgr->getDefaultVrf().getAdjRibOutGroups().contains(
+        kPeerId4.peerAddr.str()));
 
     fiberSleepFor(20ms);
 

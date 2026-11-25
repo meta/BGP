@@ -298,14 +298,18 @@ PeerManagerBase::~PeerManagerBase() {
    */
 
   // Step 1: Clear adjRibOutGroups_ RadixTrees before destruction
-  XLOGF(
-      INFO,
-      "[Exit] Clearing adjRibOutGroups_ ({} groups)...",
-      adjRibOutGroups_.size());
-  for (auto& [_, group] : adjRibOutGroups_) {
-    if (group) {
-      group->PathTree_.clear();
-      group->LiteTree_.clear();
+  for (auto& [vrfId, vrf] : peerManagerVrfs_) {
+    auto& adjRibOutGroups = vrf->getAdjRibOutGroups();
+    XLOGF(
+        INFO,
+        "[Exit] Clearing adjRibOutGroups_ of VRF {} ({} groups)...",
+        vrfId,
+        adjRibOutGroups.size());
+    for (auto& [_, group] : adjRibOutGroups) {
+      if (group) {
+        group->PathTree_.clear();
+        group->LiteTree_.clear();
+      }
     }
   }
   XLOG(INFO, "[Exit] adjRibOutGroups_ trees cleared");
@@ -321,7 +325,9 @@ PeerManagerBase::~PeerManagerBase() {
   RibStats::setAdjRibCount(0);
 
   // Step 3: Destroy adjRibOutGroups (trees already cleared)
-  adjRibOutGroups_.clear();
+  for (auto& [_, vrf] : peerManagerVrfs_) {
+    vrf->getAdjRibOutGroups().clear();
+  }
   BgpStats::setAdjRibOutGroupsCount(0);
 
   // terminate evb to deterministically shutdown PeerManagerBase evb
@@ -2831,54 +2837,6 @@ apache::thrift::ServerStream<TBgpRouteDelta> PeerManagerBase::subscribe(
   return std::move(*resultStream);
 }
 
-/**
- * @brief  Find AdjRibOutGroup given a group name
- *
- * @params groupName  Name of the group to be looked up
- *
- * @return std::shared_ptr<AdjRibOutGroup>
- */
-std::shared_ptr<AdjRibOutGroup> PeerManagerBase::findAdjRibOutGroup(
-    const std::string& groupName) noexcept {
-  auto match = adjRibOutGroups_.find(groupName);
-  if (match == adjRibOutGroups_.cend()) {
-    return nullptr;
-  }
-
-  return match->second;
-}
-
-/**
- * @brief  Create AdjRibOutGroup given a group name
- *
- * @params groupName  Name of the group to be created
- *
- * @return std::shared_ptr<AdjRibOutGroup>
- */
-std::shared_ptr<AdjRibOutGroup> PeerManagerBase::createAdjRibOutGroup(
-    PeerManagerVrf& vrf,
-    const std::string& groupName) noexcept {
-  std::shared_ptr<AdjRibOutGroup> adjRibOutGroup;
-
-  XLOGF(INFO, "Create Adjacency Out Group: {}", groupName);
-  /*
-   * Wire the shadow RIB view so peers on this group (the update-group-disabled
-   * path) can read maxRibVersion after consuming to the end of the change
-   * list, the same way UpdateGroupManager-created groups do.
-   */
-  adjRibOutGroup = std::make_shared<AdjRibOutGroup>(
-      evb_,
-      vrf.vrfId(),
-      groupName,
-      0 /* groupId */,
-      false /* enableUpdateGroup */,
-      UpdateGroupKey{.vrfId = vrf.vrfId()},
-      vrf.getShadowRibView());
-  adjRibOutGroups_.emplace(groupName, adjRibOutGroup);
-  BgpStats::incrAdjRibOutGroupsCount();
-  return adjRibOutGroup;
-}
-
 std::shared_ptr<AdjRib> PeerManagerBase::createAdjRib(
     PeerManagerVrf& vrf,
     const BgpPeerId& peerId,
@@ -2893,9 +2851,9 @@ std::shared_ptr<AdjRib> PeerManagerBase::createAdjRib(
 
   auto outGroupName =
       PeerManagerVrf::buildAdjRibOutGroupName(peerId, peeringParams);
-  auto adjRibOutGroup = findAdjRibOutGroup(outGroupName);
+  auto adjRibOutGroup = vrf.findAdjRibOutGroup(outGroupName);
   if (!adjRibOutGroup) {
-    adjRibOutGroup = createAdjRibOutGroup(vrf, outGroupName);
+    adjRibOutGroup = vrf.createAdjRibOutGroup(outGroupName);
   }
 
   adjRib = std::make_shared<AdjRib>(

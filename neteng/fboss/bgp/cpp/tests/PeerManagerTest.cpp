@@ -5472,8 +5472,8 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestNegativeTest) {
      * Case 1: Trigger a route refresh request for a peer when BGP is not
      * initialized
      */
-    auto failedPeers =
-        mockPeerMgr->triggerRouteRefreshRequestsForPeers({kPeerId3});
+    auto failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers(
+        fboss::kDefaultVrf, {kPeerId3});
 
     EXPECT_EQ(failedPeers.size(), 1);
 
@@ -5487,7 +5487,8 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestNegativeTest) {
     mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementStarted(true);
     mockPeerMgr->getDefaultVrf().setRibInitialAnnouncementDone(true);
 
-    failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers({kPeerId3});
+    failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers(
+        fboss::kDefaultVrf, {kPeerId3});
 
     EXPECT_EQ(failedPeers.size(), 1);
 
@@ -5514,7 +5515,8 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestNegativeTest) {
     auto adjRib3 = mockPeerMgr->findAdjRib(kPeerId3);
     EXPECT_TRUE(adjRib3->isStateEstablished());
     fiberSleepFor(20ms);
-    failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers({kPeerId3});
+    failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers(
+        fboss::kDefaultVrf, {kPeerId3});
     EXPECT_EQ(failedPeers.size(), 1);
 
     sessionMgr->oQueue_->fiberPush(
@@ -5571,6 +5573,20 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestTest) {
     EXPECT_TRUE(adjRib3->isRouteRefreshNegotiated());
     EXPECT_FALSE(adjRib3->isEnhancedRouteRefreshNegotiated());
 
+    // The VRF is not initialized.
+    mockPeerMgr->getDefaultVrf().setInitialized(false);
+    EXPECT_EQ(
+        mockPeerMgr->triggerRouteRefreshRequestsForPeers(
+            fboss::kDefaultVrf, {kPeerId3}),
+        std::vector<BgpPeerId>{kPeerId3});
+    EXPECT_TRUE(sessionMgr->boundedIqueue_->empty());
+
+    // The VRF does not exist.
+    EXPECT_EQ(
+        mockPeerMgr->triggerRouteRefreshRequestsForPeers(VrfId{42}, {kPeerId3}),
+        std::vector<BgpPeerId>{kPeerId3});
+    EXPECT_TRUE(sessionMgr->boundedIqueue_->empty());
+
     mockPeerMgr->getDefaultVrf().setRibInitPathComputationNotified(true);
     mockPeerMgr->getDefaultVrf().setEorTimerExpired(false);
     mockPeerMgr->getDefaultVrf().setInitialized(true);
@@ -5583,8 +5599,8 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestTest) {
      * fiber. Per general_rules.md: "MUST never use sleep-based
      * synchronization."
      */
-    auto failedPeers =
-        mockPeerMgr->triggerRouteRefreshRequestsForPeers({kPeerId3});
+    auto failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers(
+        fboss::kDefaultVrf, {kPeerId3});
 
     EXPECT_TRUE(failedPeers.empty());
     EXPECT_EQ(sessionMgr->boundedIqueue_->size(), 1);
@@ -5605,7 +5621,8 @@ TEST_F(PeerManagerTestFixture, TriggerRouteRefreshRequestTest) {
         break;
       }
     }
-    failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers({kPeerId3});
+    failedPeers = mockPeerMgr->triggerRouteRefreshRequestsForPeers(
+        fboss::kDefaultVrf, {kPeerId3});
     EXPECT_EQ(failedPeers, std::vector<BgpPeerId>{kPeerId3});
 
     sessionMgr->oQueue_->fiberPush(

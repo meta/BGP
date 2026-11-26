@@ -700,11 +700,14 @@ class PeerManagerBase : public BgpModuleBase, public MonitoredModule {
   /**
    * @brief Triggers a route refresh request for multiple peers and returns a
    * list of failed peer IDs.
+   * @param vrfId: VRF of the peers
    * @param peerIds: list of peerIds to trigger route refresh request for
    * @param afi: optional AFI filter (nullopt = all negotiated AFIs)
-   * @return list of peerIds that route refresh request failed to be sent to
+   * @return list of peerIds that route refresh request failed to be sent to;
+   * every peer when @vrfId does not exist or is not initialized
    */
   std::vector<nettools::bgplib::BgpPeerId> triggerRouteRefreshRequestsForPeers(
+      VrfId vrfId,
       std::vector<nettools::bgplib::BgpPeerId> peerIds,
       std::optional<nettools::bgplib::BgpUpdateAfi> afi = std::nullopt);
 

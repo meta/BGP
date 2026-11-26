@@ -4386,19 +4386,24 @@ PeerManagerBase::processIngressAndEgressRouteFilterUpdate(
 
 std::vector<nettools::bgplib::BgpPeerId>
 PeerManagerBase::triggerRouteRefreshRequestsForPeers(
+    VrfId vrfId,
     std::vector<nettools::bgplib::BgpPeerId> peerIds,
     std::optional<nettools::bgplib::BgpUpdateAfi> afi) {
-  // TODO_PMTRIZED_VRF: Check the initialization of each peer's VRF.
-  if (!defaultVrf_.isInitialized()) {
-    XLOG(ERR, "Refresh request can not be initiated. BGP is not initialized");
-    return peerIds;
-  }
   /*
    * Trigger route refresh request for all the peers and keep track of the
    * failed peerIds
    */
   std::vector<nettools::bgplib::BgpPeerId> failedPeerIds;
   evb_.runImmediatelyOrRunInEventBaseThreadAndWait([&]() {
+    const auto* vrf = findVrf(vrfId);
+    if (vrf == nullptr || !vrf->isInitialized()) {
+      XLOGF(
+          ERR,
+          "Refresh request can not be initiated. VRF {} is not initialized",
+          vrfId);
+      failedPeerIds = peerIds;
+      return;
+    }
     for (const auto& peerId : peerIds) {
       if (!triggerRouteRefreshRequestForPeer(peerId, afi)) {
         failedPeerIds.emplace_back(peerId);

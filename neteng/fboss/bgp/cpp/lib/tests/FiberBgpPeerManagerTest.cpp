@@ -61,7 +61,7 @@
 #include <folly/ScopeGuard.h>
 #include <folly/fibers/Baton.h>
 #include <folly/io/async/EventBaseManager.h>
-#include <folly/io/async/test/ScopedBoundPort.h>
+#include <folly/io/async/testing/ScopedBoundPort.h>
 #include <folly/logging/xlog.h>
 #include <netinet/in.h>
 #include <sys/socket.h>

@@ -263,7 +263,7 @@ class BgpServiceDCPeerPolicyTestFixture : public BgpServiceBaseTestFixture {
   }
 
   void setInitialized(bool initialized) {
-    peerManager_->initialized_ = initialized;
+    peerManager_->getDefaultVrf().setInitialized(initialized);
   }
 
  protected:
